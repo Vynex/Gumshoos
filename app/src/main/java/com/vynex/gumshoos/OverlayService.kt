@@ -128,7 +128,6 @@ class OverlayService :
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
 
-        GumshoosConfig.load(this)
         createNotificationChannel()
         buildOverlayView()
 

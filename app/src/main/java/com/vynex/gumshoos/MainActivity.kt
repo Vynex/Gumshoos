@@ -20,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
+import kotlin.math.roundToInt
 
 /**
  * Setup surface only. This is deliberately NOT the fast path — tapping the launcher icon pays the
@@ -177,7 +179,11 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("5 · Compare", style = MaterialTheme.typography.titleMedium)
+        WidgetTuning()
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("6 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
@@ -204,6 +210,62 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
  * Surfaces the last uncaught exception, including ones thrown inside the overlay service where
  * there's no UI to show them. Copyable so the trace can be pasted somewhere useful.
  */
+/**
+ * Live tuning for the 1x1 widget. Placed widgets are re-pushed on every change, so the home screen
+ * updates without re-adding the widget or rebuilding — how an icon sits in its cell varies enough
+ * between launchers that this is faster to eyeball than to derive.
+ */
+@Composable
+private fun WidgetTuning() {
+    val context = LocalContext.current
+    var size by remember { mutableStateOf(GumshoosConfig.widgetIconSizeDp.toFloat()) }
+    var offset by remember { mutableStateOf(GumshoosConfig.widgetIconOffsetDp.toFloat()) }
+
+    Text("5 · 1x1 widget", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Adjust, then press Home to see the result — placed widgets update immediately. Offset 0 " +
+            "centres the icon in its cell; positive moves it down.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+
+    Text("Icon size: ${size.roundToInt()}dp", style = MaterialTheme.typography.bodyMedium)
+    Slider(
+        value = size,
+        onValueChange = { size = it },
+        onValueChangeFinished = {
+            GumshoosConfig.setWidgetIconSizeDp(context, size.roundToInt())
+            SearchWidgetSmallProvider.refreshAll(context)
+        },
+        valueRange = 32f..64f,
+        steps = 31,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Text("Vertical offset: ${offset.roundToInt()}dp", style = MaterialTheme.typography.bodyMedium)
+    Slider(
+        value = offset,
+        onValueChange = { offset = it },
+        onValueChangeFinished = {
+            GumshoosConfig.setWidgetIconOffsetDp(context, offset.roundToInt())
+            SearchWidgetSmallProvider.refreshAll(context)
+        },
+        valueRange = -16f..16f,
+        steps = 31,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    OutlinedButton(
+        onClick = {
+            size = GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP.toFloat()
+            offset = GumshoosConfig.DEFAULT_WIDGET_ICON_OFFSET_DP.toFloat()
+            GumshoosConfig.setWidgetIconSizeDp(context, size.roundToInt())
+            GumshoosConfig.setWidgetIconOffsetDp(context, offset.roundToInt())
+            SearchWidgetSmallProvider.refreshAll(context)
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Reset to defaults") }
+}
+
 @Composable
 private fun CrashReport() {
     val context = LocalContext.current

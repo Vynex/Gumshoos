@@ -3,14 +3,9 @@
     <!--
       Drawn size of the 1x1 widget's icon. Deliberately a fixed size centred in the cell rather than
       match_parent: launcher cells are much larger than an app icon, so filling the cell is exactly
-      what made the widget read as oversized next to real icons. Typical launcher icons land around
-      48-56dp, and launchers add their own widget padding on top, so this is the main knob to tune.
+      what made the widget read as oversized next to real icons. Overridden at runtime from GumshoosConfig, so this is
+      only the initial value — tune it from the app's 1x1 widget section instead.
     -->
     <dimen name="widget_icon_size">46dp</dimen>
 
-    <!--
-      App icons sit toward the top of their cell because the label occupies the space below. Nudging
-      ours up matches that optical position instead of centring in the cell.
-    -->
-    <dimen name="widget_icon_top_margin">2dp</dimen>
 </resources>
