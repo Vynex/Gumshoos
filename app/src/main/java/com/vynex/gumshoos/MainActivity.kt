@@ -9,12 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,10 +27,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -195,6 +202,10 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Allow contacts access") }
 
+        if (hasContacts) {
+            EmailAppPicker()
+        }
+
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
         Text("5 · Hide the notification", style = MaterialTheme.typography.titleMedium)
@@ -290,6 +301,87 @@ private fun EventTrace() {
                     .verticalScroll(rememberScrollState()),
             )
         }
+    }
+}
+
+/**
+ * Which app the contact row's email action uses.
+ *
+ * Worth choosing explicitly rather than resolving: with several mail apps installed and none set as
+ * the system default, Android hands back its chooser activity, whose icon is a generic cogwheel.
+ */
+@Composable
+private fun EmailAppPicker() {
+    val context = LocalContext.current
+    var handlers by remember { mutableStateOf<List<ContactsRepository.ActionHandler>>(emptyList()) }
+    val selected = GumshoosConfig.contactActionPackages[ContactAction.EMAIL]
+
+    LaunchedEffect(Unit) {
+        handlers = ContactsRepository.handlersFor(context, ContactAction.EMAIL)
+    }
+
+    fun choose(packageName: String?) {
+        GumshoosConfig.setContactActionPackage(context, ContactAction.EMAIL, packageName)
+        // Re-warm so the overlay picks up the new icon without waiting for a restart.
+        context.startForegroundService(OverlayService.intent(context, OverlayService.ACTION_WARM))
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Text("Email app", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Used for the mail action on a contact.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    EmailAppRow(
+        label = "Automatic",
+        icon = null,
+        selected = selected == null,
+        onClick = { choose(null) },
+    )
+    handlers.forEach { handler ->
+        EmailAppRow(
+            label = handler.label,
+            icon = handler.icon,
+            selected = selected == handler.packageName,
+            onClick = { choose(handler.packageName) },
+        )
+    }
+    if (handlers.isEmpty()) {
+        Text(
+            "No mail apps found.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun EmailAppRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.ImageBitmap?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(4.dp))
+        if (icon != null) {
+            androidx.compose.foundation.Image(
+                bitmap = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

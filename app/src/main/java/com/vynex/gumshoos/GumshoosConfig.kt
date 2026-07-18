@@ -14,6 +14,7 @@ object GumshoosConfig {
     private const val KEY_NEW_UPDATED_WINDOW_HOURS = "new_updated_window_hours"
     private const val KEY_WIDGET_ICON_SIZE = "widget_icon_size_dp"
     private const val KEY_WIDGET_ICON_OFFSET = "widget_icon_offset_dp"
+    private const val KEY_CONTACT_ACTION_PACKAGE = "contact_action_package_"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -38,8 +39,32 @@ object GumshoosConfig {
     var widgetIconOffsetDp by mutableStateOf(DEFAULT_WIDGET_ICON_OFFSET_DP)
         private set
 
+    /**
+     * Chosen handler per contact action, or null to let the system decide. Keyed by action so the
+     * dialer and SMS app can be exposed the same way later; only email is surfaced today, since
+     * that's the one where a missing default produces the resolver's cogwheel.
+     */
+    var contactActionPackages by mutableStateOf<Map<ContactAction, String>>(emptyMap())
+        private set
+
+    fun setContactActionPackage(context: Context, action: ContactAction, packageName: String?) {
+        contactActionPackages = contactActionPackages.toMutableMap().apply {
+            if (packageName == null) remove(action) else put(action, packageName)
+        }
+        prefs(context).edit().apply {
+            if (packageName == null) {
+                remove(KEY_CONTACT_ACTION_PACKAGE + action.name)
+            } else {
+                putString(KEY_CONTACT_ACTION_PACKAGE + action.name, packageName)
+            }
+        }.apply()
+    }
+
     fun load(context: Context) {
         val p = prefs(context)
+        contactActionPackages = ContactAction.entries.mapNotNull { action ->
+            p.getString(KEY_CONTACT_ACTION_PACKAGE + action.name, null)?.let { action to it }
+        }.toMap()
         newUpdatedWindowHours =
             p.getLong(KEY_NEW_UPDATED_WINDOW_HOURS, DEFAULT_NEW_UPDATED_WINDOW_HOURS)
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)

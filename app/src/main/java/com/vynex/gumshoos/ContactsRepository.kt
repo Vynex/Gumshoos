@@ -5,6 +5,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.ContactsContract
 import androidx.compose.runtime.getValue
@@ -194,6 +195,11 @@ object ContactsRepository {
 
             ContactAction.EMAIL ->
                 Intent(Intent.ACTION_SENDTO, "mailto:${Uri.encode(entry.email.orEmpty())}".toUri())
+                    .also { mail ->
+                        // Send it straight to the chosen app rather than through the chooser.
+                        GumshoosConfig.contactActionPackages[ContactAction.EMAIL]
+                            ?.let(mail::setPackage)
+                    }
 
             ContactAction.WHATSAPP ->
                 Intent(
@@ -203,6 +209,79 @@ object ContactsRepository {
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
+    }
+
+    /** An app that can handle a given contact action, for the settings picker. */
+    data class ActionHandler(
+        val packageName: String,
+        val label: String,
+        val icon: ImageBitmap?,
+    )
+
+    /**
+     * Everything that can handle [action], for choosing between them in settings. Loaded on demand
+     * rather than at warm time — it's only needed while the settings screen is open.
+     */
+    suspend fun handlersFor(context: Context, action: ContactAction): List<ActionHandler> =
+        withContext(Dispatchers.IO) {
+            val pm = context.packageManager
+            val px = (context.resources.displayMetrics.density * 32).toInt().coerceAtLeast(32)
+            val intent = probeIntent(action)
+            pm.queryIntentActivities(intent, 0)
+                .filterNot { it.isResolver() }
+                .distinctBy { it.activityInfo.packageName }
+                .map { info ->
+                    ActionHandler(
+                        packageName = info.activityInfo.packageName,
+                        label = runCatching { info.loadLabel(pm).toString() }
+                            .getOrDefault(info.activityInfo.packageName),
+                        icon = runCatching {
+                            info.loadIcon(pm).toBitmap(px, px).asImageBitmap()
+                        }.getOrNull(),
+                    )
+                }
+                .sortedBy { it.label.lowercase() }
+        }
+
+    private fun probeIntent(action: ContactAction): Intent = when (action) {
+        ContactAction.CALL -> Intent(Intent.ACTION_DIAL, "tel:0000000000".toUri())
+        ContactAction.MESSAGE -> Intent(Intent.ACTION_SENDTO, "smsto:0000000000".toUri())
+        ContactAction.EMAIL -> Intent(Intent.ACTION_SENDTO, "mailto:a@b.c".toUri())
+        ContactAction.WHATSAPP -> Intent(Intent.ACTION_VIEW, "https://wa.me/0".toUri())
+    }
+
+    private fun packageIcon(pm: PackageManager, packageName: String, sizePx: Int): ImageBitmap? =
+        runCatching {
+            pm.getApplicationIcon(packageName).toBitmap(sizePx, sizePx).asImageBitmap()
+        }.getOrNull()
+
+    /**
+     * Icon of the app that will actually handle this intent.
+     *
+     * resolveActivity does not return null when several apps can handle an intent and none is the
+     * default — it returns the framework's ResolverActivity, whose icon is a generic cogwheel. That
+     * is what put a settings gear next to contacts instead of a mail app. So: take the resolved
+     * activity when it is a real one, and otherwise pick the highest-priority candidate ourselves.
+     */
+    private fun handlerIcon(
+        pm: PackageManager,
+        intent: Intent,
+        sizePx: Int,
+    ): ImageBitmap? {
+        val preferred = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.takeUnless { it.isResolver() }
+        val chosen = preferred
+            ?: pm.queryIntentActivities(intent, 0).firstOrNull { !it.isResolver() }
+            ?: return null
+        return runCatching {
+            chosen.loadIcon(pm).toBitmap(sizePx, sizePx).asImageBitmap()
+        }.getOrNull()
+    }
+
+    /** The chooser rather than an app: framework-owned, and never what we want to draw. */
+    private fun ResolveInfo.isResolver(): Boolean {
+        val info = activityInfo ?: return true
+        return info.packageName == "android" || info.name.orEmpty().contains("ResolverActivity")
     }
 
     /** Opens the contact in the People app. */
@@ -230,18 +309,16 @@ object ContactsRepository {
         val pm = context.packageManager
         val px = (context.resources.displayMetrics.density * 24).toInt().coerceAtLeast(24)
 
-        val probes = mapOf(
-            ContactAction.CALL to Intent(Intent.ACTION_DIAL, "tel:0000000000".toUri()),
-            ContactAction.MESSAGE to Intent(Intent.ACTION_SENDTO, "smsto:0000000000".toUri()),
-            ContactAction.EMAIL to Intent(Intent.ACTION_SENDTO, "mailto:a@b.c".toUri()),
-        )
+        val probes = listOf(ContactAction.CALL, ContactAction.MESSAGE, ContactAction.EMAIL)
+            .associateWith { probeIntent(it) }
 
         val icons = mutableMapOf<ContactAction, ImageBitmap>()
         probes.forEach { (action, intent) ->
             runCatching {
-                pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.let { info ->
-                    icons[action] = info.loadIcon(pm).toBitmap(px, px).asImageBitmap()
-                }
+                // An explicitly chosen handler wins; otherwise fall back to resolving one.
+                val chosen = GumshoosConfig.contactActionPackages[action]
+                val icon = chosen?.let { packageIcon(pm, it, px) } ?: handlerIcon(pm, intent, px)
+                icon?.let { icons[action] = it }
             }
         }
         runCatching {
