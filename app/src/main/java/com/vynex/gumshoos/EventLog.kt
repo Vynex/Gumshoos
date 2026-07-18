@@ -1,0 +1,52 @@
+package com.vynex.gumshoos
+
+import android.content.Context
+import android.os.SystemClock
+import android.util.Log
+import java.io.File
+
+/**
+ * A small ring of timestamped events, persisted so it survives the process being killed.
+ *
+ * Exists to answer one question that reading the code cannot: when the app reopens unexpectedly,
+ * did *we* call startActivity again, or did the system bring the task forward by itself? Those have
+ * opposite fixes, and guessing between them has already cost two wrong attempts.
+ */
+object EventLog {
+    private const val FILE_NAME = "events.log"
+    private const val MAX_LINES = 120
+
+    private val buffer = ArrayDeque<String>()
+    private var appContext: Context? = null
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        runCatching {
+            file(context)?.takeIf { it.exists() }?.readLines()?.forEach { buffer.addLast(it) }
+        }
+        while (buffer.size > MAX_LINES) buffer.removeFirst()
+    }
+
+    /** Uptime rather than wall clock: the point is intervals between events, not time of day. */
+    fun record(event: String) {
+        val line = "%8.3fs  %s".format(SystemClock.uptimeMillis() / 1000.0, event)
+        Log.i(OverlayService.TAG, "event: $event")
+        synchronized(buffer) {
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            runCatching { file(appContext)?.writeText(buffer.joinToString("\n")) }
+        }
+    }
+
+    fun read(): String = synchronized(buffer) {
+        if (buffer.isEmpty()) "" else buffer.joinToString("\n")
+    }
+
+    fun clear() = synchronized(buffer) {
+        buffer.clear()
+        runCatching { file(appContext)?.delete() }
+        Unit
+    }
+
+    private fun file(context: Context?) = context?.let { File(it.filesDir, FILE_NAME) }
+}

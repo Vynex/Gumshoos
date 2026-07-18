@@ -110,7 +110,10 @@ class OverlayService :
      */
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_SCREEN_OFF) hide()
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                EventLog.record("screen off")
+                hide()
+            }
         }
     }
 
@@ -156,6 +159,7 @@ class OverlayService :
         // it throws again, and because the activity shares this process the app becomes unopenable.
         // Record and stand down instead — CrashLog still captures the trace for diagnosis.
         try {
+            EventLog.record("onStartCommand ${intent?.action?.substringAfterLast('.') ?: "null"}")
             when (intent?.action) {
                 ACTION_SHOW -> show(entry, intent.getStringExtra(EXTRA_SOURCE) ?: "unknown")
                 ACTION_HIDE -> hide()
@@ -246,7 +250,10 @@ class OverlayService :
         hideRunnable?.let { composeView.removeCallbacks(it) }
         hideRunnable = null
 
-        if (overlayVisible) return
+        if (overlayVisible) {
+            EventLog.record("show IGNORED (already visible)")
+            return
+        }
 
         val coldAttach = neverShown
         pendingShowStart = entryMillis
@@ -284,6 +291,7 @@ class OverlayService :
 
     private fun hide() {
         if (!overlayVisible) return
+        EventLog.record("hide")
         overlayVisible = false
 
         // Drop input focus immediately so the app underneath becomes interactive again without

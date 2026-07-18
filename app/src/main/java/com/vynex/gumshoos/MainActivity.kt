@@ -96,6 +96,8 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         CrashReport()
 
+        EventTrace()
+
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
         Text("1 · Permission", style = MaterialTheme.typography.titleMedium)
@@ -215,6 +217,45 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
  * updates without re-adding the widget or rebuilding — how an icon sits in its cell varies enough
  * between launchers that this is faster to eyeball than to derive.
  */
+/**
+ * Recent overlay events, newest last. Reproduce the misbehaviour, come back here, and the trace
+ * shows whether Gumshoos started the activity itself or the system surfaced it on its own.
+ */
+@Composable
+private fun EventTrace() {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var trace by remember { mutableStateOf(EventLog.read()) }
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { trace = EventLog.read(); expanded = true }) {
+                Text(if (expanded) "Refresh trace" else "Show event trace")
+            }
+            if (expanded) {
+                OutlinedButton(
+                    onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace)) },
+                ) { Text("Copy") }
+                OutlinedButton(onClick = { EventLog.clear(); trace = "" }) { Text("Clear") }
+            }
+        }
+
+        if (expanded) {
+            Text(
+                text = trace.ifBlank { "No events recorded yet." },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontSize = 11.sp,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        }
+    }
+}
+
 @Composable
 private fun WidgetTuning() {
     val context = LocalContext.current
