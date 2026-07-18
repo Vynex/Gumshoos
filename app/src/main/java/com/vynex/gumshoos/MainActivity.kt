@@ -264,6 +264,10 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+        SearchIconSettings()
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
         WidgetTuning()
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -480,7 +484,7 @@ private fun WidgetTuning() {
     var size by remember { mutableStateOf(GumshoosConfig.widgetIconSizeDp.toFloat()) }
     var offset by remember { mutableStateOf(GumshoosConfig.widgetIconOffsetDp.toFloat()) }
 
-    Text("5 · 1x1 widget", style = MaterialTheme.typography.titleMedium)
+    Text("8 · 1x1 widget", style = MaterialTheme.typography.titleMedium)
     Text(
         "Adjust, then press Home to see the result — placed widgets update immediately. Offset 0 " +
             "centres the icon in its cell; positive moves it down.",
