@@ -120,10 +120,20 @@ class OverlayService :
         // Captured as early as possible: everything after this is work we're trying to measure.
         val entry = SystemClock.uptimeMillis()
 
-        when (intent?.action) {
-            ACTION_SHOW -> show(entry, intent.getStringExtra(EXTRA_SOURCE) ?: "unknown")
-            ACTION_HIDE -> hide()
-            else -> attachIfNeeded()
+        // START_STICKY turns any throw in here into a restart loop: the system revives the service,
+        // it throws again, and because the activity shares this process the app becomes unopenable.
+        // Record and stand down instead — CrashLog still captures the trace for diagnosis.
+        try {
+            when (intent?.action) {
+                ACTION_SHOW -> show(entry, intent.getStringExtra(EXTRA_SOURCE) ?: "unknown")
+                ACTION_HIDE -> hide()
+                else -> attachIfNeeded()
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "onStartCommand failed; stopping rather than restart-looping", t)
+            CrashLog.recordHandled(this, Thread.currentThread(), t)
+            stopSelf()
+            return START_NOT_STICKY
         }
         return START_STICKY
     }
@@ -244,15 +254,38 @@ class OverlayService :
     /**
      * Fires once, after the next frame is actually committed to the display — as close to
      * "the user can see it" as we can get without a system trace.
+     *
+     * The ViewTreeObserver must never be cached. Before the view is attached, [View.getViewTreeObserver]
+     * hands back a floating observer that ViewRootImpl merges and then kills on attach; touching that
+     * stale reference afterwards throws "ViewTreeObserver is not alive". windowManager.addView does
+     * not attach synchronously, so registering straight after it hits exactly that case.
+     *
+     * This is instrumentation, so it degrades to "no measurement" rather than taking the service down.
      */
     private fun onNextFrameCommitted(block: () -> Unit) {
-        val observer = composeView.viewTreeObserver
-        var callback: Runnable? = null
-        callback = Runnable {
-            block()
-            callback?.let { observer.unregisterFrameCommitCallback(it) }
+        val view = composeView
+
+        val register = Runnable {
+            val observer = view.viewTreeObserver
+            if (!observer.isAlive) {
+                Log.w(TAG, "observer not alive at registration; skipping measurement")
+                return@Runnable
+            }
+            var callback: Runnable? = null
+            callback = Runnable {
+                block()
+                // Re-fetch rather than closing over `observer`: it may have been replaced since.
+                view.viewTreeObserver
+                    .takeIf { it.isAlive }
+                    ?.let { live -> callback?.let(live::unregisterFrameCommitCallback) }
+            }
+            runCatching { observer.registerFrameCommitCallback(callback) }
+                .onFailure { Log.w(TAG, "could not register frame callback", it) }
         }
-        observer.registerFrameCommitCallback(callback)
+
+        // View.post before attachment queues the action to run once the view is attached, which is
+        // the earliest point a real, live observer exists.
+        if (view.isAttachedToWindow) register.run() else view.post(register)
     }
 
     // ---- foreground plumbing ----------------------------------------------------------------

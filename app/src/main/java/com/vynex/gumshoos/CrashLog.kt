@@ -28,6 +28,11 @@ object CrashLog {
         }
     }
 
+    /** For exceptions we caught deliberately but still want visible in the on-device report. */
+    fun recordHandled(context: Context, thread: Thread, throwable: Throwable) {
+        runCatching { write(context.applicationContext, thread, throwable) }
+    }
+
     private fun write(context: Context, thread: Thread, throwable: Throwable) {
         val stack = StringWriter().also { throwable.printStackTrace(PrintWriter(it)) }
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
