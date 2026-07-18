@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Placeholder until the real mark is supplied — drop ic_provider_chatgpt.svg into design/icons/ and
+  run design/convert-icons.sh to replace it. A light badge so it reads on the dark card, matching
+  the other providers' badge shapes rather than sitting as a bare glyph.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FFECECF1"
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24 24,-10.745 24,-24S37.255,0 24,0z" />
+    <path
+        android:fillColor="#FF202123"
+        android:pathData="M24,11c-6.6,0 -12,4.3 -12,9.6 0,3 1.7,5.7 4.4,7.4l-1.4,5.6 5.9,-3.1c1,0.2 2,0.3 3.1,0.3 6.6,0 12,-4.3 12,-9.6S30.6,11 24,11zM18,22a2,2 0 1,1 0,-4 2,2 0 0,1 0,4zM24,22a2,2 0 1,1 0,-4 2,2 0 0,1 0,4zM30,22a2,2 0 1,1 0,-4 2,2 0 0,1 0,4z" />
+</vector>

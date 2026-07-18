@@ -5,7 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.DrawableRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.net.toUri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * A destination the current query can be handed off to when no installed app matches it.
@@ -21,9 +26,17 @@ data class SearchProvider(
     val appUri: (String) -> String,
     /** Used when the app isn't installed or can't handle the link. */
     val webUri: (String) -> String,
+    /**
+     * Set when the provider is pointless without a particular app. Those are hidden entirely when
+     * it isn't installed, rather than falling back to a web page nobody asked for — and the package
+     * is forced on the intent so a claimed https link can't be swallowed by the browser.
+     */
+    val requiresPackage: String? = null,
 )
 
 object SearchProviders {
+
+    private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
 
     val google = SearchProvider(
         id = "google",
@@ -65,13 +78,38 @@ object SearchProviders {
         webUri = { "https://open.spotify.com/search/$it" },
     )
 
-    val all = listOf(google, playStore, maps, youtube, spotify)
+    val chatGpt = SearchProvider(
+        id = "chatgpt",
+        label = "ChatGPT",
+        icon = R.drawable.ic_provider_chatgpt,
+        // ?q= opens a new chat prefilled with the query rather than resuming the last one.
+        appUri = { "https://chatgpt.com/?q=$it" },
+        webUri = { "https://chatgpt.com/?q=$it" },
+        requiresPackage = CHATGPT_PACKAGE,
+    )
+
+    val all = listOf(google, playStore, maps, youtube, spotify, chatGpt)
 
     /**
-     * Which providers appear, in order. A plain val for now; settings will replace this with a
-     * persisted, reorderable list — hence [SearchProvider.id] being a stable key.
+     * Providers whose required app is present. Resolved at warm time rather than per keystroke,
+     * since checking package installation is a binder call.
      */
-    val enabled: List<SearchProvider> get() = all
+    private var available by mutableStateOf(all.filter { it.requiresPackage == null })
+
+    suspend fun refreshAvailability(context: Context) = withContext(Dispatchers.IO) {
+        val pm = context.packageManager
+        val present = all.filter { provider ->
+            val required = provider.requiresPackage ?: return@filter true
+            runCatching { pm.getPackageInfo(required, 0) }.isSuccess
+        }
+        withContext(Dispatchers.Main) { available = present }
+    }
+
+    /**
+     * Which providers appear, in order. Filtered only by availability for now; settings will layer
+     * a persisted, reorderable selection on top — hence [SearchProvider.id] being a stable key.
+     */
+    val enabled: List<SearchProvider> get() = available
 
     fun search(context: Context, provider: SearchProvider, query: String) {
         val trimmed = query.trim()
@@ -88,6 +126,7 @@ object SearchProviders {
         }
 
         val app = viewIntent(provider.appUri(encoded))
+            .apply { provider.requiresPackage?.let(::setPackage) }
         val web = viewIntent(provider.webUri(encoded))
         runCatching { context.startActivity(app) }
             .recoverCatching { context.startActivity(web) }

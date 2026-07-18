@@ -67,6 +67,8 @@
             <data android:scheme="mailto" />
         </intent>
         <package android:name="com.whatsapp" />
+        <!-- Checked for installation, and forced on the intent so the browser can't claim the link. -->
+        <package android:name="com.openai.chatgpt" />
     </queries>
 
     <application

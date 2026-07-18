@@ -151,6 +151,8 @@ class OverlayService :
                 .onFailure { Log.e(TAG, "contacts load failed", it) }
             runCatching { ContactsRepository.loadActionIcons(this@OverlayService) }
                 .onFailure { Log.e(TAG, "contact action icons failed", it) }
+            runCatching { SearchProviders.refreshAvailability(this@OverlayService) }
+                .onFailure { Log.e(TAG, "provider availability failed", it) }
         }
     }
 
