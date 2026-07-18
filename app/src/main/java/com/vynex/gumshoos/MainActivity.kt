@@ -268,7 +268,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("8 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("9 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
@@ -418,6 +418,60 @@ private fun EmailAppRow(
         }
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+/**
+ * Icons that open search directly. Both go through a trampoline activity, because a shortcut cannot
+ * start a service — only a widget can. Expect them to measure slower than the widget for that
+ * reason; the overlay's readout tags this path "icon".
+ */
+@Composable
+private fun SearchIconSettings() {
+    val context = LocalContext.current
+    var drawerIcon by remember { mutableStateOf(SearchShortcuts.isDrawerIconEnabled(context)) }
+
+    Text("7 · Search icons", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "A shortcut can only launch an activity, so these pass through a hidden one on the way to " +
+            "the search window. The widget reaches it directly and should still be quicker — " +
+            "compare the millisecond readout under the search bar.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                drawerIcon = !drawerIcon
+                SearchShortcuts.setDrawerIconEnabled(context, drawerIcon)
+            },
+    ) {
+        Checkbox(
+            checked = drawerIcon,
+            onCheckedChange = {
+                drawerIcon = it
+                SearchShortcuts.setDrawerIconEnabled(context, it)
+            },
+        )
+        Spacer(Modifier.width(4.dp))
+        Column {
+            Text("Second icon in the app drawer", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Adds a separate \"Gumshoos Search\" entry that opens the search window, alongside " +
+                    "the normal icon that opens this screen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    OutlinedButton(
+        onClick = { SearchShortcuts.requestPin(context) },
+        enabled = SearchShortcuts.canPin(context),
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Pin a search icon to the home screen") }
 }
 
 @Composable

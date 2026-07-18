@@ -7,4 +7,6 @@
 
     <string name="widget_small_label">Gumshoos icon</string>
     <string name="widget_small_description">Single-cell button that opens instant search</string>
+
+    <string name="search_shortcut_label">Gumshoos Search</string>
 </resources>

@@ -92,6 +92,36 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Reached from the pinned shortcut and, when enabled, a second launcher icon. taskAffinity
+          is empty so it never joins or disturbs the main task.
+        -->
+        <activity
+            android:name=".LaunchSearchActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Gumshoos.Invisible" />
+
+        <!--
+          A second app-drawer icon that opens search directly. Disabled by default and toggled from
+          the app, which is what makes it configurable: enabling the component is what makes the
+          icon appear.
+        -->
+        <activity-alias
+            android:name=".SearchShortcut"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_widget_search_app"
+            android:label="@string/search_shortcut_label"
+            android:targetActivity=".LaunchSearchActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".NoOpActivity"
             android:exported="false"

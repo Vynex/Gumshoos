@@ -9,4 +9,16 @@
 <!--        <item name="android:statusBarColor">@android:color/transparent</item>-->
 <!--        <item name="android:navigationBarColor">@android:color/transparent</item>-->
 <!--    </style>-->
+
+    <!--
+      For the shortcut trampoline: nothing to draw, and no animation, so tapping the icon shows the
+      overlay rather than a window opening and closing behind it.
+    -->
+    <style name="Theme.Gumshoos.Invisible" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>
