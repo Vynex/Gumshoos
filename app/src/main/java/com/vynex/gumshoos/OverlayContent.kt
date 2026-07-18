@@ -45,10 +45,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -160,9 +161,17 @@ fun OverlayContent(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(horizontal = CardSideMargin, vertical = 8.dp)
-                    .fillMaxWidth(widthFraction)
+                    .fillMaxWidth()
                     .height(cardHeight)
-                    .alpha(cardAlpha)
+                    // Width and alpha run in the draw phase, not layout. fillMaxWidth(fraction)
+                    // would change the width constraint every frame, remeasuring the grid and
+                    // re-running text line-breaking for all ten labels — far too expensive for a
+                    // 8ms budget at 120Hz. As a graphicsLayer transform it costs the GPU nothing.
+                    .graphicsLayer {
+                        scaleX = widthFraction
+                        alpha = cardAlpha
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    }
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
