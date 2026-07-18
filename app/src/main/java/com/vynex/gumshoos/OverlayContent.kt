@@ -672,10 +672,12 @@ private fun SearchHeader(
                 fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             ),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+            // Search rather than Go purely for the glyph: most keyboards draw a magnifier for
+            // Search and an arrow for Go, and onSearch launches the top result either way.
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(
-                onGo = { onSubmit() },
                 onSearch = { onSubmit() },
+                // Some IMEs report Done regardless of the requested action.
                 onDone = { onSubmit() },
             ),
             singleLine = true,
