@@ -98,8 +98,9 @@ object UnitAnswerProvider : AnswerProvider {
      * 2. Input already in the locale's system → convert to the other system, since converting
      *    metres to metres tells nobody anything.
      * 3. Temperature has no system, so it pairs °C and °F, choosing by locale.
-     * 4. Data and duration have no counterpart system either, so they scale along their own ladder:
-     *    1500 MB is more usefully read as 1.5 GB.
+     * 4. Data and duration have no counterpart system either. They scale up when the number
+     *    warrants it (1500 MB → 1.5 GB), and otherwise step to the neighbouring unit downward
+     *    (1 min → 60 s, 2 h → 120 min).
      */
     private fun defaultTarget(from: UnitDef, value: Double, context: AnswerContext): UnitDef? {
         val base = from.toBase(value)
@@ -120,9 +121,12 @@ object UnitAnswerProvider : AnswerProvider {
             }
 
             Dimension.DATA, Dimension.DURATION -> {
-                val ladder = UnitTables.ladderFor(from.dimension)
-                return pickByMagnitude(ladder, base)?.takeIf { it.id != from.id }
-                    ?: ladder.firstOrNull { it.id != from.id }
+                val ladder = UnitTables.defaultLadderFor(from.dimension)
+                // Scaling up when the number warrants it: 1500 MB reads better as 1.5 GB.
+                pickByMagnitude(ladder, base)?.takeIf { it.id != from.id }?.let { return it }
+                // Otherwise the neighbouring unit, downward. "1 min" means 60 s, not 60,000 ms —
+                // reaching for the smallest unit in the ladder is never what was wanted.
+                return stepDown(from, ladder)
             }
 
             else -> {
@@ -143,6 +147,20 @@ object UnitAnswerProvider : AnswerProvider {
                     .ifEmpty { UnitTables.preferredFor(from.dimension, MeasurementSystem.SI) }
                 return pickByMagnitude(candidates, base)
             }
+        }
+    }
+
+    /**
+     * The unit one step below [from], or one step up when it is already the smallest default.
+     */
+    private fun stepDown(from: UnitDef, ladder: List<UnitDef>): UnitDef? {
+        if (ladder.isEmpty()) return null
+        val index = ladder.indexOfFirst { it.id == from.id }
+        return when {
+            index > 0 -> ladder[index - 1]
+            // Already the smallest, or excluded from defaults entirely: go the other way.
+            index == 0 -> ladder.getOrNull(1)
+            else -> ladder.first()
         }
     }
 

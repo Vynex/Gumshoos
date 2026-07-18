@@ -114,8 +114,32 @@ class UnitAnswerProviderTest {
     }
 
     @Test
-    fun `data scales along its own ladder`() {
+    fun `data scales up when the number warrants it`() {
         assertEquals("1.5 GB", result("1500 mb", india))
+    }
+
+    @Test
+    fun `a duration defaults to the unit below it`() {
+        // Not 60,000 ms: reaching for the smallest unit in the ladder is never what was wanted.
+        assertEquals("60 s", result("1 min", india))
+        assertEquals("120 min", result("2 h", india))
+        assertEquals("24 h", result("1 d", india))
+    }
+
+    @Test
+    fun `data defaults to the unit below it when it cannot scale up`() {
+        assertEquals("1,000 MB", result("1 gb", india))
+    }
+
+    @Test
+    fun `the smallest default unit steps up instead`() {
+        // Nothing below seconds is offered automatically, so this goes the other way.
+        assertEquals("0.5 min", result("30 s", india))
+    }
+
+    @Test
+    fun `milliseconds are never an automatic target but stay reachable`() {
+        assertEquals("30,000 ms", result("30 s to ms", india))
     }
 
     @Test

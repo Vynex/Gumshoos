@@ -162,8 +162,20 @@ object UnitTables {
     fun preferredFor(dimension: Dimension, system: MeasurementSystem): List<UnitDef> =
         preferred[dimension to system].orEmpty().mapNotNull { id -> all.find { it.id == id } }
 
+    /**
+     * Units never chosen as an automatic target, though still reachable explicitly.
+     *
+     * Milliseconds are the case: "30 s" answering "30,000 ms" is technically right and practically
+     * useless, so the default steps to minutes instead. "30 s to ms" still works.
+     */
+    private val neverAutomatic = setOf("ms")
+
     fun ladderFor(dimension: Dimension): List<UnitDef> =
         ladders[dimension].orEmpty().mapNotNull { id -> all.find { it.id == id } }
+
+    /** The ladder as used for defaults, with the units above excluded. */
+    fun defaultLadderFor(dimension: Dimension): List<UnitDef> =
+        ladderFor(dimension).filterNot { it.id in neverAutomatic }
 
     /**
      * No plural stripping: it would fold "ms" into "m", turning milliseconds into metres. Plurals
