@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -30,6 +31,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.launch
 
 /**
  * Holds the search window resident in WindowManager so that showing it costs a visibility flip and
@@ -105,6 +107,13 @@ class OverlayService :
 
         createNotificationChannel()
         buildOverlayView()
+
+        // Built once, here, while the process is warming — never on the show path. Icon decoding for
+        // a full app list costs hundreds of milliseconds and would destroy the sub-20ms show.
+        lifecycleScope.launch {
+            runCatching { AppRepository.load(this@OverlayService) }
+                .onFailure { Log.e(TAG, "app index load failed", it) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -332,11 +341,15 @@ class OverlayService :
 /** Not focusable, not touchable — invisible to input while the window sits warm in the background. */
 private const val HIDDEN_FLAGS =
     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
 
-/** Focusable so the IME and Back reach us; NOT_TOUCH_MODAL so touches outside still land. */
+/**
+ * Focusable so the IME and Back reach us; NOT_TOUCH_MODAL so touches outside still land.
+ *
+ * FLAG_LAYOUT_NO_LIMITS is deliberately absent: without it the system lays the window out inside
+ * the system bar insets, so the card sits below the status bar without needing inset dispatches,
+ * which overlay windows don't deliver reliably.
+ */
 private const val SHOWN_FLAGS =
     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
