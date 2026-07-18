@@ -7,4 +7,12 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!--
+      1x1 widget, styled to read as an app icon rather than a widget: opaque, not translucent.
+      Grouped here because how convincingly this passes for an icon depends on the launcher and
+      wallpaper, so these are expected to be tuned and eventually surfaced in settings.
+    -->
+    <color name="widget_icon_background">#FFF5F3EA</color>
+    <color name="widget_icon_glyph">#FF3B4B99</color>
 </resources>

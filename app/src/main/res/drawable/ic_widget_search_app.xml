@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Circle and glyph in one drawable so the widget needs no background: a View background would be
+  clipped square by some launchers, where a vector oval stays a clean circle everywhere.
+
+  Stroked rather than filled paths for the magnifier — far easier to keep the weight even than
+  hand-building a filled donut, and it matches the bold look of a real launcher icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <path
+        android:fillColor="@color/widget_icon_background"
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24 24,-10.745 24,-24S37.255,0 24,0z" />
+
+    <path
+        android:pathData="M29,20a8,8 0 1,1 -16,0a8,8 0 1,1 16,0"
+        android:strokeColor="@color/widget_icon_glyph"
+        android:strokeWidth="3.6" />
+
+    <path
+        android:pathData="M26.9,25.9L34.5,33.5"
+        android:strokeColor="@color/widget_icon_glyph"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.6" />
+
+</vector>

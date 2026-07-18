@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Drawn size of the 1x1 widget's icon. Deliberately a fixed size centred in the cell rather than
+      match_parent: launcher cells are much larger than an app icon, so filling the cell is exactly
+      what made the widget read as oversized next to real icons. Typical launcher icons land around
+      48-56dp, and launchers add their own widget padding on top, so this is the main knob to tune.
+    -->
+    <dimen name="widget_icon_size">52dp</dimen>
+
+    <!--
+      App icons sit toward the top of their cell because the label occupies the space below. Nudging
+      ours up matches that optical position instead of centring in the cell.
+    -->
+    <dimen name="widget_icon_top_margin">2dp</dimen>
+</resources>
