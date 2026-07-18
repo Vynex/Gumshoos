@@ -73,6 +73,9 @@ object AnswerProviders {
     /** Order matters: the first non-null wins, so the most specific patterns come first. */
     val all: List<AnswerProvider> = listOf(
         MathAnswerProvider,
+        // Before units: "0x1F" would otherwise be scanned for a unit named "x1F", and "255 to hex"
+        // for one named "to". Both fail, but ordering the specific pattern first says why.
+        NumberBaseAnswerProvider,
         UnitAnswerProvider,
     )
 
