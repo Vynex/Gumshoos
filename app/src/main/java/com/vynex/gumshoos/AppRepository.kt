@@ -80,22 +80,42 @@ object AppRepository {
      * they degrade to alphabetical rather than showing an arbitrary order.
      */
     private fun baseOrder(tab: SearchTab): List<AppEntry> = when (tab) {
-        SearchTab.FREQUENT ->
-            if (UsageRepository.granted) {
-                apps.sortedByDescending { UsageRepository.foregroundMillis(it.packageName) }
-            } else {
-                apps.sortedBy { it.label.lowercase() }
-            }
+        // Alphabetical is the fallback whenever a signal is missing rather than an arbitrary
+        // order, so an ungranted permission or an empty history still reads sensibly.
+        SearchTab.FREQUENT -> apps.sortedWith(
+            compareByDescending<AppEntry> { frequencyOf(it.packageName) }
+                .thenBy { it.label.lowercase() }
+        )
 
-        SearchTab.RECENT ->
-            if (UsageRepository.granted) {
-                apps.sortedByDescending { UsageRepository.lastUsed(it.packageName) }
-            } else {
-                apps.sortedBy { it.label.lowercase() }
-            }
+        SearchTab.RECENT -> apps.sortedWith(
+            compareByDescending<AppEntry> { recencyOf(it.packageName) }
+                .thenBy { it.label.lowercase() }
+        )
 
         SearchTab.NEW_UPDATED -> recentlyInstalledOrUpdated()
     }
+
+    /**
+     * How often an app is used, from whichever source is configured.
+     *
+     * System usage counts foreground time, which is not quite the same question: an app left open
+     * in the background all day dominates it while never being something you reach for here.
+     * Gumshoos' own history counts launches through this app instead.
+     */
+    private fun frequencyOf(packageName: String): Long =
+        when (GumshoosConfig.usageSource) {
+            UsageSource.SYSTEM ->
+                if (UsageRepository.granted) UsageRepository.foregroundMillis(packageName) else 0L
+            UsageSource.GUMSHOOS -> LaunchHistory.countOf(packageName).toLong()
+        }
+
+    /** Most recently opened, from whichever source is configured. */
+    fun recencyOf(packageName: String): Long =
+        when (GumshoosConfig.usageSource) {
+            UsageSource.SYSTEM ->
+                if (UsageRepository.granted) UsageRepository.lastUsed(packageName) else 0L
+            UsageSource.GUMSHOOS -> LaunchHistory.lastLaunchedAt(packageName)
+        }
 
     /**
      * Ranked results. Score dominates; most-recently-opened breaks ties, so equally good textual
@@ -113,7 +133,7 @@ object AppRepository {
             }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }
-                    .thenByDescending { UsageRepository.lastUsed(it.first.packageName) }
+                    .thenByDescending { recencyOf(it.first.packageName) }
                     .thenBy { it.first.label.lowercase() }
             )
             .map { it.first }
@@ -152,6 +172,7 @@ object AppRepository {
 
     fun launch(context: Context, entry: AppEntry) {
         EventLog.record("launch ${entry.packageName}")
+        LaunchHistory.record(context, entry.packageName)
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
             component = entry.component

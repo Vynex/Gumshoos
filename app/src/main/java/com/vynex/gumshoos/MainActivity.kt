@@ -166,21 +166,26 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("3 · Usage access", style = MaterialTheme.typography.titleMedium)
+        Text("3 · Frequent & Recent ordering", style = MaterialTheme.typography.titleMedium)
+        UsageSourcePicker()
+
+        val needsUsageAccess = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsageAccess
         Text(
-            if (hasUsageAccess) {
-                "Granted. Apps are ordered by most recently opened."
-            } else {
-                "Not granted. Ordering falls back to alphabetical — \"most recently opened\" needs " +
-                    "system usage data, which is a special access grant rather than a normal prompt."
+            when {
+                GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
+                    "Usage access isn't used with this option and can be revoked."
+                hasUsageAccess -> "Granted. Apps are ordered by system-wide usage."
+                else ->
+                    "Not granted, so ordering falls back to alphabetical. System usage is a " +
+                        "special access grant rather than a normal prompt."
             },
             style = MaterialTheme.typography.bodySmall,
-            color = if (hasUsageAccess) MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.error,
+            color = if (needsUsageAccess) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(
             onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
-            enabled = !hasUsageAccess,
+            enabled = !hasUsageAccess && GumshoosConfig.usageSource == UsageSource.SYSTEM,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Grant usage access") }
 
@@ -349,6 +354,79 @@ private fun EventTrace() {
  * Worth choosing explicitly rather than resolving: with several mail apps installed and none set as
  * the system default, Android hands back its chooser activity, whose icon is a generic cogwheel.
  */
+/**
+ * Which signal orders the Frequent and Recent tabs.
+ *
+ * The two answer subtly different questions. System usage measures foreground time across the whole
+ * phone, so something left open in the background outranks what you actually reach for. Gumshoos'
+ * own history counts launches made here — narrower, but a truer picture of how the launcher is
+ * used, and it needs no permission at all.
+ */
+@Composable
+private fun UsageSourcePicker() {
+    val context = LocalContext.current
+    var source by remember { mutableStateOf(GumshoosConfig.usageSource) }
+    val tracked = LaunchHistory.stats.size
+
+    Column {
+        UsageSourceRow(
+            label = "System-wide usage",
+            description = "How much every app is used across the phone. Needs usage access below.",
+            selected = source == UsageSource.SYSTEM,
+        ) {
+            source = UsageSource.SYSTEM
+            GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
+        }
+        UsageSourceRow(
+            label = "Launches from Gumshoos only",
+            description = if (tracked == 0) {
+                "Counts only apps opened from this search window. No permission needed; " +
+                    "nothing recorded yet, so ordering stays alphabetical until you open something."
+            } else {
+                "Counts only apps opened from this search window. No permission needed; " +
+                    "$tracked app${if (tracked == 1) "" else "s"} recorded so far."
+            },
+            selected = source == UsageSource.GUMSHOOS,
+        ) {
+            source = UsageSource.GUMSHOOS
+            GumshoosConfig.setUsageSource(context, UsageSource.GUMSHOOS)
+        }
+
+        if (source == UsageSource.GUMSHOOS && tracked > 0) {
+            OutlinedButton(
+                onClick = { LaunchHistory.clear(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Reset launch history") }
+        }
+    }
+}
+
+@Composable
+private fun UsageSourceRow(
+    label: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(4.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 private fun EmailAppPicker() {
     val context = LocalContext.current

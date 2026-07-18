@@ -12,6 +12,9 @@ class GumshoosApp : Application() {
         // the first thing to run in this process, and both read config. Loading it only in
         // OverlayService left them reading defaults.
         GumshoosConfig.load(this)
+        // Same reasoning as the config: the activity reads this too, and either it or the service
+        // can be the first thing to run in the process.
+        LaunchHistory.load(this)
         EventLog.init(this)
         EventLog.record("process start")
     }

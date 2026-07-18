@@ -16,6 +16,7 @@ object GumshoosConfig {
     private const val KEY_WIDGET_ICON_OFFSET = "widget_icon_offset_dp"
     private const val KEY_CONTACT_ACTION_PACKAGE = "contact_action_package_"
     private const val KEY_HIDE_ON_FOCUS_LOSS = "hide_on_focus_loss"
+    private const val KEY_USAGE_SOURCE = "usage_source"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -26,6 +27,9 @@ object GumshoosConfig {
      * over.
      */
     const val DEFAULT_HIDE_ON_FOCUS_LOSS = true
+
+    /** System usage by default, since it already knows about apps opened before Gumshoos existed. */
+    val DEFAULT_USAGE_SOURCE = UsageSource.SYSTEM
 
     /** Matches the measured diameter of a real launcher icon on the reference device. */
     const val DEFAULT_WIDGET_ICON_SIZE_DP = 46
@@ -59,6 +63,15 @@ object GumshoosConfig {
     var hideOnFocusLoss by mutableStateOf(DEFAULT_HIDE_ON_FOCUS_LOSS)
         private set
 
+    /** Where the Frequent and Recent tabs take their ordering from. */
+    var usageSource by mutableStateOf(DEFAULT_USAGE_SOURCE)
+        private set
+
+    fun setUsageSource(context: Context, source: UsageSource) {
+        usageSource = source
+        prefs(context).edit().putString(KEY_USAGE_SOURCE, source.name).apply()
+    }
+
     fun setHideOnFocusLoss(context: Context, enabled: Boolean) {
         hideOnFocusLoss = enabled
         prefs(context).edit().putBoolean(KEY_HIDE_ON_FOCUS_LOSS, enabled).apply()
@@ -87,6 +100,9 @@ object GumshoosConfig {
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)
         widgetIconOffsetDp = p.getInt(KEY_WIDGET_ICON_OFFSET, DEFAULT_WIDGET_ICON_OFFSET_DP)
         hideOnFocusLoss = p.getBoolean(KEY_HIDE_ON_FOCUS_LOSS, DEFAULT_HIDE_ON_FOCUS_LOSS)
+        usageSource = p.getString(KEY_USAGE_SOURCE, null)
+            ?.let { name -> UsageSource.entries.firstOrNull { it.name == name } }
+            ?: DEFAULT_USAGE_SOURCE
     }
 
     fun setWidgetIconSizeDp(context: Context, dp: Int) {
