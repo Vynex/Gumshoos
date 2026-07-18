@@ -32,6 +32,8 @@ data class AnswerContext(
     val zoneId: String,
     val locale: Locale,
     val rates: RateTable? = null,
+    /** Injected so "what time is it there" is deterministic under test. */
+    val clock: java.time.Clock = java.time.Clock.systemDefaultZone(),
 )
 
 /** Exchange rates relative to [base]. Null on the context when unavailable or offline. */
@@ -77,6 +79,9 @@ object AnswerProviders {
         // for one named "to". Both fail, but ordering the specific pattern first says why.
         NumberBaseAnswerProvider,
         UnitAnswerProvider,
+        // After units: "5 min to hours" is a duration, and only falls through to here if no zone
+        // resolves — which it doesn't, since "min" is not a place.
+        TimeAnswerProvider,
     )
 
     var enabledIds: Set<String> = all.map { it.id }.toSet()
