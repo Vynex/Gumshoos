@@ -1,12 +1,6 @@
 package com.vynex.gumshoos.answers
 
-import java.math.BigDecimal
-import java.math.MathContext
-import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
 import kotlin.math.abs
-import kotlin.math.absoluteValue
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
@@ -49,7 +43,7 @@ object MathAnswerProvider : AnswerProvider {
         val value = runCatching { Parser(input).evaluate() }.getOrNull() ?: return null
         if (!value.isFinite()) return null
 
-        val formatted = format(value, context)
+        val formatted = AnswerFormat.number(value, context.locale)
         return Answer(
             providerId = id,
             headline = formatted,
@@ -63,26 +57,6 @@ object MathAnswerProvider : AnswerProvider {
         val lower = input.lowercase()
         if (Regex("""\bmod\b""").containsMatchIn(lower)) return true
         return FUNCTIONS.any { Regex("""\b$it\b""").containsMatchIn(lower) }
-    }
-
-    // --- formatting ------------------------------------------------------------------------------
-
-    /**
-     * Trims the floating-point noise that makes a calculator look broken: 0.1 + 0.2 should read
-     * 0.3, not 0.30000000000000004. Rounding to 12 significant figures is well inside a double's
-     * ~15-17 and removes the artefacts without touching legitimate precision.
-     */
-    private fun format(value: Double, context: AnswerContext): String {
-        val rounded = BigDecimal(value).round(MathContext(12)).stripTrailingZeros()
-
-        val magnitude = value.absoluteValue
-        if (magnitude != 0.0 && (magnitude >= 1e12 || magnitude < 1e-6)) {
-            return DecimalFormat("0.######E0", DecimalFormatSymbols(context.locale))
-                .format(value)
-        }
-
-        return DecimalFormat("#,##0.##########", DecimalFormatSymbols(context.locale))
-            .format(rounded.setScale(10, RoundingMode.HALF_UP))
     }
 
     // --- parser ----------------------------------------------------------------------------------

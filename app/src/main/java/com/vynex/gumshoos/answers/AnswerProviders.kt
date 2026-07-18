@@ -73,6 +73,7 @@ object AnswerProviders {
     /** Order matters: the first non-null wins, so the most specific patterns come first. */
     val all: List<AnswerProvider> = listOf(
         MathAnswerProvider,
+        UnitAnswerProvider,
     )
 
     var enabledIds: Set<String> = all.map { it.id }.toSet()
