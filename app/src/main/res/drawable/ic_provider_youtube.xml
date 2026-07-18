@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder glyph, not a brand mark. Play badge = video search. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <path android:fillColor="@android:color/white"
+        android:pathData="M19,4H5C3.34,4 2,5.34 2,7v10c0,1.66 1.34,3 3,3h14c1.66,0 3,-1.34 3,-3V7C22,5.34 20.66,4 19,4zM10,16V8l6,4L10,16z" />
+</vector>

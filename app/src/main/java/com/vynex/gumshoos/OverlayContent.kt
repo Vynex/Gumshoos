@@ -6,7 +6,7 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -73,6 +74,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -104,6 +106,10 @@ private val GridVerticalPadding = 10.dp
 private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
 
+/** "Search using" label plus its icon row, shown only while a query is present. */
+private val SearchUsingHeight = 64.dp
+private val ProviderIconSize = 26.dp
+
 private const val GridColumns = 5
 private const val GridRows = 2
 const val MaxGridEntries = GridColumns * GridRows
@@ -114,6 +120,14 @@ private val GridContentHeight =
 
 /** Derived rather than hardcoded so changing a row height can't desync the animation target. */
 private val CardExpandedHeight = HeaderHeight + TabRowHeight + GridContentHeight
+
+/**
+ * The panel is always measured at this height and revealed from the top, so it must cover the
+ * tallest arrangement: browsing (tabs, no provider row) and searching (provider row, no tabs) each
+ * use a subset. The slack is clipped by whatever height the card currently animates to.
+ */
+private val PanelMaxHeight =
+    HeaderHeight + TabRowHeight + GridContentHeight + SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -291,12 +305,17 @@ fun OverlayContent(
         // Typing collapses the tabs away: while searching, results are ranked across every app
         // rather than scoped to a tab, so the tabs have nothing left to select.
         var searching by remember { mutableStateOf(false) }
-        val tabHeight by animateDpAsState(
-            targetValue = if (searching) 0.dp else TabRowHeight,
+
+        // A single progress value so the tabs collapsing and the provider row expanding stay in
+        // lockstep — driving them from two animations lets them drift and the card jitter.
+        val searchProgress by animateFloatAsState(
+            targetValue = if (searching) 1f else 0f,
             animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
-            label = "tabHeight",
+            label = "searchProgress",
         )
-        val tabCollapse = TabRowHeight - tabHeight
+        val tabHeight = TabRowHeight * (1f - searchProgress)
+        val providerRowHeight = SearchUsingHeight * searchProgress
+        val heightDelta = providerRowHeight - (TabRowHeight - tabHeight)
 
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
@@ -322,7 +341,7 @@ fun OverlayContent(
                     // Subtracting the collapse keeps the card tight to its content while searching;
                     // the tab row's own height animates in step, so the grid slides up rather than
                     // the card growing a gap at the bottom.
-                    .height((cardHeight - tabCollapse).coerceAtLeast(0.dp))
+                    .height((cardHeight + heightDelta).coerceAtLeast(0.dp))
                     .alpha(cardAlpha)
                     .clickable(
                         indication = null,
@@ -339,6 +358,7 @@ fun OverlayContent(
                     menuTarget = menuTarget,
                     onMenuTargetChange = { menuTarget = it },
                     tabHeight = tabHeight,
+                    providerRowHeight = providerRowHeight,
                     onSearchingChange = { searching = it },
                 )
             }
@@ -354,6 +374,7 @@ private fun SearchPanel(
     menuTarget: Pair<AppEntry, Int>?,
     onMenuTargetChange: (Pair<AppEntry, Int>?) -> Unit,
     tabHeight: Dp,
+    providerRowHeight: Dp,
     onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -402,9 +423,18 @@ private fun SearchPanel(
     // also be the defence against a stray editor action; see the keyboardActions note instead.
     val submit: () -> Unit = {
         if (visible) {
-            AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
+            val top = AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
                 .firstOrNull()
-                ?.let(launch)
+            when {
+                top != null -> launch(top)
+                // Nothing installed matches, so fall through to the first hand-off target rather
+                // than doing nothing — typing a query and pressing search should always go
+                // somewhere.
+                query.isNotBlank() -> SearchProviders.enabled.firstOrNull()?.let { provider ->
+                    SearchProviders.search(context, provider, query)
+                    onDismiss()
+                }
+            }
         }
     }
 
@@ -415,7 +445,7 @@ private fun SearchPanel(
     Column(
         Modifier
             .clipToBounds()
-            .revealFromTop(CardExpandedHeight)
+            .revealFromTop(PanelMaxHeight)
     ) {
         SearchHeader(
             query = query,
@@ -423,9 +453,10 @@ private fun SearchPanel(
             focusRequester = focusRequester,
             onSubmit = submit,
             onPlayStore = {
-                AppRepository.searchPlayStore(context, query)
+                SearchProviders.openPlayStore(context)
                 onDismiss()
             },
+            onClear = { query = "" },
         )
 
         // Pinned to the settled width so the width animation never re-measures the tab row or the
@@ -508,6 +539,21 @@ private fun SearchPanel(
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         }
+        }
+
+        // Clipped like the tab row, so it slides into view rather than appearing.
+        Box(
+            Modifier
+                .height(providerRowHeight)
+                .clipToBounds()
+                .alpha((providerRowHeight / SearchUsingHeight).coerceIn(0f, 1f)),
+        ) {
+            SearchUsingRow(
+                onPick = { provider ->
+                    SearchProviders.search(context, provider, query)
+                    onDismiss()
+                },
+            )
         }
         }
 
@@ -693,6 +739,44 @@ private fun ContextMenuItem(
     }
 }
 
+/**
+ * Hand-off targets for the current query. Order comes from [SearchProviders.enabled], which settings
+ * will eventually make configurable — nothing here assumes a fixed set.
+ */
+@Composable
+private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
+    Column(
+        modifier = Modifier
+            .requiredHeight(SearchUsingHeight)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "Search using",
+            fontSize = 11.sp,
+            letterSpacing = 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            SearchProviders.enabled.forEach { provider ->
+                Icon(
+                    painter = painterResource(provider.icon),
+                    contentDescription = "Search ${provider.label}",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(ProviderIconSize)
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() },
+                        ) { onPick(provider) },
+                )
+            }
+        }
+    }
+}
+
 private fun emptyMessageFor(tab: SearchTab): String = when {
     !AppRepository.loaded -> "Loading apps…"
     tab == SearchTab.NEW_UPDATED ->
@@ -707,6 +791,7 @@ private fun SearchHeader(
     focusRequester: FocusRequester,
     onSubmit: () -> Unit,
     onPlayStore: () -> Unit,
+    onClear: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -758,22 +843,24 @@ private fun SearchHeader(
         )
 
         Spacer(Modifier.width(12.dp))
-        // Dimmed and inert with an empty query — there is nothing to search the store for.
-        val storeEnabled = query.isNotBlank()
+        // Dual purpose: with no query there is nothing to clear, so it opens the store instead of
+        // sitting there dimmed and inert. Once you type, clearing is by far the more useful action,
+        // and the "Search using" row below covers handing the query off to the store.
+        val hasQuery = query.isNotBlank()
         Icon(
-            painter = painterResource(R.drawable.ic_play_store),
-            contentDescription = "Search the Play Store",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                alpha = if (storeEnabled) 1f else 0.35f,
-            ),
+            painter = if (hasQuery) {
+                rememberVectorPainter(Icons.Default.Close)
+            } else {
+                painterResource(R.drawable.ic_play_store)
+            },
+            contentDescription = if (hasQuery) "Clear search" else "Open the Play Store",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .size(22.dp)
                 .clickable(
-                    enabled = storeEnabled,
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() },
-                    onClick = onPlayStore,
-                ),
+                ) { if (hasQuery) onClear() else onPlayStore() },
         )
     }
 }

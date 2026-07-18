@@ -25,10 +25,28 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- So the market:// Play Store search resolves instead of silently falling back to web. -->
+        <!--
+          Schemes the "Search using" row hands off to. Without these, package visibility filtering
+          makes the deep links unresolvable and every provider silently falls back to the browser.
+        -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="market" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="spotify" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.WEB_SEARCH" />
         </intent>
     </queries>
 
