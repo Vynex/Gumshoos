@@ -3,12 +3,14 @@ package com.vynex.gumshoos
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -124,6 +126,23 @@ object AppRepository {
         return apps
             .filter { it.lastUpdateTime >= cutoff }
             .sortedByDescending { it.lastUpdateTime }
+    }
+
+    /** System uninstall confirmation. Silently declined by the system for protected system apps. */
+    fun requestUninstall(context: Context, entry: AppEntry) {
+        val intent = Intent(Intent.ACTION_DELETE).apply {
+            data = "package:${entry.packageName}".toUri()
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        runCatching { context.startActivity(intent) }
+    }
+
+    fun openAppInfo(context: Context, entry: AppEntry) {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = "package:${entry.packageName}".toUri()
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        runCatching { context.startActivity(intent) }
     }
 
     fun launch(context: Context, entry: AppEntry) {

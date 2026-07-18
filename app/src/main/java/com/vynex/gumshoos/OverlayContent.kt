@@ -9,11 +9,15 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
@@ -57,8 +62,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -84,16 +92,19 @@ private val HeaderHeight = 45.dp
 private val TabRowHeight = 48.dp
 private val CellHeight = 88.dp
 private val GridVerticalPadding = 10.dp
+private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
 
 private const val GridColumns = 5
 private const val GridRows = 2
 const val MaxGridEntries = GridColumns * GridRows
 
+/** Always this tall, however few results there are — see the note on [AppGrid]. */
+private val GridContentHeight =
+    (GridVerticalPadding * 2) + (CellHeight * GridRows) + GridRowSpacing
+
 /** Derived rather than hardcoded so changing a row height can't desync the animation target. */
-private val CardExpandedHeight =
-    HeaderHeight + TabRowHeight + (GridVerticalPadding * 2) +
-        (CellHeight * GridRows) + GridRowSpacing
+private val CardExpandedHeight = HeaderHeight + TabRowHeight + GridContentHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -105,6 +116,8 @@ private val PillCornerRadius = HeaderHeight / 2
 private const val CollapsedWidthFraction = 0.765f
 
 private const val CardSurfaceAlpha = 0.94f
+
+private val ContextMenuWidth = 190.dp
 
 // --- Timing ------------------------------------------------------------------------------------
 // Every leg below is expressed as a percentage of the entrance, measured from the capture. Only
@@ -314,6 +327,14 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
         }
     }
 
+    var menuTarget by remember { mutableStateOf<Pair<AppEntry, Int>?>(null) }
+
+    // Registered after the overlay's own handler, so it runs first: Back closes the menu before it
+    // closes the whole card.
+    BackHandler(enabled = menuTarget != null) { menuTarget = null }
+
+    LaunchedEffect(query) { menuTarget = null }
+
     val launch: (AppEntry) -> Unit = { entry ->
         AppRepository.launch(context, entry)
         onDismiss()
@@ -340,7 +361,8 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
         // Pinned to the settled width so the width animation never re-measures the tab row or the
         // grid — ten two-line labels re-running text layout every frame is what made the earlier
         // version stutter. Only the cheap header re-flows.
-        Column(Modifier.requiredWidth(pinnedWidth)) {
+        Box(Modifier.requiredWidth(pinnedWidth)) {
+        Column {
         TabRow(
             selectedTabIndex = tab.ordinal,
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -387,15 +409,140 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             beyondViewportPageCount = 1,
         ) { page ->
             val pageTab = SearchTab.entries[page]
+            val pageEntries = AppRepository.search(query, pageTab)
             AppGrid(
-                entries = AppRepository.search(query, pageTab),
+                entries = pageEntries,
                 emptyMessage = emptyMessageFor(pageTab),
                 onLaunch = launch,
+                onLongPress = { entry, index -> menuTarget = entry to index },
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         }
         }
+
+            menuTarget?.let { (entry, index) ->
+                AppContextMenu(
+                    entry = entry,
+                    cellIndex = index,
+                    availableWidth = pinnedWidth,
+                    onDismiss = { menuTarget = null },
+                    onAction = { action ->
+                        menuTarget = null
+                        when (action) {
+                            ContextAction.UNINSTALL -> {
+                                AppRepository.requestUninstall(context, entry)
+                                onDismiss()
+                            }
+                            ContextAction.APP_INFO -> {
+                                AppRepository.openAppInfo(context, entry)
+                                onDismiss()
+                            }
+                            // Placeholder: leaves the overlay open so it's obvious nothing ran.
+                            ContextAction.EDIT -> Unit
+                        }
+                    },
+                )
+            }
+        }
     }
+}
+
+private enum class ContextAction { EDIT, APP_INFO, UNINSTALL }
+
+/**
+ * Rendered inside the card rather than as a [androidx.compose.ui.window.Popup]. A Popup allocates
+ * its own window, and window tokens inside a service-hosted overlay are unreliable — an in-hierarchy
+ * menu sidesteps that entirely, at the cost of being clipped to the card.
+ *
+ * Anchored horizontally to the pressed cell's column; vertically centred, because the card isn't
+ * tall enough for a menu below a cell to ever fit without clamping to roughly the same place.
+ */
+@Composable
+private fun BoxScope.AppContextMenu(
+    entry: AppEntry,
+    cellIndex: Int,
+    availableWidth: Dp,
+    onDismiss: () -> Unit,
+    onAction: (ContextAction) -> Unit,
+) {
+    val menuWidth = ContextMenuWidth.coerceAtMost(availableWidth - 16.dp)
+    val column = cellIndex % GridColumns
+    val cellWidth = (availableWidth - GridHorizontalPadding * 2) / GridColumns
+    val centredOnCell =
+        GridHorizontalPadding + (cellWidth * column) + (cellWidth / 2) - (menuWidth / 2)
+    val maxX = (availableWidth - menuWidth - 8.dp).coerceAtLeast(8.dp)
+    val x = centredOnCell.coerceIn(8.dp, maxX)
+
+    // Scrim covers the tab row and grid, so a stray tap closes the menu instead of the overlay.
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onDismiss,
+            ),
+    )
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 8.dp,
+        modifier = Modifier
+            .align(Alignment.CenterStart)
+            .offset(x = x)
+            .width(menuWidth),
+    ) {
+        Column(Modifier.padding(vertical = 6.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Image(
+                    bitmap = entry.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = entry.label,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+
+            ContextMenuItem("Edit", enabled = false) { onAction(ContextAction.EDIT) }
+            ContextMenuItem("App info") { onAction(ContextAction.APP_INFO) }
+            ContextMenuItem("Uninstall") { onAction(ContextAction.UNINSTALL) }
+        }
+    }
+}
+
+@Composable
+private fun ContextMenuItem(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        fontSize = 14.sp,
+        color = if (enabled) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+    )
 }
 
 private fun emptyMessageFor(tab: SearchTab): String = when {
@@ -470,65 +617,88 @@ private fun SearchHeader(
 /**
  * Fixed two rows, never scrollable. A fixed row count is also what lets the card have a known
  * expanded height, which the reveal animation depends on.
+ *
+ * Every one of the ten slots is always emitted, empty ones included. Laying out only the occupied
+ * cells would let a tab with three results be a different height from one with ten, which the pager
+ * would then resolve by jumping as you swipe between them.
  */
 @Composable
 private fun AppGrid(
     entries: List<AppEntry>,
     emptyMessage: String,
     onLaunch: (AppEntry) -> Unit,
+    onLongPress: (AppEntry, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (entries.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = emptyMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
+    Box(modifier.height(GridContentHeight)) {
+        if (entries.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = emptyMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+            return@Box
         }
-        return
-    }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = GridVerticalPadding),
-        verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
-    ) {
-        entries.take(MaxGridEntries).chunked(GridColumns).forEach { row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { entry ->
-                    AppCell(
-                        entry = entry,
-                        onClick = { onLaunch(entry) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                // Keep a short final row left-aligned instead of stretching its cells.
-                repeat(GridColumns - row.size) {
-                    Spacer(Modifier.weight(1f))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = GridHorizontalPadding, vertical = GridVerticalPadding),
+            verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
+        ) {
+            repeat(GridRows) { row ->
+                Row(Modifier.fillMaxWidth()) {
+                    repeat(GridColumns) { column ->
+                        val index = row * GridColumns + column
+                        val entry = entries.getOrNull(index)
+                        if (entry == null) {
+                            // Holds the slot so occupied cells keep the position they'd have in a
+                            // full grid, rather than reflowing to fill the gaps.
+                            Spacer(
+                                Modifier
+                                    .weight(1f)
+                                    .height(CellHeight)
+                            )
+                        } else {
+                            AppCell(
+                                entry = entry,
+                                onClick = { onLaunch(entry) },
+                                onLongClick = { onLongPress(entry, index) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppCell(
     entry: AppEntry,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .height(CellHeight)
-            .clickable(
+            .combinedClickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
             )
             .padding(vertical = 4.dp, horizontal = 2.dp),
     ) {
