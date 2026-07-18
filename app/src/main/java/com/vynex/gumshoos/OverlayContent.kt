@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,6 +63,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -353,25 +353,14 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             ?.let(launch)
     }
 
-    // requiredHeight pins the whole panel at full height so the card's shrinking height clips it
-    // rather than squeezing it — that is what makes the grid look already-rendered as the card
-    // grows. The header is left to fill the card's animating width, matching the reference.
-    //
-    // The alignment here is load-bearing and must not be left implicit. The panel is taller than
-    // the card for most of the entrance, and how an oversized child gets placed decides which slice
-    // shows through: top-aligned reveals the search bar, anything else reveals the middle of the
-    // grid. Relying on Surface's internal Box to do the right thing produced exactly that bug —
-    // the animation opened on a band of app icons instead of the search bar.
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clipToBounds(),
-        contentAlignment = Alignment.TopStart,
-    ) {
+    // The panel is always laid out at full height and revealed from the top as the card grows —
+    // see revealFromTop. That is what makes the grid look already-rendered rather than fading in,
+    // and it is why the entrance opens on the search bar rather than a slice of the app grid.
+    // The header is left to fill the card's animating width, matching the reference.
     Column(
         Modifier
-            .requiredHeight(CardExpandedHeight)
-            .align(Alignment.TopStart)
+            .clipToBounds()
+            .revealFromTop(CardExpandedHeight)
     ) {
         SearchHeader(
             query = query,
@@ -471,6 +460,30 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             }
         }
     }
+}
+
+/**
+ * Measures the content at [fullHeight] but reports only as much height as the incoming constraints
+ * allow, placing it flush to the top. The overflow is clipped by the caller.
+ *
+ * This exists because two attempts at expressing it declaratively both failed: the panel is taller
+ * than the card for most of the entrance, and neither Surface's internal Box nor an explicit
+ * Box(contentAlignment = TopStart) with align(TopStart) actually top-anchored the oversized child —
+ * the animation kept opening on the middle of the app grid, offset by exactly (card - panel) / 2.
+ * Doing the measure and the placement by hand leaves nothing to infer: place(0, 0) is the contract.
+ */
+private fun Modifier.revealFromTop(fullHeight: Dp) = layout { measurable, constraints ->
+    val fullPx = fullHeight.roundToPx()
+    val placeable = measurable.measure(
+        constraints.copy(minHeight = fullPx, maxHeight = fullPx)
+    )
+    val visiblePx = if (constraints.hasBoundedHeight) {
+        constraints.maxHeight.coerceAtMost(fullPx)
+    } else {
+        fullPx
+    }
+    layout(placeable.width, visiblePx) {
+        placeable.place(0, 0)
     }
 }
 
