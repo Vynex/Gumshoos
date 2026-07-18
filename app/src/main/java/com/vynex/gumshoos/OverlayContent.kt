@@ -114,10 +114,11 @@ private val DividerHeight = 1.dp
 // "Search using" row, shown only while a query is present. The spacing is stated rather than left
 // as slack at the bottom of a Column: relying on leftover space gave 13dp under the icons, which
 // against a 20dp corner radius read as glued to the edge.
-private val ProviderIconSize = 26.dp
+private val ProviderIconSize = 22.dp
 private val ProviderRowTopSpacing = 14.dp
 private val ProviderLabelHeight = 14.dp
 private val ProviderLabelGap = 10.dp
+private val ProviderIconSpacing = 30.dp
 private val ProviderRowBottomSpacing = 22.dp
 
 private val SearchUsingHeight =
@@ -781,7 +782,7 @@ private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
         Spacer(Modifier.height(ProviderLabelGap))
         Row(
             modifier = Modifier.padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(ProviderIconSpacing),
         ) {
             SearchProviders.enabled.forEach { provider ->
                 // Image, not Icon: these are full-colour brand marks and Icon would tint them flat.

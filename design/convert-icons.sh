@@ -16,8 +16,10 @@ trap 'rm -rf "$TMP"' EXIT
 shopt -s nullglob
 for svg in "$SRC"/*.svg; do
   name="$(basename "${svg%.svg}")"
-  python3 bake-gradient-transforms.py "$svg" "$TMP/$name.baked.svg"
-  npx --yes svgo@latest --config svgo.config.mjs -i "$TMP/$name.baked.svg" -o "$TMP/$name.svg" >/dev/null
+  # svgo first: it flattens shapes to paths and lifts style="" into attributes, which is what
+  # prepare-svg.py then needs to see in order to normalise colours and fills.
+  npx --yes svgo@latest --config svgo.config.mjs -i "$svg" -o "$TMP/$name.svgo.svg" >/dev/null
+  python3 prepare-svg.py "$TMP/$name.svgo.svg" "$TMP/$name.svg"
   npx --yes svg2vectordrawable@latest -i "$TMP/$name.svg" -o "$OUT/$name.xml" >/dev/null
   echo "  $svg -> $OUT/$name.xml"
 done

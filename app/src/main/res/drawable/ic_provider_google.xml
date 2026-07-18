@@ -14,7 +14,7 @@
                 android:type="radial"
                 android:centerX="66.71"
                 android:centerY="292.6"
-                android:gradientRadius="209.7">
+                android:gradientRadius="209.69">
                 <item
                     android:color="#FFFFCF09"
                     android:offset=".368"/>
