@@ -109,9 +109,21 @@ private val GridVerticalPadding = 10.dp
 private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
 
-/** "Search using" label plus its icon row, shown only while a query is present. */
-private val SearchUsingHeight = 78.dp
+/** Hairline rules between sections. Counted in the height maths so the card can't clip them. */
+private val DividerHeight = 1.dp
+
+// "Search using" row, shown only while a query is present. The spacing is stated rather than left
+// as slack at the bottom of a Column: relying on leftover space gave 13dp under the icons, which
+// against a 20dp corner radius read as glued to the edge.
 private val ProviderIconSize = 26.dp
+private val ProviderRowTopSpacing = 14.dp
+private val ProviderLabelHeight = 14.dp
+private val ProviderLabelGap = 10.dp
+private val ProviderRowBottomSpacing = 22.dp
+
+private val SearchUsingHeight =
+    DividerHeight + ProviderRowTopSpacing + ProviderLabelHeight +
+        ProviderLabelGap + ProviderIconSize + ProviderRowBottomSpacing
 
 private const val GridColumns = 5
 private const val GridRows = 2
@@ -122,7 +134,8 @@ private val GridContentHeight =
     (GridVerticalPadding * 2) + (CellHeight * GridRows) + GridRowSpacing
 
 /** Derived rather than hardcoded so changing a row height can't desync the animation target. */
-private val CardExpandedHeight = HeaderHeight + TabRowHeight + GridContentHeight
+private val CardExpandedHeight =
+    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight
 
 /**
  * The panel is always measured at this height and revealed from the top, so it must cover the
@@ -130,7 +143,7 @@ private val CardExpandedHeight = HeaderHeight + TabRowHeight + GridContentHeight
  * use a subset. The slack is clipped by whatever height the card currently animates to.
  */
 private val PanelMaxHeight =
-    HeaderHeight + TabRowHeight + GridContentHeight + SearchUsingHeight
+    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight + SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -756,15 +769,17 @@ private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
             .fillMaxWidth(),
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(ProviderRowTopSpacing))
         Text(
             modifier = Modifier.padding(horizontal = 16.dp),
             text = "Search using",
             fontSize = 11.sp,
+            // Pinned so the row's height maths stays exact across font-scale settings.
+            lineHeight = 14.sp,
             letterSpacing = 0.5.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(ProviderLabelGap))
         Row(
             modifier = Modifier.padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
