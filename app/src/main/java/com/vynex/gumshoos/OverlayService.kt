@@ -60,8 +60,8 @@ class OverlayService :
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "gumshoos_overlay"
 
-        /** Must be >= the exit animation in [OverlayContent] or the view vanishes mid-fade. */
-        const val EXIT_ANIMATION_MILLIS = 120L
+        /** Derived from the content's own exit timing so the two can't drift apart. */
+        const val EXIT_ANIMATION_MILLIS = TotalExitMillis + 20L
 
         fun intent(context: Context, action: String, source: String? = null): Intent =
             Intent(context, OverlayService::class.java).apply {
@@ -105,6 +105,7 @@ class OverlayService :
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
 
+        GumshoosConfig.load(this)
         createNotificationChannel()
         buildOverlayView()
 

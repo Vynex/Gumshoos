@@ -1,11 +1,12 @@
 package com.vynex.gumshoos
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,11 +19,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,10 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -63,38 +60,91 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 
-/** Tuned against the Nova reference; both are easy to adjust. */
+// --- Geometry. Tuned against the Nova reference; all cheap to adjust. --------------------------
+
 private val CardCornerRadius = 24.dp
 private val CardSideMargin = 12.dp
-private val CardHeight = 340.dp
+private val HeaderHeight = 58.dp
+private val TabRowHeight = 48.dp
+private val CellHeight = 92.dp
+private val GridVerticalPadding = 10.dp
+private val GridRowSpacing = 8.dp
+
+private const val GridColumns = 5
+private const val GridRows = 2
+const val MaxGridEntries = GridColumns * GridRows
+
+/** Derived rather than hardcoded so changing a row height can't desync the animation target. */
+private val CardExpandedHeight =
+    HeaderHeight + TabRowHeight + (GridVerticalPadding * 2) +
+        (CellHeight * GridRows) + GridRowSpacing
+
+/** The collapsed state is exactly the header — the search bar the animation starts from. */
+private val CardCollapsedHeight = HeaderHeight
+
+/** Starting width of the entrance, as a fraction of the settled width. */
+private const val CollapsedWidthFraction = 0.88f
+
+private const val CardSurfaceAlpha = 0.94f
+
+// --- Timing ------------------------------------------------------------------------------------
+
+private const val EnterWidthMillis = 130
+private const val EnterAlphaMillis = 110
+private const val EnterHeightMillis = 200
+private const val EnterHeightDelayMillis = 70
+
+private const val ExitWidthMillis = 120
+private const val ExitAlphaMillis = 140
+private const val ExitHeightMillis = 150
+
+/** Longest exit leg; [OverlayService.EXIT_ANIMATION_MILLIS] must not undercut this. */
+const val TotalExitMillis = 140
 
 @Composable
 fun OverlayContent(
     visible: Boolean,
     onDismiss: () -> Unit,
 ) {
-    // Forced dark: the reference is a dark, wallpaper-tinted card regardless of system theme.
-    // dynamicColor pulls the tint from the wallpaper, which is where the olive comes from.
     GumshoosTheme(darkTheme = true, dynamicColor = true) {
-        val cardAlpha by animateFloatAsState(
-            targetValue = if (visible) 1f else 0f,
-            animationSpec = tween(if (visible) 70 else 90, easing = LinearOutSlowInEasing),
-            label = "cardAlpha",
-        )
-        val cardScale by animateFloatAsState(
-            targetValue = if (visible) 1f else 0.96f,
-            animationSpec = spring(
-                dampingRatio = 1f,
-                stiffness = Spring.StiffnessMedium,
-                visibilityThreshold = 0.001f,
-            ),
-            label = "cardScale",
-        )
+        val transition = updateTransition(targetState = visible, label = "overlay")
+
+        // Three staged legs, matching the reference: the bar widens and fades in first, then the
+        // card grows downward. Height lags slightly so the widening reads as a separate beat.
+        val widthFraction by transition.animateFloat(
+            transitionSpec = {
+                if (targetState) tween(EnterWidthMillis, easing = LinearOutSlowInEasing)
+                else tween(ExitWidthMillis, easing = FastOutLinearInEasing)
+            },
+            label = "width",
+        ) { shown -> if (shown) 1f else CollapsedWidthFraction }
+
+        val cardAlpha by transition.animateFloat(
+            transitionSpec = {
+                if (targetState) tween(EnterAlphaMillis, easing = LinearOutSlowInEasing)
+                else tween(ExitAlphaMillis, easing = FastOutLinearInEasing)
+            },
+            label = "alpha",
+        ) { shown -> if (shown) 1f else 0f }
+
+        val cardHeight by transition.animateDp(
+            transitionSpec = {
+                if (targetState) {
+                    tween(
+                        durationMillis = EnterHeightMillis,
+                        delayMillis = EnterHeightDelayMillis,
+                        easing = LinearOutSlowInEasing,
+                    )
+                } else {
+                    tween(ExitHeightMillis, easing = FastOutLinearInEasing)
+                }
+            },
+            label = "height",
+        ) { shown -> if (shown) CardExpandedHeight else CardCollapsedHeight }
 
         BackHandler(enabled = visible) { onDismiss() }
 
-        // No scrim. Nova leaves the wallpaper at full brightness and the card carries the whole
-        // separation — dimming immediately reads as a different, heavier app.
+        // No scrim: the reference leaves the wallpaper at full brightness.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -105,24 +155,30 @@ fun OverlayContent(
         ) {
             Surface(
                 shape = RoundedCornerShape(CardCornerRadius),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = CardSurfaceAlpha),
                 shadowElevation = 12.dp,
                 modifier = Modifier
-                    // No statusBarsPadding: the window no longer uses FLAG_LAYOUT_NO_LIMITS, so the
-                    // system lays it out inside the bar insets already. Overlay windows don't
-                    // reliably receive inset dispatches, so relying on them would be fragile.
+                    .align(Alignment.TopCenter)
                     .padding(horizontal = CardSideMargin, vertical = 8.dp)
-                    .fillMaxWidth()
-                    .height(CardHeight)
+                    .fillMaxWidth(widthFraction)
+                    .height(cardHeight)
                     .alpha(cardAlpha)
-                    .scale(cardScale)
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
                     ) { /* swallow taps so they don't reach the dismiss layer */ },
             ) {
-                SearchPanel(visible = visible, onDismiss = onDismiss)
+                // requiredHeight ignores the shrinking constraint, so the content stays laid out at
+                // full size and Surface's shape clip reveals it. That's what makes the grid appear
+                // already-rendered as the card grows, rather than fading in behind it.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .requiredHeight(CardExpandedHeight),
+                    contentAlignment = Alignment.TopStart,
+                ) {
+                    SearchPanel(visible = visible, onDismiss = onDismiss)
+                }
             }
         }
     }
@@ -156,8 +212,9 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit) {
 
         TabRow(
             selectedTabIndex = tab.ordinal,
-            containerColor = Color.Transparent,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.height(TabRowHeight),
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
                     modifier = Modifier.tabIndicatorOffset(positions[tab.ordinal]),
@@ -190,12 +247,20 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit) {
 
         AppGrid(
             entries = results,
+            emptyMessage = emptyMessageFor(tab),
             onLaunch = { entry ->
                 AppRepository.launch(context, entry)
                 onDismiss()
             },
         )
     }
+}
+
+private fun emptyMessageFor(tab: SearchTab): String = when {
+    !AppRepository.loaded -> "Loading apps…"
+    tab == SearchTab.NEW_UPDATED ->
+        "Nothing installed or updated in the last ${GumshoosConfig.newUpdatedWindowHours}h"
+    else -> "No matches"
 }
 
 @Composable
@@ -208,7 +273,7 @@ private fun SearchHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .height(HeaderHeight)
             .padding(horizontal = 16.dp),
     ) {
         Icon(
@@ -254,50 +319,69 @@ private fun SearchHeader(
     }
 }
 
+/**
+ * Fixed two rows, never scrollable. A fixed row count is also what lets the card have a known
+ * expanded height, which the reveal animation depends on.
+ */
 @Composable
 private fun AppGrid(
     entries: List<AppEntry>,
+    emptyMessage: String,
     onLaunch: (AppEntry) -> Unit,
 ) {
     if (entries.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = if (AppRepository.loaded) "No matches" else "Loading apps…",
+                text = emptyMessage,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
             )
         }
         return
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 84.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = 8.dp,
-            vertical = 12.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize(),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = GridVerticalPadding),
+        verticalArrangement = Arrangement.spacedBy(GridRowSpacing),
     ) {
-        items(entries, key = { it.component.flattenToShortString() }) { entry ->
-            AppCell(entry = entry, onClick = { onLaunch(entry) })
+        entries.take(MaxGridEntries).chunked(GridColumns).forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { entry ->
+                    AppCell(
+                        entry = entry,
+                        onClick = { onLaunch(entry) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // Keep a short final row left-aligned instead of stretching its cells.
+                repeat(GridColumns - row.size) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AppCell(entry: AppEntry, onClick: () -> Unit) {
+private fun AppCell(
+    entry: AppEntry,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
+            .height(CellHeight)
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick,
             )
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp, horizontal = 2.dp),
     ) {
         Image(
             bitmap = entry.icon,

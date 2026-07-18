@@ -17,6 +17,8 @@ data class AppEntry(
     val label: String,
     val component: ComponentName,
     val icon: ImageBitmap,
+    /** First install. Distinct from [lastUpdateTime], which also moves on every update. */
+    val firstInstallTime: Long,
     val lastUpdateTime: Long,
 )
 
@@ -45,14 +47,15 @@ object AppRepository {
         val entries = resolved.mapNotNull { info ->
             runCatching {
                 val activity = info.activityInfo
-                val component = ComponentName(activity.packageName, activity.name)
+                val packageInfo = runCatching {
+                    pm.getPackageInfo(activity.packageName, 0)
+                }.getOrNull()
                 AppEntry(
                     label = info.loadLabel(pm).toString(),
-                    component = component,
+                    component = ComponentName(activity.packageName, activity.name),
                     icon = info.loadIcon(pm).toBitmap(iconPx, iconPx).asImageBitmap(),
-                    lastUpdateTime = runCatching {
-                        pm.getPackageInfo(activity.packageName, 0).lastUpdateTime
-                    }.getOrDefault(0L),
+                    firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
+                    lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
                 )
             }.getOrNull()
         }.sortedBy { it.label.lowercase() }
@@ -69,10 +72,24 @@ object AppRepository {
             // TODO: both need UsageStatsManager and the PACKAGE_USAGE_STATS permission, which is a
             // separate user grant. Alphabetical until that's wired up.
             SearchTab.FREQUENT, SearchTab.RECENT -> apps
-            SearchTab.NEW_UPDATED -> apps.sortedByDescending { it.lastUpdateTime }
+            SearchTab.NEW_UPDATED -> recentlyInstalledOrUpdated()
         }
         if (query.isBlank()) return base
         return base.filter { it.label.contains(query.trim(), ignoreCase = true) }
+    }
+
+    /**
+     * Apps installed or updated inside the configured window.
+     *
+     * lastUpdateTime is the right field for both halves of "new/updated": a fresh install sets it
+     * equal to firstInstallTime, so this catches new apps and updated ones with one comparison.
+     */
+    private fun recentlyInstalledOrUpdated(): List<AppEntry> {
+        val cutoff = System.currentTimeMillis() -
+            GumshoosConfig.newUpdatedWindowHours * 60 * 60 * 1000
+        return apps
+            .filter { it.lastUpdateTime >= cutoff }
+            .sortedByDescending { it.lastUpdateTime }
     }
 
     fun launch(context: Context, entry: AppEntry) {
