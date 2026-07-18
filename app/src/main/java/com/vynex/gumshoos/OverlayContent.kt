@@ -98,6 +98,9 @@ private val CardExpandedHeight =
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
 
+/** Half the collapsed height, so phase one is a true pill rather than a rounded rectangle. */
+private val PillCornerRadius = HeaderHeight / 2
+
 /** Measured 793/1037 at the first frame the card is detectable. */
 private const val CollapsedWidthFraction = 0.765f
 
@@ -110,11 +113,14 @@ private const val CardSurfaceAlpha = 0.94f
 
 private const val EnterTotalMillis = 355
 
+// The two phases are strictly sequential: the pill finishes widening before the card begins to
+// grow downward. The capture actually overlapped them slightly (height began at 25.9% while width
+// ran to 33.6%), but a clean handoff reads better, so height now starts exactly where width ends.
 private const val OpacityStartPct = 0.000f
 private const val OpacityEndPct = 0.217f
-private const val WidthStartPct = 0.016f
-private const val WidthEndPct = 0.336f
-private const val HeightStartPct = 0.259f
+private const val WidthStartPct = 0.000f
+private const val WidthEndPct = 0.340f
+private const val HeightStartPct = 0.340f
 private const val HeightEndPct = 1.000f
 
 private fun durationOf(startPct: Float, endPct: Float) =
@@ -127,8 +133,9 @@ private fun delayOf(startPct: Float) = (startPct * EnterTotalMillis).roundToInt(
  * proportionally, toward a pivot inside the header rather than the card's centre — the card falls
  * back into the search bar it grew out of.
  */
-private const val ExitMillis = 70
-private const val ExitAlphaMillis = 62
+// Measured at 106ms in the capture; deliberately slower than that by preference.
+private const val ExitMillis = 150
+private const val ExitAlphaMillis = 135
 private const val ExitEndScale = 0.13f
 
 /** Pivot sits ~8.5% down the card, i.e. mid-header, so the top edge drifts down as it collapses. */
@@ -215,6 +222,25 @@ fun OverlayContent(
             label = "height",
         ) { shown -> if (shown) CardExpandedHeight else CardExpandedHeight * ExitEndScale }
 
+        // Stays a pill for the whole horizontal phase, then relaxes into the card's radius as it
+        // grows. Morphing it earlier would blur the boundary between the two phases.
+        val cornerRadius by transition.animateDp(
+            transitionSpec = {
+                if (targetState) {
+                    keyframes {
+                        durationMillis =
+                            delayOf(HeightStartPct) + durationOf(HeightStartPct, HeightEndPct)
+                        PillCornerRadius at 0 using SmoothStepEasing
+                        PillCornerRadius at delayOf(HeightStartPct) using SmoothStepEasing
+                        CardCornerRadius at durationMillis
+                    }
+                } else {
+                    tween(ExitMillis, easing = ExitEasing)
+                }
+            },
+            label = "corner",
+        ) { shown -> if (shown) CardCornerRadius else PillCornerRadius }
+
         // Only meaningful on exit: the collapse pivots inside the header, so the top edge falls.
         // Snapped to zero on enter, where the card is strictly top-anchored.
         val topDrift by transition.animateDp(
@@ -238,7 +264,7 @@ fun OverlayContent(
             val settledCardWidth = maxWidth - (CardSideMargin * 2)
 
             Surface(
-                shape = RoundedCornerShape(CardCornerRadius),
+                shape = RoundedCornerShape(cornerRadius),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = CardSurfaceAlpha),
                 shadowElevation = 12.dp,
                 modifier = Modifier

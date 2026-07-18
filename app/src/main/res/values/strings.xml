@@ -1,5 +1,10 @@
 <resources>
     <string name="app_name">Gumshoos</string>
     <string name="widget_search_hint">Search</string>
+
+    <string name="widget_bar_label">Gumshoos search bar</string>
     <string name="widget_description">Instant search bar for your home screen</string>
+
+    <string name="widget_small_label">Gumshoos icon</string>
+    <string name="widget_small_description">Single-cell button that opens instant search</string>
 </resources>

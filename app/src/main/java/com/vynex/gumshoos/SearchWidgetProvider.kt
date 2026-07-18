@@ -9,19 +9,27 @@ import android.widget.RemoteViews
 /**
  * The fast invoke path.
  *
- * A tap here fires a PendingIntent straight into our already-running service — no activity launch,
- * no window creation, no launcher app-open transition. Plain RemoteViews rather than Glance: the
- * widget is a static tap target, and Glance would add a moving part to a latency experiment
- * without buying anything.
+ * A tap fires a PendingIntent straight into our already-running service — no activity launch, no
+ * window creation, no launcher app-open transition. Plain RemoteViews rather than Glance: these are
+ * static tap targets and Glance would add a moving part to the latency-critical path for nothing.
  */
-class SearchWidgetProvider : AppWidgetProvider() {
+abstract class SearchWidgetProviderBase : AppWidgetProvider() {
+
+    protected abstract val layoutRes: Int
+
+    /** Must be distinct per provider: PendingIntent equality ignores extras, so sharing a code
+     *  would let one widget's intent overwrite the other's. */
+    protected abstract val requestCode: Int
+
+    /** Reported back in the latency log so the two widget sizes can be told apart. */
+    protected abstract val sourceTag: String
 
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        val views = RemoteViews(context.packageName, R.layout.widget_search_bar).apply {
+        val views = RemoteViews(context.packageName, layoutRes).apply {
             setOnClickPendingIntent(R.id.widget_root, showPendingIntent(context))
         }
         appWidgetIds.forEach { appWidgetManager.updateAppWidget(it, views) }
@@ -34,12 +42,22 @@ class SearchWidgetProvider : AppWidgetProvider() {
     private fun showPendingIntent(context: Context): PendingIntent =
         PendingIntent.getForegroundService(
             context,
-            REQUEST_CODE,
-            OverlayService.intent(context, OverlayService.ACTION_SHOW, source = "widget"),
+            requestCode,
+            OverlayService.intent(context, OverlayService.ACTION_SHOW, source = sourceTag),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+}
 
-    private companion object {
-        const val REQUEST_CODE = 100
-    }
+/** Full-width search bar, closest to the Nova home screen widget. */
+class SearchWidgetProvider : SearchWidgetProviderBase() {
+    override val layoutRes = R.layout.widget_search_bar
+    override val requestCode = 100
+    override val sourceTag = "widget-bar"
+}
+
+/** Single cell, for people who'd rather not give up a whole row to a search bar. */
+class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
+    override val layoutRes = R.layout.widget_search_icon
+    override val requestCode = 101
+    override val sourceTag = "widget-1x1"
 }
