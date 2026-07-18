@@ -36,7 +36,7 @@ object SearchProviders {
     val playStore = SearchProvider(
         id = "play_store",
         label = "Play Store",
-        icon = R.drawable.ic_play_store,
+        icon = R.drawable.ic_provider_play_store,
         appUri = { "market://search?q=$it&c=apps" },
         webUri = { "https://play.google.com/store/search?q=$it&c=apps" },
     )

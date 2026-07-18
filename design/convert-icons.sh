@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Converts the source SVGs in design/icons/ into Android vector drawables.
 #
-# Two stages, and the first is not optional. svg2vectordrawable only understands <path>: any
+# Three stages, and the first two are not optional. svg2vectordrawable only understands <path>: any
 # <circle>, <rect>, <ellipse>, <polygon> or <line> is dropped silently, so artwork disappears with
 # no error. svgo flattens those to paths first — with convertArcs enabled, which is off by default
 # and is what covers <circle> and <ellipse>.
@@ -16,7 +16,8 @@ trap 'rm -rf "$TMP"' EXIT
 shopt -s nullglob
 for svg in "$SRC"/*.svg; do
   name="$(basename "${svg%.svg}")"
-  npx --yes svgo@latest --config svgo.config.mjs -i "$svg" -o "$TMP/$name.svg" >/dev/null
+  python3 bake-gradient-transforms.py "$svg" "$TMP/$name.baked.svg"
+  npx --yes svgo@latest --config svgo.config.mjs -i "$TMP/$name.baked.svg" -o "$TMP/$name.svg" >/dev/null
   npx --yes svg2vectordrawable@latest -i "$TMP/$name.svg" -o "$OUT/$name.xml" >/dev/null
   echo "  $svg -> $OUT/$name.xml"
 done

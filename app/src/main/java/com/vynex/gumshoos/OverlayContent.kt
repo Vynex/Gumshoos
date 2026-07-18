@@ -74,7 +74,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -785,10 +784,10 @@ private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             SearchProviders.enabled.forEach { provider ->
-                Icon(
+                // Image, not Icon: these are full-colour brand marks and Icon would tint them flat.
+                Image(
                     painter = painterResource(provider.icon),
                     contentDescription = "Search ${provider.label}",
-                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .size(ProviderIconSize)
                         .clickable(
@@ -871,21 +870,28 @@ private fun SearchHeader(
         // sitting there dimmed and inert. Once you type, clearing is by far the more useful action,
         // and the "Search using" row below covers handing the query off to the store.
         val hasQuery = query.isNotBlank()
-        Icon(
-            painter = if (hasQuery) {
-                rememberVectorPainter(Icons.Default.Close)
-            } else {
-                painterResource(R.drawable.ic_play_store)
-            },
-            contentDescription = if (hasQuery) "Clear search" else "Open the Play Store",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .size(22.dp)
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                ) { if (hasQuery) onClear() else onPlayStore() },
-        )
+        val actionModifier = Modifier
+            .size(22.dp)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+            ) { if (hasQuery) onClear() else onPlayStore() }
+
+        if (hasQuery) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Clear search",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = actionModifier,
+            )
+        } else {
+            // Untinted, so the store's own colours show through.
+            Image(
+                painter = painterResource(SearchProviders.playStore.icon),
+                contentDescription = "Open the Play Store",
+                modifier = actionModifier,
+            )
+        }
     }
 }
 
