@@ -351,6 +351,17 @@ fun OverlayContent(
         val tabHeight = TabRowHeight * (1f - searchProgress)
         val providerRowHeight = SearchUsingHeight * searchProgress
 
+        // Collapses away when a query matches no apps at all, so the card goes straight from the
+        // search bar to whatever did match. The divider belongs to this block rather than sitting
+        // above it, or it would be left stranded when the grid disappears.
+        var hasAppResults by remember { mutableStateOf(true) }
+        val gridSectionHeight by animateDpAsState(
+            targetValue = if (hasAppResults) DividerHeight + GridContentHeight else 0.dp,
+            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            label = "gridHeight",
+        )
+        val gridCollapse = (DividerHeight + GridContentHeight) - gridSectionHeight
+
         // Grows and shrinks with the number of matching contacts, so the card stays tight to its
         // content rather than reserving space for rows that aren't there.
         var contactRows by remember { mutableStateOf(0) }
@@ -364,7 +375,8 @@ fun OverlayContent(
             label = "contactsHeight",
         )
 
-        val heightDelta = providerRowHeight + contactsHeight - (TabRowHeight - tabHeight)
+        val heightDelta =
+            providerRowHeight + contactsHeight - (TabRowHeight - tabHeight) - gridCollapse
 
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
@@ -410,6 +422,8 @@ fun OverlayContent(
                     providerRowHeight = providerRowHeight,
                     contactsHeight = contactsHeight,
                     onContactRowsChange = { contactRows = it },
+                    gridSectionHeight = gridSectionHeight,
+                    onHasAppResultsChange = { hasAppResults = it },
                     onSearchingChange = { searching = it },
                 )
             }
@@ -428,6 +442,8 @@ private fun SearchPanel(
     providerRowHeight: Dp,
     contactsHeight: Dp,
     onContactRowsChange: (Int) -> Unit,
+    gridSectionHeight: Dp,
+    onHasAppResultsChange: (Boolean) -> Unit,
     onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -561,13 +577,26 @@ private fun SearchPanel(
 
         }
 
+        val appResults = if (query.isBlank()) emptyList() else AppRepository.search(query, tab)
+        // Browsing always shows the grid — an empty tab still has something to say, like NEW/UPDATED
+        // reporting nothing installed recently.
+        LaunchedEffect(query, appResults.size) {
+            onHasAppResultsChange(query.isBlank() || appResults.isNotEmpty())
+        }
+
+        Box(
+            Modifier
+                .height(gridSectionHeight)
+                .clipToBounds(),
+        ) {
+        Column(Modifier.requiredHeight(DividerHeight + GridContentHeight)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
         if (query.isNotBlank()) {
             // One ranked list across every app. Keeping the pager here would let you swipe between
             // three tabs that no longer differ, with no tab row to say which one you were on.
             AppGrid(
-                entries = AppRepository.search(query, tab),
+                entries = appResults,
                 emptyMessage = "No matches",
                 onLaunch = launch,
                 onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
@@ -593,6 +622,8 @@ private fun SearchPanel(
                 query = query,
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
+        }
+        }
         }
         }
 
