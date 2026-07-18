@@ -16,6 +16,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Optional: without it the contacts section simply doesn't appear. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!--
+      Required to trigger the system uninstall dialog when targeting API 28+. Without it the intent
+      is simply refused. Normal permission, granted at install, and it only lets us *ask* — the
+      system still shows its own confirmation.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Exchange rates only: fetched once a day at warm time, cached to disk, never on the show path. -->
     <uses-permission android:name="android.permission.INTERNET" />
 

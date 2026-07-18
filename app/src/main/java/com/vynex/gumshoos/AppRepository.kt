@@ -153,13 +153,24 @@ object AppRepository {
             .sortedByDescending { it.lastUpdateTime }
     }
 
-    /** System uninstall confirmation. Silently declined by the system for protected system apps. */
+    /**
+     * Asks the system to uninstall an app; the system shows its own confirmation.
+     *
+     * Needs REQUEST_DELETE_PACKAGES when targeting API 28 or later, or the intent is refused.
+     * System apps cannot be uninstalled at all — the dialog will offer to disable them instead, or
+     * decline outright.
+     *
+     * The outcome is recorded rather than swallowed: a silently discarded failure here is exactly
+     * how the missing permission went unnoticed.
+     */
     fun requestUninstall(context: Context, entry: AppEntry) {
         val intent = Intent(Intent.ACTION_DELETE).apply {
             data = "package:${entry.packageName}".toUri()
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         runCatching { context.startActivity(intent) }
+            .onSuccess { EventLog.record("uninstall requested ${entry.packageName}") }
+            .onFailure { EventLog.record("uninstall FAILED ${it.javaClass.simpleName}") }
     }
 
     fun openAppInfo(context: Context, entry: AppEntry) {
