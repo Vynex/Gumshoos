@@ -4,13 +4,16 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.OnBackPressedDispatcher
@@ -19,8 +22,10 @@ import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.AbstractComposeView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelStore
@@ -63,6 +68,9 @@ class OverlayService :
         /** Derived from the content's own exit timing so the two can't drift apart. */
         const val EXIT_ANIMATION_MILLIS = TotalExitMillis + 20L
 
+        /** Focus changes within this window of a show are ignored — see onWindowFocusChanged. */
+        private const val FOCUS_GRACE_MILLIS = 500L
+
         fun intent(context: Context, action: String, source: String? = null): Intent =
             Intent(context, OverlayService::class.java).apply {
                 this.action = action
@@ -71,7 +79,7 @@ class OverlayService :
     }
 
     private lateinit var windowManager: WindowManager
-    private lateinit var composeView: ComposeView
+    private lateinit var composeView: OverlayRootView
     private lateinit var layoutParams: WindowManager.LayoutParams
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -94,13 +102,42 @@ class OverlayService :
     /** True until the first successful show, so we can tell warm shows from the very first one. */
     private var neverShown = true
 
+    /** When the current show began, for the focus-change grace period. */
+    private var shownAt = 0L
+
     private var pendingShowStart = 0L
     private var pendingShowSource = "unknown"
     private var hideRunnable: Runnable? = null
 
+    /**
+     * Screen-off is a reliable signal; ACTION_CLOSE_SYSTEM_DIALOGS is the traditional (and only
+     * public) hint that Home or Recents was pressed, since neither is delivered as a key event.
+     * Its behaviour has been tightened over recent releases, so onWindowFocusChanged backs it up.
+     */
+    private val systemEventReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF,
+                Intent.ACTION_CLOSE_SYSTEM_DIALOGS,
+                -> hide()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        @Suppress("DEPRECATION")
+        ContextCompat.registerReceiver(
+            this,
+            systemEventReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+            },
+            ContextCompat.RECEIVER_EXPORTED,
+        )
 
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
@@ -150,18 +187,49 @@ class OverlayService :
 
     // ---- window lifecycle -------------------------------------------------------------------
 
+    /**
+     * ComposeView that actually feeds the back dispatcher and notices losing focus.
+     *
+     * Neither happens for free in a service-hosted window. We own an OnBackPressedDispatcher and set
+     * it as the ViewTree owner, but nothing was ever invoking it — so BackHandler could never fire,
+     * which is why Back never closed the overlay.
+     */
+    private inner class OverlayRootView(context: Context) : AbstractComposeView(context) {
+
+        @Composable
+        override fun Content() {
+            OverlayContent(
+                visible = overlayVisible,
+                onDismiss = { hide() },
+            )
+        }
+
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP) onBackPressedDispatcher.onBackPressed()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
+
+        /**
+         * Home and Recents never reach an app as key events, but they do pull focus away, so this
+         * is the closest thing to a signal we get. The grace period guards the severe failure mode:
+         * if the IME taking focus were to count, the overlay would slam shut the instant it opened.
+         */
+        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+            super.onWindowFocusChanged(hasWindowFocus)
+            val settled = SystemClock.uptimeMillis() - shownAt > FOCUS_GRACE_MILLIS
+            if (!hasWindowFocus && overlayVisible && settled) hide()
+        }
+    }
+
     private fun buildOverlayView() {
-        composeView = ComposeView(this).apply {
+        composeView = OverlayRootView(this).apply {
             setViewTreeLifecycleOwner(this@OverlayService)
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
             setViewTreeViewModelStoreOwner(this@OverlayService)
             setViewTreeOnBackPressedDispatcherOwner(this@OverlayService)
-            setContent {
-                OverlayContent(
-                    visible = overlayVisible,
-                    onDismiss = { hide() },
-                )
-            }
         }
     }
 
@@ -210,6 +278,7 @@ class OverlayService :
         pendingShowStart = entryMillis
         pendingShowSource = source
 
+        shownAt = SystemClock.uptimeMillis()
         composeView.visibility = View.VISIBLE
         layoutParams.flags = SHOWN_FLAGS
         windowManager.updateViewLayout(composeView, layoutParams)
@@ -329,6 +398,7 @@ class OverlayService :
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(systemEventReceiver) }
         hideRunnable?.let { composeView.removeCallbacks(it) }
         if (attached) {
             try {

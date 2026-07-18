@@ -1,6 +1,7 @@
 package com.vynex.gumshoos
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -63,6 +64,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -92,7 +95,8 @@ private val CardSideMargin = 8.dp
 private val CardTopMargin = 12.dp
 private val HeaderHeight = 45.dp
 private val TabRowHeight = 48.dp
-private val CellHeight = 88.dp
+private val CellHeight = 84.dp
+private val AppIconSize = 42.dp
 private val GridVerticalPadding = 10.dp
 private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
@@ -130,16 +134,16 @@ private val ContextMenuWidth = 190.dp
 // EnterTotalMillis carries the absolute scale, so if the capture's animator duration scale was not
 // 10x, changing that one number rescales the whole sequence coherently.
 
-private const val EnterTotalMillis = 355
+private const val EnterTotalMillis = 400
 
 // The two phases are strictly sequential: the pill finishes widening before the card begins to
 // grow downward. The capture actually overlapped them slightly (height began at 25.9% while width
 // ran to 33.6%), but a clean handoff reads better, so height now starts exactly where width ends.
 private const val OpacityStartPct = 0.000f
-private const val OpacityEndPct = 0.217f
+private const val OpacityEndPct = 0.200f
 private const val WidthStartPct = 0.000f
-private const val WidthEndPct = 0.340f
-private const val HeightStartPct = 0.340f
+private const val WidthEndPct = 0.400f
+private const val HeightStartPct = 0.400f
 private const val HeightEndPct = 1.000f
 
 private fun durationOf(startPct: Float, endPct: Float) =
@@ -269,7 +273,14 @@ fun OverlayContent(
             label = "topDrift",
         ) { shown -> if (shown) 0.dp else ExitTopDrift }
 
-        BackHandler(enabled = visible) { onDismiss() }
+        // Hoisted so the card's outside-tap and Back can consult it: while a context menu is up,
+        // both dismiss the menu rather than the whole overlay.
+        var menuTarget by remember { mutableStateOf<Pair<AppEntry, Int>?>(null) }
+        LaunchedEffect(visible) { if (!visible) menuTarget = null }
+
+        BackHandler(enabled = visible) {
+            if (menuTarget != null) menuTarget = null else onDismiss()
+        }
 
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
@@ -278,7 +289,9 @@ fun OverlayContent(
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() },
-                ) { onDismiss() },
+                ) {
+                    if (menuTarget != null) menuTarget = null else onDismiss()
+                },
         ) {
             val settledCardWidth = maxWidth - (CardSideMargin * 2)
 
@@ -304,6 +317,8 @@ fun OverlayContent(
                     visible = visible,
                     onDismiss = onDismiss,
                     pinnedWidth = settledCardWidth,
+                    menuTarget = menuTarget,
+                    onMenuTargetChange = { menuTarget = it },
                 )
             }
         }
@@ -311,7 +326,13 @@ fun OverlayContent(
 }
 
 @Composable
-private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp) {
+private fun SearchPanel(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    pinnedWidth: Dp,
+    menuTarget: Pair<AppEntry, Int>?,
+    onMenuTargetChange: (Pair<AppEntry, Int>?) -> Unit,
+) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -333,13 +354,7 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
         }
     }
 
-    var menuTarget by remember { mutableStateOf<Pair<AppEntry, Int>?>(null) }
-
-    // Registered after the overlay's own handler, so it runs first: Back closes the menu before it
-    // closes the whole card.
-    BackHandler(enabled = menuTarget != null) { menuTarget = null }
-
-    LaunchedEffect(query) { menuTarget = null }
+    LaunchedEffect(query) { onMenuTargetChange(null) }
 
     val launch: (AppEntry) -> Unit = { entry ->
         AppRepository.launch(context, entry)
@@ -429,7 +444,7 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
                 entries = pageEntries,
                 emptyMessage = emptyMessageFor(pageTab),
                 onLaunch = launch,
-                onLongPress = { entry, index -> menuTarget = entry to index },
+                onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         }
@@ -440,9 +455,9 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
                     entry = entry,
                     cellIndex = index,
                     availableWidth = pinnedWidth,
-                    onDismiss = { menuTarget = null },
+                    onDismiss = { onMenuTargetChange(null) },
                     onAction = { action ->
-                        menuTarget = null
+                        onMenuTargetChange(null)
                         when (action) {
                             ContextAction.UNINSTALL -> {
                                 AppRepository.requestUninstall(context, entry)
@@ -505,6 +520,13 @@ private fun BoxScope.AppContextMenu(
     onDismiss: () -> Unit,
     onAction: (ContextAction) -> Unit,
 ) {
+    // Composed only while open, so a fresh Animatable starting at 0 gives the open animation
+    // without needing to keep the menu alive through a close transition.
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        appear.animateTo(1f, tween(140, easing = LinearOutSlowInEasing))
+    }
+
     val menuWidth = ContextMenuWidth.coerceAtMost(availableWidth - 16.dp)
     val column = cellIndex % GridColumns
     val cellWidth = (availableWidth - GridHorizontalPadding * 2) / GridColumns
@@ -517,7 +539,7 @@ private fun BoxScope.AppContextMenu(
     Box(
         modifier = Modifier
             .matchParentSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(Color.Black.copy(alpha = 0.4f * appear.value))
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
@@ -532,7 +554,17 @@ private fun BoxScope.AppContextMenu(
         modifier = Modifier
             .align(Alignment.CenterStart)
             .offset(x = x)
-            .width(menuWidth),
+            .width(menuWidth)
+            // Grows from the side the pressed cell is on, so it reads as coming out of the icon.
+            .graphicsLayer {
+                alpha = appear.value
+                scaleX = 0.88f + 0.12f * appear.value
+                scaleY = 0.88f + 0.12f * appear.value
+                transformOrigin = TransformOrigin(
+                    pivotFractionX = (column + 0.5f) / GridColumns,
+                    pivotFractionY = 0.5f,
+                )
+            },
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Row(
@@ -772,7 +804,7 @@ private fun AppCell(
         Image(
             bitmap = entry.icon,
             contentDescription = entry.label,
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(AppIconSize),
         )
         Spacer(Modifier.height(6.dp))
         Text(
