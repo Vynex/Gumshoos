@@ -79,6 +79,9 @@ object AnswerProviders {
         // for one named "to". Both fail, but ordering the specific pattern first says why.
         NumberBaseAnswerProvider,
         UnitAnswerProvider,
+        // After units so a unit token is never mistaken for a currency code, and before time so
+        // "$5 to CAD" isn't scanned for a place called CAD.
+        CurrencyAnswerProvider,
         // After units: "5 min to hours" is a duration, and only falls through to here if no zone
         // resolves — which it doesn't, since "min" is not a place.
         TimeAnswerProvider,

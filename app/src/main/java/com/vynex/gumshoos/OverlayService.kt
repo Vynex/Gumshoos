@@ -36,6 +36,8 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.vynex.gumshoos.answers.AnswerContextFactory
+import com.vynex.gumshoos.answers.CurrencyRates
 import kotlinx.coroutines.launch
 
 /**
@@ -153,6 +155,12 @@ class OverlayService :
                 .onFailure { Log.e(TAG, "contact action icons failed", it) }
             runCatching { SearchProviders.refreshAvailability(this@OverlayService) }
                 .onFailure { Log.e(TAG, "provider availability failed", it) }
+            runCatching {
+                CurrencyRates.refresh(
+                    this@OverlayService,
+                    AnswerContextFactory.forDevice(this@OverlayService).currencyCode,
+                )
+            }.onFailure { Log.e(TAG, "rate refresh failed", it) }
         }
     }
 

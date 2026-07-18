@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.answers.Answer
 import com.vynex.gumshoos.answers.AnswerContextFactory
 import com.vynex.gumshoos.answers.AnswerProviders
+import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlinx.coroutines.launch
 import kotlin.math.pow
@@ -656,7 +657,11 @@ private fun SearchPanel(
 
         // Locale defaults are read once: they decide metres-vs-feet and rupees-vs-dollars, and
         // they don't change while the overlay is open.
-        val answerContext = remember { AnswerContextFactory.forDevice(context) }
+        // Keyed on the rate table so a conversion starts working the moment rates arrive, rather
+        // than waiting for the overlay to be rebuilt.
+        val answerContext = remember(CurrencyRates.table) {
+            AnswerContextFactory.forDevice(context, CurrencyRates.table)
+        }
         val answer = remember(query) {
             if (query.isBlank()) null else AnswerProviders.answerFor(query, answerContext)
         }
