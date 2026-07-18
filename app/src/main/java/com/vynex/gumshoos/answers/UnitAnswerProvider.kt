@@ -1,6 +1,7 @@
 package com.vynex.gumshoos.answers
 
 import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * Unit conversion, with a default target chosen from the device's locale.
@@ -79,9 +80,14 @@ object UnitAnswerProvider : AnswerProvider {
         to: UnitDef,
         context: AnswerContext,
     ): Answer {
-        val converted = to.fromBase(from.toBase(value))
-        val headline = "${AnswerFormat.number(converted, context.locale)} ${to.symbol}"
+        val base = from.toBase(value)
+        val headline = if (to.dimension == Dimension.DURATION) {
+            composeDuration(base, to, context)
+        } else {
+            "${AnswerFormat.number(to.fromBase(base), context.locale)} ${to.symbol}"
+        }
         val source = "${AnswerFormat.number(value, context.locale)} ${from.symbol}"
+
         return Answer(
             providerId = id,
             headline = headline,
@@ -162,6 +168,51 @@ object UnitAnswerProvider : AnswerProvider {
             index == 0 -> ladder.getOrNull(1)
             else -> ladder.first()
         }
+    }
+
+    /** At most three: "8 h 19 min 30 s" is readable, a fourth term is not. */
+    private const val MAX_DURATION_PARTS = 3
+
+    /**
+     * Durations read better spread across units than as a fraction of one: 499.5 min is
+     * "8 h 19 min 30 s", not "8.325 h".
+     *
+     * Composition starts at the target unit and works down, so an explicit request is still
+     * honoured — "2 h to min" gives 120 min rather than silently becoming 2 h again. Leading zero
+     * terms are dropped, which is what makes "30 s" read as itself rather than "0 min 30 s".
+     */
+    private fun composeDuration(totalSeconds: Double, target: UnitDef, context: AnswerContext): String {
+        val ladder = UnitTables.ladderFor(Dimension.DURATION).reversed()
+        val start = ladder.indexOfFirst { it.id == target.id }.coerceAtLeast(0)
+
+        val sign = if (totalSeconds < 0) "-" else ""
+        var remaining = abs(totalSeconds)
+        val parts = mutableListOf<String>()
+
+        for (index in start until ladder.size) {
+            val unit = ladder[index]
+            // The final term absorbs whatever is left, so nothing is silently discarded.
+            val isFinal = index == ladder.lastIndex || parts.size == MAX_DURATION_PARTS - 1
+            val amount = remaining / unit.factor
+
+            if (isFinal) {
+                if (amount > 0 || parts.isEmpty()) {
+                    parts.add("${AnswerFormat.number(amount, context.locale)} ${unit.symbol}")
+                }
+                break
+            }
+
+            val whole = floor(amount)
+            if (whole >= 1) {
+                parts.add("${AnswerFormat.number(whole, context.locale)} ${unit.symbol}")
+                remaining -= whole * unit.factor
+            }
+            // Floating-point residue rather than a real remainder.
+            if (remaining < 1e-9) break
+        }
+
+        if (parts.isEmpty()) parts.add("0 ${ladder[start].symbol}")
+        return sign + parts.joinToString(" ")
     }
 
     /**

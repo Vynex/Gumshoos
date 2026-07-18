@@ -132,9 +132,31 @@ class UnitAnswerProviderTest {
     }
 
     @Test
-    fun `the smallest default unit steps up instead`() {
-        // Nothing below seconds is offered automatically, so this goes the other way.
-        assertEquals("0.5 min", result("30 s", india))
+    fun `a duration reads as itself rather than a fraction`() {
+        // Composition drops leading zero terms, so this is "30 s" and not "0.5 min".
+        assertEquals("30 s", result("30 s", india))
+    }
+
+    @Test
+    fun `durations spread across units`() {
+        // 499.5 min is 8 h 19 min 30 s — far more readable than 8.325 h.
+        assertEquals("8 h 19 min 30 s", result("499.5 min", india))
+        // Terms that come to zero are omitted, so a clean value stays short.
+        assertEquals("8 h 19 min", result("499 min", india))
+    }
+
+    @Test
+    fun `composition starts at an explicit target`() {
+        // "to min" is honoured rather than being recomposed back into hours.
+        assertEquals("120 min", result("2 h to min", india))
+        assertEquals("8 h 19 min", result("499 min to h", india))
+    }
+
+    @Test
+    fun `composition is capped at three terms`() {
+        // A fourth term stops being readable; the last one absorbs the remainder.
+        val answer = result("1.5 d", india)!!
+        assertTrue("expected at most three terms, got '$answer'", answer.count { it == ' ' } <= 5)
     }
 
     @Test
