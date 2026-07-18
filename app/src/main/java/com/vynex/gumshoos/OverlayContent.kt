@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -345,12 +346,20 @@ private fun SearchPanel(
     )
     val tab = SearchTab.entries[pagerState.currentPage]
 
+    val focusManager = LocalFocusManager.current
+
     LaunchedEffect(visible) {
         if (visible) {
             query = ""
             pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
             focusRequester.requestFocus()
             keyboard?.show()
+        } else {
+            // Focus was being retained while hidden, so every show reconnected an existing IME
+            // session rather than starting a clean one. Releasing it means the next show begins
+            // from a genuinely fresh input connection.
+            query = ""
+            focusManager.clearFocus(force = true)
         }
     }
 
@@ -362,10 +371,17 @@ private fun SearchPanel(
     }
 
     // Enter/Search on the keyboard takes the top-ranked result of whichever tab is showing.
+    //
+    // An empty query must never launch anything. Results are ordered by most-recently-used, so with
+    // no query the first result is whatever app you opened last — meaning any stray editor action
+    // (IMEs can deliver one when the field regains focus, and the overlay re-focuses on every show)
+    // silently relaunches it. That is exactly the "tapping the widget reopens the last app" bug.
     val submit: () -> Unit = {
-        AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
-            .firstOrNull()
-            ?.let(launch)
+        if (visible && query.isNotBlank()) {
+            AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
+                .firstOrNull()
+                ?.let(launch)
+        }
     }
 
     // The panel is always laid out at full height and revealed from the top as the card grows —

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -166,6 +167,7 @@ object AppRepository {
     }
 
     fun launch(context: Context, entry: AppEntry) {
+        Log.i(OverlayService.TAG, "launch: ${entry.packageName}")
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
             component = entry.component
