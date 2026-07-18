@@ -347,7 +347,9 @@ fun OverlayContent(
         // Hoisted so the card's outside-tap and Back can consult it: while a context menu is up,
         // both dismiss the menu rather than the whole overlay.
         var menuTarget by remember { mutableStateOf<Pair<AppEntry, Int>?>(null) }
-        LaunchedEffect(visible) { if (!visible) menuTarget = null }
+        // Cleared on the way in, not on the way out. Dismissing it as the card starts closing made
+        // the menu vanish instead of fading with everything else.
+        LaunchedEffect(visible) { if (visible) menuTarget = null }
 
         BackHandler(enabled = visible) {
             if (menuTarget != null) menuTarget = null else onDismiss()
@@ -490,15 +492,19 @@ private fun SearchPanel(
 
     LaunchedEffect(visible) {
         if (visible) {
+            // Everything resets here, on the way in, and nothing resets on the way out.
+            //
+            // Clearing the query as the card began closing was visible as a stutter: results
+            // repopulated unfiltered, the tab row animated back in, and the answer and contact
+            // sections collapsed — all reflowing underneath the exit animation. Leaving the state
+            // alone means the card closes on exactly what was on screen.
             query = ""
             pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
             focusRequester.requestFocus()
             keyboard?.show()
         } else {
-            // Focus was being retained while hidden, so every show reconnected an existing IME
-            // session rather than starting a clean one. Releasing it means the next show begins
-            // from a genuinely fresh input connection.
-            query = ""
+            // Focus is still released immediately. It changes no layout, and holding an input
+            // connection on a hidden window is what made the IME replay a stale action.
             focusManager.clearFocus(force = true)
         }
     }
