@@ -4,452 +4,301 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
-class OverlayService : LifecycleService(), SavedStateRegistryOwner {
+/**
+ * Holds the search window resident in WindowManager so that showing it costs a visibility flip and
+ * one frame, rather than an activity launch plus window creation.
+ *
+ * Two jobs, and they're separate on purpose:
+ *  - host the pre-attached overlay window
+ *  - stay in the foreground so the process (and this warm view) survives between invocations
+ */
+class OverlayService :
+    LifecycleService(),
+    SavedStateRegistryOwner,
+    ViewModelStoreOwner,
+    OnBackPressedDispatcherOwner {
+
     companion object {
-        const val ACTION_SHOW_OVERLAY = "com.vynex.gumshoos.SHOW_OVERLAY"
-        const val ACTION_HIDE_OVERLAY = "com.vynex.gumshoos.HIDE_OVERLAY"
+        const val ACTION_SHOW = "com.vynex.gumshoos.SHOW"
+        const val ACTION_HIDE = "com.vynex.gumshoos.HIDE"
+        const val ACTION_WARM = "com.vynex.gumshoos.WARM"
+
+        /** Free-text label for where the show came from, so the readout can distinguish paths. */
+        const val EXTRA_SOURCE = "source"
+
+        const val TAG = "GumshoosLatency"
+
         private const val NOTIFICATION_ID = 1001
-        private const val CHANNEL_ID = "gumshoos_overlay_channel"
+        private const val CHANNEL_ID = "gumshoos_overlay"
+
+        /** Must match the exit animation in [OverlayContent] or the view vanishes mid-fade. */
+        const val EXIT_ANIMATION_MILLIS = 160L
+
+        fun intent(context: Context, action: String, source: String? = null): Intent =
+            Intent(context, OverlayService::class.java).apply {
+                this.action = action
+                source?.let { putExtra(EXTRA_SOURCE, it) }
+            }
     }
 
     private lateinit var windowManager: WindowManager
     private lateinit var composeView: ComposeView
-    private var isOverlayVisible = false
+    private lateinit var layoutParams: WindowManager.LayoutParams
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
-
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
 
+    override val viewModelStore = ViewModelStore()
+
+    override val onBackPressedDispatcher = OnBackPressedDispatcher { /* nothing below us */ }
+
+    /**
+     * Compose state, not a plain Boolean — the previous version read a raw `var` inside setContent,
+     * so nothing ever recomposed and every animation was inert.
+     */
+    private var overlayVisible by mutableStateOf(false)
+
+    /** Whether the window is currently attached to WindowManager (independent of visibility). */
+    private var attached = false
+
+    /** True until the first successful show, so we can tell warm shows from the very first one. */
+    private var neverShown = true
+
+    private var strategy = PrewarmStrategy.PREDRAWN
+    private var pendingShowStart = 0L
+    private var pendingShowSource = "unknown"
+    private var hideRunnable: Runnable? = null
+
     override fun onCreate() {
         super.onCreate()
-
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        strategy = Prefs.prewarmStrategy(this)
 
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
 
         createNotificationChannel()
-        createOverlayView()
+        buildOverlayView()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
+        // Unconditionally, and first. The old code only promoted to foreground in the `else`
+        // branch, so a cold start carrying ACTION_SHOW never called this and the system killed us
+        // with ForegroundServiceDidNotStartInTimeException.
+        startForeground(NOTIFICATION_ID, buildNotification())
+
+        // Captured as early as possible: everything after this is work we're trying to measure.
+        val entry = SystemClock.uptimeMillis()
+
         when (intent?.action) {
-            ACTION_SHOW_OVERLAY -> {
-                if (!isOverlayVisible) {
-                    showOverlay()
-                }
-            }
-            ACTION_HIDE_OVERLAY -> {
-                if (isOverlayVisible) {
-                    hideOverlay()
-                }
-            }
-            else -> {
-                // First time service start - start foreground service
-                startForeground(NOTIFICATION_ID, createNotification())
-                if (intent?.action == ACTION_SHOW_OVERLAY) {
-                    showOverlay()
-                }
+            ACTION_SHOW -> show(entry, intent.getStringExtra(EXTRA_SOURCE) ?: "unknown")
+            ACTION_HIDE -> hide()
+            else -> attachIfNeeded()
+        }
+        return START_STICKY
+    }
+
+    // ---- window lifecycle -------------------------------------------------------------------
+
+    private fun buildOverlayView() {
+        composeView = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@OverlayService)
+            setViewTreeSavedStateRegistryOwner(this@OverlayService)
+            setViewTreeViewModelStoreOwner(this@OverlayService)
+            setViewTreeOnBackPressedDispatcherOwner(this@OverlayService)
+            setContent {
+                OverlayContent(
+                    visible = overlayVisible,
+                    onDismiss = { hide() },
+                )
             }
         }
-        return START_STICKY // Keep service running
     }
+
+    /**
+     * Adds the window once and leaves it there. Everything after this is a visibility flip.
+     */
+    private fun attachIfNeeded() {
+        if (attached) return
+
+        layoutParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            HIDDEN_FLAGS,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP }
+
+        // While hidden the window must not take input focus, or it would steal keystrokes from
+        // whatever app is actually in front.
+        composeView.visibility = if (strategy == PrewarmStrategy.PREDRAWN) View.VISIBLE else View.GONE
+        composeView.alpha = if (strategy == PrewarmStrategy.PREDRAWN) 0f else 1f
+
+        try {
+            windowManager.addView(composeView, layoutParams)
+            attached = true
+        } catch (e: Exception) {
+            Log.e(TAG, "attach failed — overlay permission missing?", e)
+            return
+        }
+
+        if (strategy == PrewarmStrategy.PREDRAWN) {
+            // Let exactly one real frame go through measure/layout/draw, then hide. The hypothesis
+            // is that this makes the first *visible* frame cheaper than the GONE path.
+            onNextFrameCommitted {
+                composeView.visibility = View.GONE
+                composeView.alpha = 1f
+                Log.i(TAG, "prewarm: first frame committed, view now hidden")
+            }
+        }
+    }
+
+    private fun show(entryMillis: Long, source: String) {
+        attachIfNeeded()
+        if (!attached) return
+
+        // Cancel a pending hide so a fast hide->show cycle can't detach the view underneath us.
+        // The old code's 300ms postDelayed removeView could race a re-show and permanently break
+        // the overlay (addView on an already-added view, swallowed by a catch).
+        hideRunnable?.let { composeView.removeCallbacks(it) }
+        hideRunnable = null
+
+        if (overlayVisible) return
+
+        val coldAttach = neverShown
+        pendingShowStart = entryMillis
+        pendingShowSource = source
+
+        composeView.visibility = View.VISIBLE
+        layoutParams.flags = SHOWN_FLAGS
+        windowManager.updateViewLayout(composeView, layoutParams)
+        overlayVisible = true
+
+        onNextFrameCommitted {
+            val elapsed = SystemClock.uptimeMillis() - pendingShowStart
+            val sample = ShowSample(
+                source = pendingShowSource,
+                strategy = strategy,
+                millis = elapsed,
+                coldAttach = coldAttach,
+            )
+            Latency.record(sample)
+            Log.i(
+                TAG,
+                "show: ${elapsed}ms  source=$source  strategy=$strategy" +
+                    if (coldAttach) "  (first show — attach included, ignore this one)" else "",
+            )
+        }
+        neverShown = false
+    }
+
+    private fun hide() {
+        if (!overlayVisible) return
+        overlayVisible = false
+
+        // Drop input focus immediately so the app underneath becomes interactive again without
+        // waiting out the exit animation.
+        layoutParams.flags = HIDDEN_FLAGS
+        if (attached) windowManager.updateViewLayout(composeView, layoutParams)
+
+        val runnable = Runnable {
+            if (!overlayVisible && attached) {
+                composeView.visibility = View.GONE
+            }
+            hideRunnable = null
+        }
+        hideRunnable = runnable
+        composeView.postDelayed(runnable, EXIT_ANIMATION_MILLIS)
+    }
+
+    /**
+     * Fires once, after the next frame is actually committed to the display — as close to
+     * "the user can see it" as we can get without a system trace.
+     */
+    private fun onNextFrameCommitted(block: () -> Unit) {
+        val observer = composeView.viewTreeObserver
+        var callback: Runnable? = null
+        callback = Runnable {
+            block()
+            callback?.let { observer.unregisterFrameCommitCallback(it) }
+        }
+        observer.registerFrameCommitCallback(callback)
+    }
+
+    // ---- foreground plumbing ----------------------------------------------------------------
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Gumshoos Search Overlay",
-            NotificationManager.IMPORTANCE_LOW
+            "Search overlay",
+            NotificationManager.IMPORTANCE_MIN,
         ).apply {
-            description = "Keeps search overlay ready for instant access"
+            description = "Keeps the search window warm for instant access"
             setShowBadge(false)
         }
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun createNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java)
+    private fun buildNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Gumshoos Search")
-            .setContentText("Tap app icon for instant search")
+            .setContentTitle("Gumshoos is ready")
+            .setContentText("Search window kept warm")
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
     }
 
-    private fun createOverlayView() {
-        composeView = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@OverlayService)
-            setViewTreeSavedStateRegistryOwner(this@OverlayService)
-            setContent {
-                AnimatedFloatingSearchOverlay(
-                    isVisible = isOverlayVisible,
-                    onClose = { hideOverlay() }
-                )
-            }
-        }
-//        composeView = ComposeView(this).apply {
-//            setViewTreeLifecycleOwner(this@OverlayService)
-//            setViewTreeSavedStateRegistryOwner(this@OverlayService)
-//            setContent {
-//                FloatingSearchOverlay(onClose = { hideOverlay() })
-//            }
-//        }
-    }
-
-    private fun showOverlay() {
-        if (isOverlayVisible) return
-
-        val layoutParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-//            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-            PixelFormat.TRANSLUCENT
-        )
-
-        layoutParams.gravity = Gravity.TOP
-
-        try {
-            windowManager.addView(composeView, layoutParams)
-            isOverlayVisible = true
-        } catch (e: Exception) {
-            // Handle permission issues gracefully
-            isOverlayVisible = false
-        }
-    }
-
-    private fun hideOverlay() {
-        if (!isOverlayVisible) return
-        isOverlayVisible = false
-
-        // Delay removing the view to allow fade-out animation
-        composeView.postDelayed({
-            try {
-                if (!isOverlayVisible) { // Double-check we're still meant to be hidden
-                    windowManager.removeView(composeView)
-                }
-            } catch (e: Exception) {
-                // View might already be removed
-            }
-        }, 300) // Match the animation duration
-
-//        try {
-//            windowManager.removeView(composeView)
-//        } catch (e: Exception) {
-//            // View might already be removed
-//        }
-//        isOverlayVisible = false
-//        // Don't stop the service, keep it running for next overlay show
-    }
-
-    @Composable
-    private fun AnimatedFloatingSearchOverlay(
-        isVisible: Boolean,
-        onClose: () -> Unit
-    ) {
-        var searchQuery by remember { mutableStateOf("") }
-        val focusRequester = remember { FocusRequester() }
-        val keyboardController = LocalSoftwareKeyboardController.current
-        val focusManager = LocalFocusManager.current
-
-        // Animation states
-        val backgroundAlpha by animateFloatAsState(
-            targetValue = if (isVisible) 0.5f else 0f,
-            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-            label = "background_alpha"
-        )
-
-        val searchBarAlpha by animateFloatAsState(
-            targetValue = if (isVisible) 1f else 0f,
-            animationSpec = tween(
-                durationMillis = 300,
-                delayMillis = if (isVisible) 100 else 0, // Slight delay on show
-                easing = FastOutSlowInEasing
-            ),
-            label = "searchbar_alpha"
-        )
-
-        val searchBarScale by animateFloatAsState(
-            targetValue = if (isVisible) 1f else 0.95f,
-            animationSpec = tween(
-                durationMillis = 300,
-                delayMillis = if (isVisible) 100 else 0,
-                easing = FastOutSlowInEasing
-            ),
-            label = "searchbar_scale"
-        )
-
-        // Results container animation - appears after search bar
-        val resultsHeight by animateDpAsState(
-            targetValue = if (isVisible && searchQuery.isNotEmpty()) 200.dp else 0.dp,
-            animationSpec = tween(
-                durationMillis = 250,
-                delayMillis = if (isVisible) 400 else 0, // Delay for expansion effect
-                easing = FastOutSlowInEasing
-            ),
-            label = "results_height"
-        )
-
-        val resultsAlpha by animateFloatAsState(
-            targetValue = if (isVisible && searchQuery.isNotEmpty()) 1f else 0f,
-            animationSpec = tween(
-                durationMillis = 200,
-                delayMillis = if (isVisible) 450 else 0,
-                easing = FastOutSlowInEasing
-            ),
-            label = "results_alpha"
-        )
-
-        // Handle focus and keyboard when visible changes
-        LaunchedEffect(isVisible) {
-            if (isVisible) {
-                searchQuery = ""
-                focusRequester.requestFocus()
-                keyboardController?.show()
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = backgroundAlpha))
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) {
-                    if (isVisible) onClose()
-                }
-                .onKeyEvent { keyEvent ->
-                    if (keyEvent.key == Key.Escape || keyEvent.key == Key.Back) {
-                        if (keyEvent.type == KeyEventType.KeyUp && isVisible) {
-                            onClose()
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(top = 120.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Search Bar
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = fadeIn(
-                        animationSpec = tween(600, delayMillis = 100, easing = FastOutSlowInEasing)
-                    ) + scaleIn(
-                        animationSpec = tween(600, delayMillis = 100, easing = FastOutSlowInEasing),
-                        initialScale = 0.95f
-                    ),
-                    exit = fadeOut(
-                        animationSpec = tween(250, easing = FastOutSlowInEasing)
-                    ) + scaleOut(
-                        animationSpec = tween(250, easing = FastOutSlowInEasing),
-                        targetScale = 0.95f
-                    )
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { /* Prevent click through */ },
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        BasicTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp)
-                                .focusRequester(focusRequester)
-                                .onKeyEvent { keyEvent ->
-                                    if (keyEvent.key == Key.Escape || keyEvent.key == Key.Back) {
-                                        if (keyEvent.type == KeyEventType.KeyUp) {
-                                            onClose()
-                                        }
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                },
-                            textStyle = TextStyle(
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Search
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSearch = {
-                                    focusManager.clearFocus()
-                                }
-                            ),
-                            singleLine = true,
-                            decorationBox = { innerTextField ->
-                                if (searchQuery.isEmpty()) {
-                                    Text(
-                                        "Search apps, contacts, and more...",
-                                        style = TextStyle(
-                                            fontSize = 18.sp,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                        )
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        )
-                    }
-                }
-
-                // Results Container - Expands when there's a search query
-                AnimatedVisibility(
-                    visible = isVisible && searchQuery.isNotEmpty(),
-                    enter = fadeIn(
-                        animationSpec = tween(200, delayMillis = 450, easing = FastOutSlowInEasing)
-                    ) + expandVertically(
-                        animationSpec = tween(250, delayMillis = 400, easing = FastOutSlowInEasing)
-                    ),
-                    exit = fadeOut(
-                        animationSpec = tween(150, easing = FastOutSlowInEasing)
-                    ) + shrinkVertically(
-                        animationSpec = tween(200, easing = FastOutSlowInEasing)
-                    )
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                            .height(200.dp) // About 2 rows of apps
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { /* Prevent click through */ },
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        // Placeholder for search results (replace with your actual results)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "Search results for: \"$searchQuery\"",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Results will appear here...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     override fun onDestroy() {
-        super.onDestroy()
-        if (isOverlayVisible) {
-            hideOverlay()
+        hideRunnable?.let { composeView.removeCallbacks(it) }
+        if (attached) {
+            try {
+                windowManager.removeView(composeView)
+            } catch (e: Exception) {
+                Log.w(TAG, "removeView on destroy failed", e)
+            }
+            attached = false
         }
+        viewModelStore.clear()
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -457,3 +306,15 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         return null
     }
 }
+
+/** Not focusable, not touchable — invisible to input while the window sits warm in the background. */
+private const val HIDDEN_FLAGS =
+    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+
+/** Focusable so the IME and Back reach us; NOT_TOUCH_MODAL so touches outside still land. */
+private const val SHOWN_FLAGS =
+    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH

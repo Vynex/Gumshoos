@@ -37,10 +37,8 @@ android {
     buildFeatures {
         compose = true
     }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
-    }
+    // No composeOptions block: the Kotlin 2.0 Compose compiler plugin supplies its own version and
+    // kotlinCompilerExtensionVersion is ignored.
 }
 
 dependencies {
@@ -54,6 +52,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -61,15 +60,4 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-
-    // Jetpack Glance
-    // For Glance support
-    implementation(libs.androidx.glance)
-    // For AppWidgets support
-    implementation(libs.androidx.glance.appwidget)
-    // For Wear-Tiles support
-    implementation(libs.androidx.glance.wear.tiles)
-
-    //
-//    implementation(libs)
 }
