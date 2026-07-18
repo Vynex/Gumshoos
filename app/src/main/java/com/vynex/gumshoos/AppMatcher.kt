@@ -1,7 +1,13 @@
 package com.vynex.gumshoos
 
+import java.text.Normalizer
+
 /**
  * Query matching for app labels.
+ *
+ * Matching is accent-insensitive: "poke" finds "Pokémon". Both the query and the label are folded
+ * to a plain-ASCII-ish lowercase form first, and the fold carries an index map back to the original
+ * label so highlighting still lands on the right characters.
  *
  * Tiers, strongest first. Recency breaks ties between equal tiers — see [AppRepository.search] —
  * so among equally good textual matches you get the apps you actually use.
@@ -9,7 +15,7 @@ package com.vynex.gumshoos
  *   1  exact label                "spotify" -> Spotify
  *   2  exact word initials        "bb"      -> Big Basket
  *   3  exact capitals             "bms"     -> BookMyShow
- *   4  label prefix               "spo"     -> Spotify
+ *   4  label prefix               "poke"    -> Pokémon
  *   5  initials prefix            "bm"      -> BookMyShow
  *   6  word-boundary substring    "my"      -> Book*My*Show
  *   7  substring anywhere         "tube"    -> YouTube
@@ -28,15 +34,85 @@ object AppMatcher {
     private const val SUBSTRING = 30 * TIER
     private const val FUZZY = 20 * TIER
 
-    /** Which characters a match covers, so the UI can embolden exactly those. */
+    /**
+     * Letters NFD leaves alone because they aren't a base plus a combining mark — they're distinct
+     * characters. Stripping marks does nothing for them, so they need spelling out.
+     */
+    private val UNDECOMPOSABLE = mapOf(
+        'ø' to "o", 'æ' to "ae", 'œ' to "oe", 'ß' to "ss", 'đ' to "d",
+        'ð' to "d", 'ł' to "l", 'þ' to "th", 'ħ' to "h", 'ı' to "i",
+    )
+
+    /** Which characters a match covers, as indices into the original label. */
     data class Match(val score: Int, val indices: List<Int>)
 
     /**
-     * Positions in the label of each token's first character.
+     * A label prepared for matching: the folded text, plus everything needed to map a hit in that
+     * text back to positions in the original.
      *
-     * The strings are derived from these rather than built separately, so a highlight can never
-     * disagree with the match that produced it.
+     * Precomputed once at index time — folding on every keystroke would put Normalizer in the
+     * middle of the type-ahead path for every installed app.
      */
+    class Indexed(
+        val original: String,
+        val folded: String,
+        /** folded[i] came from original[foldedToSource[i]]. */
+        private val foldedToSource: IntArray,
+        val wordInitials: String,
+        private val wordInitialSources: IntArray,
+        val capitals: String,
+        private val capitalSources: IntArray,
+    ) {
+        fun sourcesForFolded(range: IntRange): List<Int> =
+            range.mapNotNull { foldedToSource.getOrNull(it) }.distinct()
+
+        fun sourcesForWordInitials(count: Int): List<Int> =
+            wordInitialSources.take(count)
+
+        fun sourcesForCapitals(count: Int): List<Int> =
+            capitalSources.take(count)
+    }
+
+    /** Lowercase, strip diacritics, expand the letters NFD can't split. */
+    fun foldQuery(text: String): String {
+        val out = StringBuilder()
+        for (ch in text) out.append(foldChar(ch))
+        return out.toString()
+    }
+
+    private fun foldChar(ch: Char): String {
+        val lower = ch.lowercaseChar()
+        UNDECOMPOSABLE[lower]?.let { return it }
+        val decomposed = Normalizer.normalize(lower.toString(), Normalizer.Form.NFD)
+        val stripped = decomposed.filter {
+            Character.getType(it) != Character.NON_SPACING_MARK.toInt()
+        }
+        return stripped.ifEmpty { lower.toString() }
+    }
+
+    fun index(label: String): Indexed {
+        val folded = StringBuilder()
+        val sources = mutableListOf<Int>()
+        label.forEachIndexed { i, ch ->
+            // One source character can fold to several (ß -> ss), so every produced character
+            // records where it came from; that keeps highlighting aligned.
+            foldChar(ch).forEach { folded.append(it); sources.add(i) }
+        }
+
+        val wordInitialIdx = wordInitialIndices(label)
+        val capitalIdx = capitalIndices(label)
+        return Indexed(
+            original = label,
+            folded = folded.toString(),
+            foldedToSource = sources.toIntArray(),
+            wordInitials = wordInitialIdx.joinToString("") { foldChar(label[it]) },
+            wordInitialSources = wordInitialIdx.toIntArray(),
+            capitals = capitalIdx.joinToString("") { foldChar(label[it]) },
+            capitalSources = capitalIdx.toIntArray(),
+        )
+    }
+
+    /** Positions in the label of each token's first character. */
     fun wordInitialIndices(label: String): List<Int> {
         val out = mutableListOf<Int>()
         var atTokenStart = true
@@ -63,31 +139,11 @@ object AppMatcher {
         return out
     }
 
-    private fun charsAt(label: String, indices: List<Int>) =
-        indices.map { label[it].lowercaseChar() }.joinToString("")
-
-    /**
-     * First character of each whitespace- or punctuation-separated token.
-     *
-     *   "Big Basket" -> "bb"
-     *   "BookMyShow" -> "b"      (one token)
-     */
-    fun wordInitialsOf(label: String): String = charsAt(label, wordInitialIndices(label))
-
-    /**
-     * First character plus every later uppercase one, which is what camel case reads as.
-     *
-     *   "BookMyShow" -> "bms"
-     *   "Big Basket" -> "bb"
-     *   "iTunes"     -> "it"     (first char included, so lowercase-leading names still work)
-     */
-    fun capitalsOf(label: String): String = charsAt(label, capitalIndices(label))
-
-    /** Index of every token start, so a mid-label word match outranks a mid-word one. */
-    private fun tokenStarts(label: String): List<Int> {
+    /** Index of every token start in the folded text. */
+    private fun tokenStarts(text: String): List<Int> {
         val starts = mutableListOf<Int>()
         var atTokenStart = true
-        label.forEachIndexed { i, ch ->
+        text.forEachIndexed { i, ch ->
             if (!ch.isLetterOrDigit()) {
                 atTokenStart = true
             } else {
@@ -99,40 +155,51 @@ object AppMatcher {
     }
 
     /** Higher is better; null means no match at all. */
-    fun score(query: String, label: String, wordInitials: String, capitals: String): Int? =
-        match(query, label, wordInitials, capitals)?.score
+    fun score(query: String, indexed: Indexed): Int? = match(query, indexed)?.score
 
     /**
      * Score plus the label positions the match covers. Both come from one pass so the emboldened
      * characters are always the ones the winning tier actually matched on.
      */
-    fun match(query: String, label: String, wordInitials: String, capitals: String): Match? {
+    fun match(query: String, indexed: Indexed): Match? {
         if (query.isEmpty()) return Match(0, emptyList())
-        val q = query.lowercase()
-        val l = label.lowercase()
+        val q = foldQuery(query)
+        if (q.isEmpty()) return Match(0, emptyList())
+        val l = indexed.folded
 
         // Shorter labels win within a tier: "Maps" should beat "Maps Go" for "map".
-        val brevity = (60 - label.length).coerceAtLeast(0)
+        val brevity = (60 - indexed.original.length).coerceAtLeast(0)
 
-        if (l == q) return Match(EXACT_LABEL + brevity, label.indices.toList())
-        if (wordInitials == q) {
-            return Match(EXACT_WORD_INITIALS + brevity, wordInitialIndices(label))
+        if (l == q) return Match(EXACT_LABEL + brevity, indexed.original.indices.toList())
+        if (indexed.wordInitials == q) {
+            return Match(EXACT_WORD_INITIALS + brevity, indexed.sourcesForWordInitials(q.length))
         }
-        if (capitals == q) return Match(EXACT_CAPITALS + brevity, capitalIndices(label))
-        if (l.startsWith(q)) return Match(PREFIX_LABEL + brevity, q.indices.toList())
-        if (wordInitials.startsWith(q)) {
-            return Match(PREFIX_INITIALS + brevity, wordInitialIndices(label).take(q.length))
+        if (indexed.capitals == q) {
+            return Match(EXACT_CAPITALS + brevity, indexed.sourcesForCapitals(q.length))
         }
-        if (capitals.startsWith(q)) {
-            return Match(PREFIX_INITIALS + brevity, capitalIndices(label).take(q.length))
+        if (l.startsWith(q)) {
+            return Match(PREFIX_LABEL + brevity, indexed.sourcesForFolded(0 until q.length))
         }
-        tokenStarts(label).firstOrNull { l.startsWith(q, it) }?.let { start ->
-            return Match(WORD_BOUNDARY + brevity, (start until start + q.length).toList())
+        if (indexed.wordInitials.startsWith(q)) {
+            return Match(PREFIX_INITIALS + brevity, indexed.sourcesForWordInitials(q.length))
+        }
+        if (indexed.capitals.startsWith(q)) {
+            return Match(PREFIX_INITIALS + brevity, indexed.sourcesForCapitals(q.length))
+        }
+        tokenStarts(l).firstOrNull { l.startsWith(q, it) }?.let { start ->
+            return Match(
+                WORD_BOUNDARY + brevity,
+                indexed.sourcesForFolded(start until start + q.length),
+            )
         }
         val at = l.indexOf(q)
-        if (at >= 0) return Match(SUBSTRING + brevity, (at until at + q.length).toList())
+        if (at >= 0) {
+            return Match(SUBSTRING + brevity, indexed.sourcesForFolded(at until at + q.length))
+        }
 
-        return subsequenceMatch(q, l)?.let { (bonus, indices) -> Match(FUZZY + bonus, indices) }
+        return subsequenceMatch(q, l)?.let { (bonus, hits) ->
+            Match(FUZZY + bonus, hits.flatMap { indexed.sourcesForFolded(it..it) })
+        }
     }
 
     /**

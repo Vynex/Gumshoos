@@ -21,9 +21,11 @@ data class AppEntry(
     /** First install. Distinct from [lastUpdateTime], which also moves on every update. */
     val firstInstallTime: Long,
     val lastUpdateTime: Long,
-    /** Both precomputed at index time so matching never recomputes them per keystroke. */
-    val wordInitials: String,
-    val capitals: String,
+    /**
+     * Folded label plus its initials, precomputed at index time. Folding on every keystroke would
+     * put Unicode normalisation in the type-ahead path for every installed app.
+     */
+    val indexed: AppMatcher.Indexed,
 ) {
     val packageName: String get() = component.packageName
 }
@@ -62,8 +64,7 @@ object AppRepository {
                     icon = info.loadIcon(pm).toBitmap(iconPx, iconPx).asImageBitmap(),
                     firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
                     lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
-                    wordInitials = AppMatcher.wordInitialsOf(label),
-                    capitals = AppMatcher.capitalsOf(label),
+                    indexed = AppMatcher.index(label),
                 )
             }.getOrNull()
         }
@@ -108,8 +109,7 @@ object AppRepository {
 
         return apps
             .mapNotNull { entry ->
-                AppMatcher.score(query.trim(), entry.label, entry.wordInitials, entry.capitals)
-                    ?.let { entry to it }
+                AppMatcher.score(query.trim(), entry.indexed)?.let { entry to it }
             }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }

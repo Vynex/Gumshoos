@@ -999,8 +999,7 @@ private fun AppCell(
             val matched = if (query.isBlank()) {
                 emptySet()
             } else {
-                AppMatcher.match(query, entry.label, entry.wordInitials, entry.capitals)
-                    ?.indices.orEmpty().toSet()
+                AppMatcher.match(query, entry.indexed)?.indices.orEmpty().toSet()
             }
             buildAnnotatedString {
                 entry.label.forEachIndexed { i, ch ->
