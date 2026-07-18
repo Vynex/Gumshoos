@@ -233,10 +233,13 @@ class OverlayService :
          *
          * Changes during the entrance are ignored. The window is still settling then, and hiding on
          * one would mean the card slamming shut just as it opened.
+         *
+         * Switchable in settings, since which half of that trade matters more is a preference.
          */
         override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
             super.onWindowFocusChanged(hasWindowFocus)
             if (hasWindowFocus || !overlayVisible) return
+            if (!GumshoosConfig.hideOnFocusLoss) return
             if (SystemClock.uptimeMillis() - shownAt < ENTRANCE_SETTLE_MILLIS) return
             EventLog.record("focus lost -> hide")
             hide()

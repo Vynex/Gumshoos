@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -208,7 +209,41 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("5 · Hide the notification", style = MaterialTheme.typography.titleMedium)
+        Text("5 · Behaviour", style = MaterialTheme.typography.titleMedium)
+        var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    hideOnFocusLoss = !hideOnFocusLoss
+                    GumshoosConfig.setHideOnFocusLoss(context, hideOnFocusLoss)
+                },
+        ) {
+            Checkbox(
+                checked = hideOnFocusLoss,
+                onCheckedChange = {
+                    hideOnFocusLoss = it
+                    GumshoosConfig.setHideOnFocusLoss(context, it)
+                },
+            )
+            Spacer(Modifier.width(4.dp))
+            Column {
+                Text("Close when focus is lost", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Dismisses the search window when another app takes over — tapping a " +
+                        "notification, or pulling down the shade. Also covers the Home gesture, " +
+                        "which reports late and so feels sluggish; turn this off to keep the " +
+                        "window until you dismiss it yourself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("6 · Hide the notification", style = MaterialTheme.typography.titleMedium)
         Text(
             "A foreground service must supply a notification — the system won't let it run " +
                 "without one. It can't be suppressed from inside the app, but on Android 13+ the " +
@@ -233,7 +268,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("7 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("8 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",

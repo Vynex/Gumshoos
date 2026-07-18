@@ -15,8 +15,17 @@ object GumshoosConfig {
     private const val KEY_WIDGET_ICON_SIZE = "widget_icon_size_dp"
     private const val KEY_WIDGET_ICON_OFFSET = "widget_icon_offset_dp"
     private const val KEY_CONTACT_ACTION_PACKAGE = "contact_action_package_"
+    private const val KEY_HIDE_ON_FOCUS_LOSS = "hide_on_focus_loss"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
+
+    /**
+     * Whether losing window focus dismisses the overlay. On by default: without it the card is left
+     * sitting above whatever a tapped notification opened. The cost is that Home dismissal comes
+     * along with it, reporting late enough to feel sluggish, since focus loss can't say what took
+     * over.
+     */
+    const val DEFAULT_HIDE_ON_FOCUS_LOSS = true
 
     /** Matches the measured diameter of a real launcher icon on the reference device. */
     const val DEFAULT_WIDGET_ICON_SIZE_DP = 46
@@ -47,6 +56,14 @@ object GumshoosConfig {
     var contactActionPackages by mutableStateOf<Map<ContactAction, String>>(emptyMap())
         private set
 
+    var hideOnFocusLoss by mutableStateOf(DEFAULT_HIDE_ON_FOCUS_LOSS)
+        private set
+
+    fun setHideOnFocusLoss(context: Context, enabled: Boolean) {
+        hideOnFocusLoss = enabled
+        prefs(context).edit().putBoolean(KEY_HIDE_ON_FOCUS_LOSS, enabled).apply()
+    }
+
     fun setContactActionPackage(context: Context, action: ContactAction, packageName: String?) {
         contactActionPackages = contactActionPackages.toMutableMap().apply {
             if (packageName == null) remove(action) else put(action, packageName)
@@ -69,6 +86,7 @@ object GumshoosConfig {
             p.getLong(KEY_NEW_UPDATED_WINDOW_HOURS, DEFAULT_NEW_UPDATED_WINDOW_HOURS)
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)
         widgetIconOffsetDp = p.getInt(KEY_WIDGET_ICON_OFFSET, DEFAULT_WIDGET_ICON_OFFSET_DP)
+        hideOnFocusLoss = p.getBoolean(KEY_HIDE_ON_FOCUS_LOSS, DEFAULT_HIDE_ON_FOCUS_LOSS)
     }
 
     fun setWidgetIconSizeDp(context: Context, dp: Int) {
