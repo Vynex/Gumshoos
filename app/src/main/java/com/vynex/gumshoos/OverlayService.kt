@@ -98,6 +98,16 @@ class OverlayService :
      */
     private var overlayVisible by mutableStateOf(false)
 
+    /**
+     * Bumped once the card is fully hidden, telling the content to clear itself.
+     *
+     * The reset cannot happen at either end of an animation: on hide it reflows underneath the
+     * closing card, and on show the entrance renders a frame of the previous state before clearing.
+     * Doing it here — after the exit has finished and before the next entrance begins — is the only
+     * moment nothing is on screen to disturb.
+     */
+    private var resetToken by mutableStateOf(0)
+
     /** Whether the window is currently attached to WindowManager (independent of visibility). */
     private var attached = false
 
@@ -220,6 +230,7 @@ class OverlayService :
         override fun Content() {
             OverlayContent(
                 visible = overlayVisible,
+                resetToken = resetToken,
                 onDismiss = { hide() },
             )
         }
@@ -361,6 +372,8 @@ class OverlayService :
         val runnable = Runnable {
             if (!overlayVisible && attached) {
                 composeView.visibility = View.GONE
+                // Nothing is visible now, so clearing the query and any open menu costs no frames.
+                resetToken++
             }
             hideRunnable = null
         }

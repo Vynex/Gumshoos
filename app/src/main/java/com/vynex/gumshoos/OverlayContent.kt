@@ -256,6 +256,8 @@ private val ExitEasing = LinearOutSlowInEasing
 @Composable
 fun OverlayContent(
     visible: Boolean,
+    /** Changes once the card is fully hidden; see the note in OverlayService. */
+    resetToken: Int,
     onDismiss: () -> Unit,
 ) {
     GumshoosTheme(darkTheme = true, dynamicColor = true) {
@@ -347,9 +349,9 @@ fun OverlayContent(
         // Hoisted so the card's outside-tap and Back can consult it: while a context menu is up,
         // both dismiss the menu rather than the whole overlay.
         var menuTarget by remember { mutableStateOf<Pair<AppEntry, Int>?>(null) }
-        // Cleared on the way in, not on the way out. Dismissing it as the card starts closing made
-        // the menu vanish instead of fading with everything else.
-        LaunchedEffect(visible) { if (visible) menuTarget = null }
+        // Cleared while hidden rather than at either end of an animation, so the menu neither
+        // vanishes mid-close nor reappears for a frame on the way back in.
+        LaunchedEffect(resetToken) { menuTarget = null }
 
         BackHandler(enabled = visible) {
             if (menuTarget != null) menuTarget = null else onDismiss()
@@ -444,6 +446,7 @@ fun OverlayContent(
                     pinnedWidth = settledCardWidth,
                     menuTarget = menuTarget,
                     onMenuTargetChange = { menuTarget = it },
+                    resetToken = resetToken,
                     tabHeight = tabHeight,
                     providerRowHeight = providerRowHeight,
                     contactsHeight = contactsHeight,
@@ -474,6 +477,7 @@ private fun SearchPanel(
     onHasAnswerChange: (Boolean) -> Unit,
     gridSectionHeight: Dp,
     onHasAppResultsChange: (Boolean) -> Unit,
+    resetToken: Int,
     onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -490,16 +494,17 @@ private fun SearchPanel(
 
     val focusManager = LocalFocusManager.current
 
+    // Clearing the query reflows everything below it — results repopulate unfiltered, the tab row
+    // returns, the answer and contact sections collapse. Done as the card closes that shows through
+    // the exit; done as it opens, the entrance renders a frame of the previous state first. So it
+    // happens while the card is hidden and neither animation is running.
+    LaunchedEffect(resetToken) {
+        query = ""
+        pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
+    }
+
     LaunchedEffect(visible) {
         if (visible) {
-            // Everything resets here, on the way in, and nothing resets on the way out.
-            //
-            // Clearing the query as the card began closing was visible as a stutter: results
-            // repopulated unfiltered, the tab row animated back in, and the answer and contact
-            // sections collapsed — all reflowing underneath the exit animation. Leaving the state
-            // alone means the card closes on exactly what was on screen.
-            query = ""
-            pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
             focusRequester.requestFocus()
             keyboard?.show()
         } else {
