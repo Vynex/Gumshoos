@@ -1,10 +1,12 @@
 package com.vynex.gumshoos
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
@@ -12,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,11 +49,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -57,17 +60,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
-// --- Geometry. Tuned against the Nova reference; all cheap to adjust. --------------------------
+// --- Geometry ---------------------------------------------------------------------------------
+// Measured frame-by-frame from a slowed capture of Nova, converted at density 2.75
+// (1080px wide -> 393dp). Reference: card 1037x813px, side margin 21px, top 141px, header 125px.
 
-private val CardCornerRadius = 24.dp
-private val CardSideMargin = 12.dp
-private val HeaderHeight = 58.dp
+private val CardCornerRadius = 20.dp
+private val CardSideMargin = 8.dp
+private val CardTopMargin = 12.dp
+private val HeaderHeight = 45.dp
 private val TabRowHeight = 48.dp
-private val CellHeight = 92.dp
+private val CellHeight = 88.dp
 private val GridVerticalPadding = 10.dp
 private val GridRowSpacing = 8.dp
 
@@ -83,24 +92,59 @@ private val CardExpandedHeight =
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
 
-/** Starting width of the entrance, as a fraction of the settled width. */
-private const val CollapsedWidthFraction = 0.88f
+/** Measured 793/1037 at the first frame the card is detectable. */
+private const val CollapsedWidthFraction = 0.765f
 
 private const val CardSurfaceAlpha = 0.94f
 
 // --- Timing ------------------------------------------------------------------------------------
+// Every leg below is expressed as a percentage of the entrance, measured from the capture. Only
+// EnterTotalMillis carries the absolute scale, so if the capture's animator duration scale was not
+// 10x, changing that one number rescales the whole sequence coherently.
 
-private const val EnterWidthMillis = 130
-private const val EnterAlphaMillis = 110
-private const val EnterHeightMillis = 200
-private const val EnterHeightDelayMillis = 70
+private const val EnterTotalMillis = 355
 
-private const val ExitWidthMillis = 120
-private const val ExitAlphaMillis = 140
-private const val ExitHeightMillis = 150
+private const val OpacityStartPct = 0.000f
+private const val OpacityEndPct = 0.217f
+private const val WidthStartPct = 0.016f
+private const val WidthEndPct = 0.336f
+private const val HeightStartPct = 0.259f
+private const val HeightEndPct = 1.000f
 
-/** Longest exit leg; [OverlayService.EXIT_ANIMATION_MILLIS] must not undercut this. */
-const val TotalExitMillis = 140
+private fun durationOf(startPct: Float, endPct: Float) =
+    ((endPct - startPct) * EnterTotalMillis).roundToInt()
+
+private fun delayOf(startPct: Float) = (startPct * EnterTotalMillis).roundToInt()
+
+/**
+ * The exit is not a reversed entrance. Width, height and opacity all collapse together and
+ * proportionally, toward a pivot inside the header rather than the card's centre — the card falls
+ * back into the search bar it grew out of.
+ */
+private const val ExitMillis = 106
+private const val ExitAlphaMillis = 95
+private const val ExitEndScale = 0.13f
+
+/** Pivot sits ~8.5% down the card, i.e. mid-header, so the top edge drifts down as it collapses. */
+private val ExitTopDrift = 25.dp
+
+const val TotalExitMillis = ExitMillis
+
+// --- Easings, fitted against the capture --------------------------------------------------------
+
+/** Opacity accelerates: t^1.5 fitted at rmse 0.021. Notably NOT a decelerate. */
+private val AccelerateEasing = Easing { fraction ->
+    fraction.toDouble().pow(1.5).toFloat()
+}
+
+/** Height follows a gentle symmetric S; smoothstep fitted at rmse 0.031. */
+private val SmoothStepEasing = Easing { t -> t * t * (3f - 2f * t) }
+
+/** Width is essentially linear (rmse 0.040 against linear, 0.165 against decelerate). */
+private val WidthEnterEasing = LinearEasing
+
+/** The collapse decelerates; 1-(1-t)^2 fitted at rmse 0.027. */
+private val ExitEasing = LinearOutSlowInEasing
 
 @Composable
 fun OverlayContent(
@@ -110,20 +154,40 @@ fun OverlayContent(
     GumshoosTheme(darkTheme = true, dynamicColor = true) {
         val transition = updateTransition(targetState = visible, label = "overlay")
 
-        // Three staged legs, matching the reference: the bar widens and fades in first, then the
-        // card grows downward. Height lags slightly so the widening reads as a separate beat.
+        // Entrance is staged: opacity and width run together up front, then the card grows
+        // downward for the remaining three quarters of the timeline. Exit ignores that staging
+        // entirely and collapses everything at once.
+        // The hidden state is asymmetric: the entrance begins at 76.5% but the exit collapses all
+        // the way to 13%. Keyframes pin the entrance's true starting width, which the tween would
+        // otherwise inherit from wherever the exit left it. The jump happens while alpha is still
+        // ~0, so it is invisible.
         val widthFraction by transition.animateFloat(
             transitionSpec = {
-                if (targetState) tween(EnterWidthMillis, easing = LinearOutSlowInEasing)
-                else tween(ExitWidthMillis, easing = FastOutLinearInEasing)
+                if (targetState) {
+                    keyframes {
+                        durationMillis =
+                            delayOf(WidthStartPct) + durationOf(WidthStartPct, WidthEndPct)
+                        CollapsedWidthFraction at 0 using WidthEnterEasing
+                        CollapsedWidthFraction at delayOf(WidthStartPct) using WidthEnterEasing
+                        1f at durationMillis
+                    }
+                } else {
+                    tween(ExitMillis, easing = ExitEasing)
+                }
             },
             label = "width",
-        ) { shown -> if (shown) 1f else CollapsedWidthFraction }
+        ) { shown -> if (shown) 1f else ExitEndScale }
 
         val cardAlpha by transition.animateFloat(
             transitionSpec = {
-                if (targetState) tween(EnterAlphaMillis, easing = LinearOutSlowInEasing)
-                else tween(ExitAlphaMillis, easing = FastOutLinearInEasing)
+                if (targetState) {
+                    tween(
+                        durationMillis = durationOf(OpacityStartPct, OpacityEndPct),
+                        easing = AccelerateEasing,
+                    )
+                } else {
+                    tween(ExitAlphaMillis, easing = ExitEasing)
+                }
             },
             label = "alpha",
         ) { shown -> if (shown) 1f else 0f }
@@ -131,22 +195,33 @@ fun OverlayContent(
         val cardHeight by transition.animateDp(
             transitionSpec = {
                 if (targetState) {
-                    tween(
-                        durationMillis = EnterHeightMillis,
-                        delayMillis = EnterHeightDelayMillis,
-                        easing = LinearOutSlowInEasing,
-                    )
+                    keyframes {
+                        durationMillis =
+                            delayOf(HeightStartPct) + durationOf(HeightStartPct, HeightEndPct)
+                        CardCollapsedHeight at 0 using SmoothStepEasing
+                        CardCollapsedHeight at delayOf(HeightStartPct) using SmoothStepEasing
+                        CardExpandedHeight at durationMillis
+                    }
                 } else {
-                    tween(ExitHeightMillis, easing = FastOutLinearInEasing)
+                    tween(ExitMillis, easing = ExitEasing)
                 }
             },
             label = "height",
-        ) { shown -> if (shown) CardExpandedHeight else CardCollapsedHeight }
+        ) { shown -> if (shown) CardExpandedHeight else CardExpandedHeight * ExitEndScale }
+
+        // Only meaningful on exit: the collapse pivots inside the header, so the top edge falls.
+        // Snapped to zero on enter, where the card is strictly top-anchored.
+        val topDrift by transition.animateDp(
+            transitionSpec = {
+                if (targetState) tween(1) else tween(ExitMillis, easing = ExitEasing)
+            },
+            label = "topDrift",
+        ) { shown -> if (shown) 0.dp else ExitTopDrift }
 
         BackHandler(enabled = visible) { onDismiss() }
 
         // No scrim: the reference leaves the wallpaper at full brightness.
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .clickable(
@@ -154,47 +229,38 @@ fun OverlayContent(
                     interactionSource = remember { MutableInteractionSource() },
                 ) { onDismiss() },
         ) {
+            val settledCardWidth = maxWidth - (CardSideMargin * 2)
+
             Surface(
                 shape = RoundedCornerShape(CardCornerRadius),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = CardSurfaceAlpha),
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(horizontal = CardSideMargin, vertical = 8.dp)
-                    .fillMaxWidth()
+                    .padding(top = CardTopMargin + topDrift)
+                    .width(settledCardWidth * widthFraction)
                     .height(cardHeight)
-                    // Width and alpha run in the draw phase, not layout. fillMaxWidth(fraction)
-                    // would change the width constraint every frame, remeasuring the grid and
-                    // re-running text line-breaking for all ten labels — far too expensive for a
-                    // 8ms budget at 120Hz. As a graphicsLayer transform it costs the GPU nothing.
-                    .graphicsLayer {
-                        scaleX = widthFraction
-                        alpha = cardAlpha
-                        transformOrigin = TransformOrigin(0.5f, 0f)
-                    }
+                    .alpha(cardAlpha)
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
                     ) { /* swallow taps so they don't reach the dismiss layer */ },
             ) {
-                // requiredHeight ignores the shrinking constraint, so the content stays laid out at
-                // full size and Surface's shape clip reveals it. That's what makes the grid appear
-                // already-rendered as the card grows, rather than fading in behind it.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .requiredHeight(CardExpandedHeight),
-                    contentAlignment = Alignment.TopStart,
-                ) {
-                    SearchPanel(visible = visible, onDismiss = onDismiss)
-                }
+                // Width is a real layout change, matching the reference: the search glyph tracks
+                // the card's edge rather than sliding under a scaled transform. That is affordable
+                // only because the expensive subtree below is pinned — see SearchPanel.
+                SearchPanel(
+                    visible = visible,
+                    onDismiss = onDismiss,
+                    pinnedWidth = settledCardWidth,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit) {
+private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf(SearchTab.FREQUENT) }
@@ -212,13 +278,20 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit) {
 
     val results = AppRepository.search(query, tab)
 
-    Column(Modifier.fillMaxSize()) {
+    // requiredHeight pins the whole panel at full height so the card's shrinking height clips it
+    // rather than squeezing it — that is what makes the grid look already-rendered as the card
+    // grows. The header is left to fill the card's animating width, matching the reference.
+    Column(Modifier.requiredHeight(CardExpandedHeight)) {
         SearchHeader(
             query = query,
             onQueryChange = { query = it },
             focusRequester = focusRequester,
         )
 
+        // Pinned to the settled width so the width animation never re-measures the tab row or the
+        // grid — ten two-line labels re-running text layout every frame is what made the earlier
+        // version stutter. Only the cheap header re-flows.
+        Column(Modifier.requiredWidth(pinnedWidth)) {
         TabRow(
             selectedTabIndex = tab.ordinal,
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -262,6 +335,7 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit) {
                 onDismiss()
             },
         )
+        }
     }
 }
 
