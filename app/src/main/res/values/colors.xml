@@ -13,6 +13,9 @@
       Grouped here because how convincingly this passes for an icon depends on the launcher and
       wallpaper, so these are expected to be tuned and eventually surfaced in settings.
     -->
-    <color name="widget_icon_background">#FFF5F3EA</color>
-    <color name="widget_icon_glyph">#FF3B4B99</color>
+    <!-- Diagonal gradient sampled from the real Search icon: lavender -> white -> pale yellow. -->
+    <color name="widget_icon_background_start">#FFE6E9FB</color>
+    <color name="widget_icon_background_mid">#FFFFFFFF</color>
+    <color name="widget_icon_background_end">#FFEFF5CA</color>
+    <color name="widget_icon_glyph">#FF46568D</color>
 </resources>

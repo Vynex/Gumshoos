@@ -6,7 +6,7 @@
       what made the widget read as oversized next to real icons. Typical launcher icons land around
       48-56dp, and launchers add their own widget padding on top, so this is the main knob to tune.
     -->
-    <dimen name="widget_icon_size">52dp</dimen>
+    <dimen name="widget_icon_size">46dp</dimen>
 
     <!--
       App icons sit toward the top of their cell because the label occupies the space below. Nudging

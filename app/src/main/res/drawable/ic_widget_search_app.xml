@@ -3,28 +3,50 @@
   Circle and glyph in one drawable so the widget needs no background: a View background would be
   clipped square by some launchers, where a vector oval stays a clean circle everywhere.
 
-  Stroked rather than filled paths for the magnifier — far easier to keep the weight even than
-  hand-building a filled donut, and it matches the bold look of a real launcher icon.
+  Proportions measured off the real Search icon sitting next to this one on the home screen, with
+  the sample masked to the circle so wallpaper couldn't contaminate it:
+    - glyph spans 51% of the circle's diameter and sits roughly centred
+    - lens stroke is ~4% of the diameter, i.e. around 2.8 in this 48 viewport
+    - the fill is a diagonal gradient, lavender -> white -> pale yellow-green, not a flat colour
+  An unmasked first pass read the glyph as 68% and produced a noticeably chunkier icon.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="48dp"
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
 
-    <path
-        android:fillColor="@color/widget_icon_background"
-        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24 24,-10.745 24,-24S37.255,0 24,0z" />
+    <path android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24 24,-10.745 24,-24S37.255,0 24,0z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="41"
+                android:endY="41"
+                android:startX="7"
+                android:startY="7"
+                android:type="linear">
+                <item
+                    android:color="@color/widget_icon_background_start"
+                    android:offset="0" />
+                <item
+                    android:color="@color/widget_icon_background_mid"
+                    android:offset="0.5" />
+                <item
+                    android:color="@color/widget_icon_background_end"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
 
     <path
-        android:pathData="M29,20a8,8 0 1,1 -16,0a8,8 0 1,1 16,0"
+        android:pathData="M29,20.7a8,8 0 1,1 -16,0a8,8 0 1,1 16,0"
         android:strokeColor="@color/widget_icon_glyph"
-        android:strokeWidth="3.6" />
+        android:strokeWidth="2.8" />
 
     <path
-        android:pathData="M26.9,25.9L34.5,33.5"
+        android:pathData="M26.9,26.6L34.6,34.3"
         android:strokeColor="@color/widget_icon_glyph"
         android:strokeLineCap="round"
-        android:strokeWidth="3.6" />
+        android:strokeWidth="2.8" />
 
 </vector>
