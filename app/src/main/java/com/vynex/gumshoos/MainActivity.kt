@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -74,7 +73,6 @@ class MainActivity : ComponentActivity() {
 private fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-    var strategy by remember { mutableStateOf(Prefs.prewarmStrategy(context)) }
 
     // Permission is granted in a different app, so re-check whenever we come back to the front.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -146,34 +144,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("3 · Pre-warm strategy", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "The variable under test. GONE skips measure/layout while hidden; PREDRAWN forces one " +
-                "full frame at attach time. Switching restarts the service.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PrewarmStrategy.entries.forEach { option ->
-                FilterChip(
-                    selected = strategy == option,
-                    onClick = {
-                        Prefs.setPrewarmStrategy(context, option)
-                        strategy = option
-                        Latency.reset()
-                        // Restart so the new strategy applies at attach time.
-                        context.stopService(Intent(context, OverlayService::class.java))
-                        context.startForegroundService(
-                            OverlayService.intent(context, OverlayService.ACTION_WARM)
-                        )
-                    },
-                    label = { Text(option.name) },
-                )
-            }
-        }
-
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-        Text("4 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("3 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",

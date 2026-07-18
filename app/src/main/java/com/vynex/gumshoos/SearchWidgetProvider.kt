@@ -27,10 +27,9 @@ class SearchWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { appWidgetManager.updateAppWidget(it, views) }
     }
 
-    override fun onEnabled(context: Context) {
-        // First widget placed — make sure the window is attached and warm before the first tap.
-        context.startForegroundService(OverlayService.intent(context, OverlayService.ACTION_WARM))
-    }
+    // Deliberately no onEnabled hook. Starting a foreground service from a broadcast receiver is a
+    // background FGS start, which Android 12+ blocks with ForegroundServiceStartNotAllowedException.
+    // A widget *click* is exempt; widget *placement* is not. Warming happens from the app instead.
 
     private fun showPendingIntent(context: Context): PendingIntent =
         PendingIntent.getForegroundService(

@@ -1,8 +1,10 @@
 package com.vynex.gumshoos
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,21 +50,26 @@ fun OverlayContent(
     onDismiss: () -> Unit,
 ) {
     GumshoosTheme {
-        // Short, and starting from a mostly-visible state: the first committed frame should already
-        // read as "the window is there", so the latency number matches what the eye sees.
+        // FastOutSlowIn eases in *and* out, which reads as hesitation on something that is supposed
+        // to feel like it was already there. Entrances want deceleration: full speed immediately,
+        // settling at the end. Alpha is near-instant; the scale spring carries the motion.
         val scrimAlpha by animateFloatAsState(
             targetValue = if (visible) 0.45f else 0f,
-            animationSpec = tween(120, easing = FastOutSlowInEasing),
+            animationSpec = tween(if (visible) 90 else 110, easing = LinearOutSlowInEasing),
             label = "scrim",
         )
         val cardAlpha by animateFloatAsState(
-            targetValue = if (visible) 1f else 0.7f,
-            animationSpec = tween(120, easing = FastOutSlowInEasing),
+            targetValue = if (visible) 1f else 0f,
+            animationSpec = tween(if (visible) 70 else 90, easing = LinearOutSlowInEasing),
             label = "cardAlpha",
         )
         val cardScale by animateFloatAsState(
-            targetValue = if (visible) 1f else 0.97f,
-            animationSpec = tween(140, easing = FastOutSlowInEasing),
+            targetValue = if (visible) 1f else 0.96f,
+            animationSpec = spring(
+                dampingRatio = 1f, // critically damped: fast, no overshoot wobble
+                stiffness = Spring.StiffnessMedium,
+                visibilityThreshold = 0.001f,
+            ),
             label = "cardScale",
         )
 
@@ -162,7 +169,6 @@ private fun LatencyReadout() {
             append("${sample.millis} ms")
             if (median != null && Latency.count() > 1) append("   ·   median ${median} ms")
             append("   ·   ${sample.source}")
-            append("   ·   ${sample.strategy.name.lowercase()}")
             if (sample.coldAttach) append("   ·   FIRST SHOW, ignore")
         },
         style = MaterialTheme.typography.labelMedium,

@@ -58,8 +58,8 @@ class OverlayService :
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "gumshoos_overlay"
 
-        /** Must match the exit animation in [OverlayContent] or the view vanishes mid-fade. */
-        const val EXIT_ANIMATION_MILLIS = 160L
+        /** Must be >= the exit animation in [OverlayContent] or the view vanishes mid-fade. */
+        const val EXIT_ANIMATION_MILLIS = 120L
 
         fun intent(context: Context, action: String, source: String? = null): Intent =
             Intent(context, OverlayService::class.java).apply {
@@ -92,7 +92,6 @@ class OverlayService :
     /** True until the first successful show, so we can tell warm shows from the very first one. */
     private var neverShown = true
 
-    private var strategy = PrewarmStrategy.PREDRAWN
     private var pendingShowStart = 0L
     private var pendingShowSource = "unknown"
     private var hideRunnable: Runnable? = null
@@ -100,7 +99,6 @@ class OverlayService :
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        strategy = Prefs.prewarmStrategy(this)
 
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
@@ -169,27 +167,18 @@ class OverlayService :
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP }
 
-        // While hidden the window must not take input focus, or it would steal keystrokes from
+        // Hidden, and non-focusable via the layout flags, so it can't steal keystrokes from
         // whatever app is actually in front.
-        composeView.visibility = if (strategy == PrewarmStrategy.PREDRAWN) View.VISIBLE else View.GONE
-        composeView.alpha = if (strategy == PrewarmStrategy.PREDRAWN) 0f else 1f
+        //
+        // Measured on-device at under 20ms either way, so the extra warm frame the PREDRAWN variant
+        // used to force bought nothing; GONE is simpler and skips a wasted draw at attach time.
+        composeView.visibility = View.GONE
 
         try {
             windowManager.addView(composeView, layoutParams)
             attached = true
         } catch (e: Exception) {
             Log.e(TAG, "attach failed — overlay permission missing?", e)
-            return
-        }
-
-        if (strategy == PrewarmStrategy.PREDRAWN) {
-            // Let exactly one real frame go through measure/layout/draw, then hide. The hypothesis
-            // is that this makes the first *visible* frame cheaper than the GONE path.
-            onNextFrameCommitted {
-                composeView.visibility = View.GONE
-                composeView.alpha = 1f
-                Log.i(TAG, "prewarm: first frame committed, view now hidden")
-            }
         }
     }
 
@@ -216,16 +205,16 @@ class OverlayService :
 
         onNextFrameCommitted {
             val elapsed = SystemClock.uptimeMillis() - pendingShowStart
-            val sample = ShowSample(
-                source = pendingShowSource,
-                strategy = strategy,
-                millis = elapsed,
-                coldAttach = coldAttach,
+            Latency.record(
+                ShowSample(
+                    source = pendingShowSource,
+                    millis = elapsed,
+                    coldAttach = coldAttach,
+                )
             )
-            Latency.record(sample)
             Log.i(
                 TAG,
-                "show: ${elapsed}ms  source=$source  strategy=$strategy" +
+                "show: ${elapsed}ms  source=$source" +
                     if (coldAttach) "  (first show — attach included, ignore this one)" else "",
             )
         }

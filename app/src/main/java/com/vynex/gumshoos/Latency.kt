@@ -13,7 +13,6 @@ import androidx.compose.runtime.setValue
  */
 data class ShowSample(
     val source: String,
-    val strategy: PrewarmStrategy,
     val millis: Long,
     val coldAttach: Boolean,
 )
