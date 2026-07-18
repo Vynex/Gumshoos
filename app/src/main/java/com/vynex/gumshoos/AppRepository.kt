@@ -22,8 +22,9 @@ data class AppEntry(
     /** First install. Distinct from [lastUpdateTime], which also moves on every update. */
     val firstInstallTime: Long,
     val lastUpdateTime: Long,
-    /** Precomputed at index time so matching never recomputes it per keystroke. */
-    val initials: String,
+    /** Both precomputed at index time so matching never recomputes them per keystroke. */
+    val wordInitials: String,
+    val capitals: String,
 ) {
     val packageName: String get() = component.packageName
 }
@@ -62,7 +63,8 @@ object AppRepository {
                     icon = info.loadIcon(pm).toBitmap(iconPx, iconPx).asImageBitmap(),
                     firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
                     lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
-                    initials = AppMatcher.initialsOf(label),
+                    wordInitials = AppMatcher.wordInitialsOf(label),
+                    capitals = AppMatcher.capitalsOf(label),
                 )
             }.getOrNull()
         }
@@ -98,14 +100,17 @@ object AppRepository {
     /**
      * Ranked results. Score dominates; most-recently-opened breaks ties, so equally good textual
      * matches surface in the order you actually use them.
+     *
+     * A non-empty query searches every app regardless of tab. The tabs are a way of browsing, and
+     * they're hidden while searching — scoping results to one of them would silently drop matches.
      */
     fun search(query: String, tab: SearchTab): List<AppEntry> {
         if (query.isBlank()) return baseOrder(tab)
 
-        val pool = if (tab == SearchTab.NEW_UPDATED) recentlyInstalledOrUpdated() else apps
-        return pool
+        return apps
             .mapNotNull { entry ->
-                AppMatcher.score(query.trim(), entry.label, entry.initials)?.let { entry to it }
+                AppMatcher.score(query.trim(), entry.label, entry.wordInitials, entry.capitals)
+                    ?.let { entry to it }
             }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }

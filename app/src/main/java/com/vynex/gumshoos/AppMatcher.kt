@@ -3,23 +3,38 @@ package com.vynex.gumshoos
 /**
  * Query matching for app labels.
  *
- * Handles four shapes of input, in descending confidence:
- *  - prefix / substring of the label            ("book" -> BookMyShow)
- *  - word initials                              ("bb"   -> Big Basket)
- *  - internal capitals                          ("bms"  -> BookMyShow)
- *  - loose subsequence, gap-penalised           ("bkmy" -> BookMyShow)
+ * Tiers, strongest first. Recency breaks ties between equal tiers — see [AppRepository.search] —
+ * so among equally good textual matches you get the apps you actually use.
+ *
+ *   1  exact label                "spotify" -> Spotify
+ *   2  exact word initials        "bb"      -> Big Basket
+ *   3  exact capitals             "bms"     -> BookMyShow
+ *   4  label prefix               "spo"     -> Spotify
+ *   5  initials prefix            "bm"      -> BookMyShow
+ *   6  word-boundary substring    "my"      -> Book*My*Show
+ *   7  substring anywhere         "tube"    -> YouTube
+ *   8  fuzzy subsequence          "bkmy"    -> BookMyShow
  */
 object AppMatcher {
 
+    // Spaced widely so a weaker tier can never overtake a stronger one on the brevity bonus.
+    private const val TIER = 1_000
+    private const val EXACT_LABEL = 90 * TIER
+    private const val EXACT_WORD_INITIALS = 80 * TIER
+    private const val EXACT_CAPITALS = 70 * TIER
+    private const val PREFIX_LABEL = 60 * TIER
+    private const val PREFIX_INITIALS = 50 * TIER
+    private const val WORD_BOUNDARY = 40 * TIER
+    private const val SUBSTRING = 30 * TIER
+    private const val FUZZY = 20 * TIER
+
     /**
-     * Condensed initials for a label, covering both spaced words and camel case with one rule:
-     * take the first character of every token, plus every subsequent uppercase character.
+     * First character of each whitespace- or punctuation-separated token.
      *
-     *   "Big Basket"  -> "bb"
-     *   "BookMyShow"  -> "bms"
-     *   "WhatsApp"    -> "wa"
+     *   "Big Basket" -> "bb"
+     *   "BookMyShow" -> "b"      (one token)
      */
-    fun initialsOf(label: String): String {
+    fun wordInitialsOf(label: String): String {
         val out = StringBuilder()
         var atTokenStart = true
         for (ch in label) {
@@ -29,13 +44,30 @@ object AppMatcher {
                     out.append(ch.lowercaseChar())
                     atTokenStart = false
                 }
-                ch.isUpperCase() || ch.isDigit() -> out.append(ch.lowercaseChar())
             }
         }
         return out.toString()
     }
 
-    /** Index of every token start, so a mid-label word match can outrank a mid-word one. */
+    /**
+     * First character plus every later uppercase one, which is what camel case reads as.
+     *
+     *   "BookMyShow" -> "bms"
+     *   "Big Basket" -> "bb"
+     *   "iTunes"     -> "it"     (first char included, so lowercase-leading names still work)
+     */
+    fun capitalsOf(label: String): String {
+        if (label.isEmpty()) return ""
+        val out = StringBuilder()
+        out.append(label.first().lowercaseChar())
+        for (i in 1 until label.length) {
+            val ch = label[i]
+            if (ch.isUpperCase() || ch.isDigit()) out.append(ch.lowercaseChar())
+        }
+        return out.toString()
+    }
+
+    /** Index of every token start, so a mid-label word match outranks a mid-word one. */
     private fun tokenStarts(label: String): List<Int> {
         val starts = mutableListOf<Int>()
         var atTokenStart = true
@@ -50,11 +82,8 @@ object AppMatcher {
         return starts
     }
 
-    /**
-     * Higher is better; null means no match at all. Tiers are spaced widely enough that a weaker
-     * match can never overtake a stronger one on length bonuses alone.
-     */
-    fun score(query: String, label: String, initials: String): Int? {
+    /** Higher is better; null means no match at all. */
+    fun score(query: String, label: String, wordInitials: String, capitals: String): Int? {
         if (query.isEmpty()) return 0
         val q = query.lowercase()
         val l = label.lowercase()
@@ -62,13 +91,15 @@ object AppMatcher {
         // Shorter labels win within a tier: "Maps" should beat "Maps Go" for "map".
         val brevity = (60 - label.length).coerceAtLeast(0)
 
-        if (l.startsWith(q)) return 10_000 + brevity
-        if (initials.startsWith(q)) return 9_000 + brevity
-        if (tokenStarts(label).any { l.startsWith(q, it) }) return 8_000 + brevity
-        if (l.contains(q)) return 7_000 + brevity
-        if (initials.contains(q)) return 6_000 + brevity
+        if (l == q) return EXACT_LABEL + brevity
+        if (wordInitials == q) return EXACT_WORD_INITIALS + brevity
+        if (capitals == q) return EXACT_CAPITALS + brevity
+        if (l.startsWith(q)) return PREFIX_LABEL + brevity
+        if (wordInitials.startsWith(q) || capitals.startsWith(q)) return PREFIX_INITIALS + brevity
+        if (tokenStarts(label).any { l.startsWith(q, it) }) return WORD_BOUNDARY + brevity
+        if (l.contains(q)) return SUBSTRING + brevity
 
-        return subsequenceScore(q, l)?.let { 5_000 + it + brevity / 2 }
+        return subsequenceScore(q, l)?.let { FUZZY + it }
     }
 
     /**

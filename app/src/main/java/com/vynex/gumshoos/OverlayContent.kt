@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -162,6 +164,9 @@ private const val ExitMillis = 220
 private const val ExitAlphaMillis = 200
 private const val ExitEndScale = 0.13f
 
+/** Tab row collapse when a query is typed. Short, since it runs while you're already typing. */
+private const val TabCollapseMillis = 160
+
 /** Pivot sits ~8.5% down the card, i.e. mid-header, so the top edge drifts down as it collapses. */
 private val ExitTopDrift = 25.dp
 
@@ -283,6 +288,16 @@ fun OverlayContent(
             if (menuTarget != null) menuTarget = null else onDismiss()
         }
 
+        // Typing collapses the tabs away: while searching, results are ranked across every app
+        // rather than scoped to a tab, so the tabs have nothing left to select.
+        var searching by remember { mutableStateOf(false) }
+        val tabHeight by animateDpAsState(
+            targetValue = if (searching) 0.dp else TabRowHeight,
+            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            label = "tabHeight",
+        )
+        val tabCollapse = TabRowHeight - tabHeight
+
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
             modifier = Modifier
@@ -304,7 +319,10 @@ fun OverlayContent(
                     .align(Alignment.TopCenter)
                     .padding(top = CardTopMargin + topDrift)
                     .width(settledCardWidth * widthFraction)
-                    .height(cardHeight)
+                    // Subtracting the collapse keeps the card tight to its content while searching;
+                    // the tab row's own height animates in step, so the grid slides up rather than
+                    // the card growing a gap at the bottom.
+                    .height((cardHeight - tabCollapse).coerceAtLeast(0.dp))
                     .alpha(cardAlpha)
                     .clickable(
                         indication = null,
@@ -320,6 +338,8 @@ fun OverlayContent(
                     pinnedWidth = settledCardWidth,
                     menuTarget = menuTarget,
                     onMenuTargetChange = { menuTarget = it },
+                    tabHeight = tabHeight,
+                    onSearchingChange = { searching = it },
                 )
             }
         }
@@ -333,6 +353,8 @@ private fun SearchPanel(
     pinnedWidth: Dp,
     menuTarget: Pair<AppEntry, Int>?,
     onMenuTargetChange: (Pair<AppEntry, Int>?) -> Unit,
+    tabHeight: Dp,
+    onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
@@ -363,7 +385,10 @@ private fun SearchPanel(
         }
     }
 
-    LaunchedEffect(query) { onMenuTargetChange(null) }
+    LaunchedEffect(query) {
+        onMenuTargetChange(null)
+        onSearchingChange(query.isNotBlank())
+    }
 
     val launch: (AppEntry) -> Unit = { entry ->
         AppRepository.launch(context, entry)
@@ -408,11 +433,18 @@ private fun SearchPanel(
         // version stutter. Only the cheap header re-flows.
         Box(Modifier.requiredWidth(pinnedWidth)) {
         Column {
+        // Clipped rather than removed, so the row slides up out of view instead of vanishing.
+        Box(
+            Modifier
+                .height(tabHeight)
+                .clipToBounds()
+                .alpha((tabHeight / TabRowHeight).coerceIn(0f, 1f)),
+        ) {
         TabRow(
             selectedTabIndex = tab.ordinal,
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.height(TabRowHeight),
+            modifier = Modifier.requiredHeight(TabRowHeight),
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
                     modifier = Modifier.tabIndicatorOffset(positions[tab.ordinal]),
@@ -443,8 +475,21 @@ private fun SearchPanel(
             }
         }
 
+        }
+
         HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
+        if (query.isNotBlank()) {
+            // One ranked list across every app. Keeping the pager here would let you swipe between
+            // three tabs that no longer differ, with no tab row to say which one you were on.
+            AppGrid(
+                entries = AppRepository.search(query, tab),
+                emptyMessage = "No matches",
+                onLaunch = launch,
+                onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
+                modifier = Modifier.requiredWidth(pinnedWidth),
+            )
+        } else {
         // Each tab is a page, so the grid can be swiped as well as tapped. Pages are pinned to the
         // card width; the pager itself is what makes tab and swipe share one source of truth.
         HorizontalPager(
@@ -462,6 +507,7 @@ private fun SearchPanel(
                 onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
+        }
         }
         }
 
