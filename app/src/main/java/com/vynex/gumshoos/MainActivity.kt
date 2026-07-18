@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -44,7 +45,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.vynex.gumshoos.answers.AnswerContextFactory
+import com.vynex.gumshoos.answers.AnswerFormat
+import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -277,7 +282,11 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("9 · Compare", style = MaterialTheme.typography.titleMedium)
+        CurrencyRatesSettings()
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("10 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
@@ -507,6 +516,51 @@ private fun EmailAppRow(
  * start a service — only a widget can. Expect them to measure slower than the widget for that
  * reason; the overlay's readout tags this path "icon".
  */
+/**
+ * Exchange rate status, and a way to refresh without waiting for the automatic one.
+ *
+ * Rates refresh at warm time at most once every 20 hours, which is right for a background job and
+ * wrong when you want a current number now.
+ */
+@Composable
+private fun CurrencyRatesSettings() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val table = CurrencyRates.table
+    var lastAttemptFailed by remember { mutableStateOf(false) }
+
+    Text("9 · Currency rates", style = MaterialTheme.typography.titleMedium)
+    Text(
+        when {
+            table == null -> "No rates yet. Conversions stay hidden until some are fetched — an " +
+                "invented exchange rate would be worse than no answer."
+            else -> "${table.rates.size} currencies, based on ${table.base}. Updated " +
+                AnswerFormat.relativeTime(table.fetchedAtMillis, System.currentTimeMillis()) + "."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (lastAttemptFailed) {
+        Text(
+            "Couldn't reach the rate service. Any cached rates are still in use.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
+    OutlinedButton(
+        onClick = {
+            lastAttemptFailed = false
+            scope.launch {
+                val base = AnswerContextFactory.forDevice(context).currencyCode
+                lastAttemptFailed = !CurrencyRates.refresh(context, base, force = true)
+            }
+        },
+        enabled = !CurrencyRates.refreshing,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text(if (CurrencyRates.refreshing) "Refreshing…" else "Refresh rates now") }
+}
+
 @Composable
 private fun SearchIconSettings() {
     val context = LocalContext.current

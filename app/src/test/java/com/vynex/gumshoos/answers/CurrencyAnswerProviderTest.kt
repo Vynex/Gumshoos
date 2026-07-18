@@ -5,8 +5,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class CurrencyAnswerProviderTest {
+
+    private companion object {
+        const val FIXED_NOW = 1_784_000_000_000L
+    }
 
     /** Fixed rates, so the tests exercise conversion rather than the network. */
     private val rates = RateTable(
@@ -94,20 +99,41 @@ class CurrencyAnswerProviderTest {
     // --- presentation ----------------------------------------------------------------------------
 
     @Test
-    fun `the rate and its date are always shown`() {
+    fun `the rate and its age are always shown`() {
         // A number that looks authoritative while being a week old is worse than one that says so.
         val detail = detail("${'$'}5")!!
         assertTrue(detail.contains("1 USD ="))
+        assertTrue(detail.contains("ago") || detail.contains("just now"))
     }
 
     @Test
-    fun `stale rates say so`() {
-        val old = context().copy(
-            rates = rates.copy(
-                fetchedAtMillis = System.currentTimeMillis() - java.util.concurrent.TimeUnit.DAYS.toMillis(5),
-            ),
-        )
-        assertTrue(detail("${'$'}5", old)!!.contains("rates from"))
+    fun `the rate is limited to four decimals`() {
+        // Ten decimals of an exchange rate read as noise beside the converted amount.
+        val detail = detail("${'$'}5")!!
+        val rate = Regex("""1 USD = ([\d.,]+)""").find(detail)!!.groupValues[1]
+        val decimals = rate.substringAfter('.', "").length
+        assertTrue("expected at most 4 decimals, got '${'$'}rate'", decimals <= 4)
+    }
+
+    @Test
+    fun `age is shown as elapsed time rather than a date`() {
+        fun ageFor(millisAgo: Long): String {
+            val ctx = context().copy(
+                rates = rates.copy(fetchedAtMillis = FIXED_NOW - millisAgo),
+                clock = java.time.Clock.fixed(
+                    java.time.Instant.ofEpochMilli(FIXED_NOW),
+                    java.time.ZoneId.of("UTC"),
+                ),
+            )
+            return detail("${'$'}5", ctx)!!
+        }
+
+        assertTrue(ageFor(TimeUnit.MINUTES.toMillis(5)).contains("5 minutes ago"))
+        assertTrue(ageFor(TimeUnit.HOURS.toMillis(3)).contains("3 hours ago"))
+        assertTrue(ageFor(TimeUnit.DAYS.toMillis(6)).contains("6 days ago"))
+        assertTrue(ageFor(TimeUnit.SECONDS.toMillis(20)).contains("just now"))
+        // Singulars read correctly.
+        assertTrue(ageFor(TimeUnit.HOURS.toMillis(1)).contains("1 hour ago"))
     }
 
     // --- no rates --------------------------------------------------------------------------------

@@ -1,12 +1,7 @@
 package com.vynex.gumshoos.answers
 
 import java.text.NumberFormat
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Currency
-import java.util.concurrent.TimeUnit
 
 /**
  * Currency conversion, defaulting to the currency the device is set to.
@@ -116,23 +111,13 @@ object CurrencyAnswerProvider : AnswerProvider {
         val headline = money(converted, to, context)
         val unitRate = rates.convert(1.0, from, to) ?: 1.0
 
-        val asOf = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-            .withLocale(context.locale)
-            .withZone(ZoneId.of(context.zoneId))
-            .format(Instant.ofEpochMilli(rates.fetchedAtMillis))
-
-        // The rate and its date are always shown. Rates go stale silently otherwise, and a number
-        // that looks authoritative while being a week old is worse than one that says so.
-        val staleness = if (
-            System.currentTimeMillis() - rates.fetchedAtMillis > TimeUnit.DAYS.toMillis(2)
-        ) {
-            "  ·  rates from $asOf"
-        } else {
-            "  ·  $asOf"
-        }
+        // Always shown, and as elapsed time rather than a date: the question being answered is
+        // whether the number can still be trusted, and "6 days ago" says that where "13 Jul" makes
+        // the reader work it out.
+        val age = AnswerFormat.relativeTime(rates.fetchedAtMillis, context.clock.millis())
 
         val detail = "${money(amount, from, context)}  ·  " +
-            "1 $from = ${AnswerFormat.number(unitRate, context.locale)} $to$staleness"
+            "1 $from = ${AnswerFormat.rate(unitRate, context.locale)} $to  ·  $age"
 
         return Answer(
             providerId = id,

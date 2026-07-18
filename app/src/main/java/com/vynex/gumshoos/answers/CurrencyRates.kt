@@ -32,30 +32,45 @@ object CurrencyRates {
     var table by mutableStateOf<RateTable?>(null)
         private set
 
+    /** So the settings screen can show progress rather than looking inert while a fetch runs. */
+    var refreshing by mutableStateOf(false)
+        private set
+
     /**
      * Loads the cache, then refreshes over the network only if it is stale.
      *
-     * A failed fetch leaves the cached table in place: stale rates with a visible date beat no
-     * answer, and the provider shows how old they are.
+     * A failed fetch leaves the cached table in place: stale rates whose age is shown beat no
+     * answer at all.
+     *
+     * @param force skips the freshness check, for a refresh the user asked for explicitly. The
+     *   automatic path stays rate-limited so every warm-up doesn't hit the network.
+     * @return whether usable rates are now loaded.
      */
-    suspend fun refresh(context: Context, base: String) = withContext(Dispatchers.IO) {
-        val cached = table ?: readCache(context)
-        if (cached != null && table == null) {
-            withContext(Dispatchers.Main) { table = cached }
+    suspend fun refresh(context: Context, base: String, force: Boolean = false): Boolean =
+        withContext(Dispatchers.IO) {
+            val cached = table ?: readCache(context)
+            if (cached != null && table == null) {
+                withContext(Dispatchers.Main) { table = cached }
+            }
+
+            val fresh = cached != null &&
+                cached.base == base &&
+                System.currentTimeMillis() - cached.fetchedAtMillis < MAX_AGE_MILLIS
+            if (fresh && !force) return@withContext true
+
+            withContext(Dispatchers.Main) { refreshing = true }
+            try {
+                val fetched = runCatching { fetch(base) }
+                    .onFailure { Log.w(TAG, "rate fetch failed; keeping cached rates", it) }
+                    .getOrNull() ?: return@withContext false
+
+                writeCache(context, fetched)
+                withContext(Dispatchers.Main) { table = fetched }
+                return@withContext true
+            } finally {
+                withContext(Dispatchers.Main) { refreshing = false }
+            }
         }
-
-        val fresh = cached != null &&
-            cached.base == base &&
-            System.currentTimeMillis() - cached.fetchedAtMillis < MAX_AGE_MILLIS
-        if (fresh) return@withContext
-
-        val fetched = runCatching { fetch(base) }
-            .onFailure { Log.w(TAG, "rate fetch failed; keeping cached rates", it) }
-            .getOrNull() ?: return@withContext
-
-        writeCache(context, fetched)
-        withContext(Dispatchers.Main) { table = fetched }
-    }
 
     private fun fetch(base: String): RateTable? {
         val connection = URL("https://open.er-api.com/v6/latest/$base")
