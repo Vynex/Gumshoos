@@ -28,26 +28,51 @@ object AppMatcher {
     private const val SUBSTRING = 30 * TIER
     private const val FUZZY = 20 * TIER
 
+    /** Which characters a match covers, so the UI can embolden exactly those. */
+    data class Match(val score: Int, val indices: List<Int>)
+
+    /**
+     * Positions in the label of each token's first character.
+     *
+     * The strings are derived from these rather than built separately, so a highlight can never
+     * disagree with the match that produced it.
+     */
+    fun wordInitialIndices(label: String): List<Int> {
+        val out = mutableListOf<Int>()
+        var atTokenStart = true
+        label.forEachIndexed { i, ch ->
+            when {
+                !ch.isLetterOrDigit() -> atTokenStart = true
+                atTokenStart -> {
+                    out.add(i)
+                    atTokenStart = false
+                }
+            }
+        }
+        return out
+    }
+
+    /** Position 0 plus every later uppercase character or digit. */
+    fun capitalIndices(label: String): List<Int> {
+        if (label.isEmpty()) return emptyList()
+        val out = mutableListOf(0)
+        for (i in 1 until label.length) {
+            val ch = label[i]
+            if (ch.isUpperCase() || ch.isDigit()) out.add(i)
+        }
+        return out
+    }
+
+    private fun charsAt(label: String, indices: List<Int>) =
+        indices.map { label[it].lowercaseChar() }.joinToString("")
+
     /**
      * First character of each whitespace- or punctuation-separated token.
      *
      *   "Big Basket" -> "bb"
      *   "BookMyShow" -> "b"      (one token)
      */
-    fun wordInitialsOf(label: String): String {
-        val out = StringBuilder()
-        var atTokenStart = true
-        for (ch in label) {
-            when {
-                !ch.isLetterOrDigit() -> atTokenStart = true
-                atTokenStart -> {
-                    out.append(ch.lowercaseChar())
-                    atTokenStart = false
-                }
-            }
-        }
-        return out.toString()
-    }
+    fun wordInitialsOf(label: String): String = charsAt(label, wordInitialIndices(label))
 
     /**
      * First character plus every later uppercase one, which is what camel case reads as.
@@ -56,16 +81,7 @@ object AppMatcher {
      *   "Big Basket" -> "bb"
      *   "iTunes"     -> "it"     (first char included, so lowercase-leading names still work)
      */
-    fun capitalsOf(label: String): String {
-        if (label.isEmpty()) return ""
-        val out = StringBuilder()
-        out.append(label.first().lowercaseChar())
-        for (i in 1 until label.length) {
-            val ch = label[i]
-            if (ch.isUpperCase() || ch.isDigit()) out.append(ch.lowercaseChar())
-        }
-        return out.toString()
-    }
+    fun capitalsOf(label: String): String = charsAt(label, capitalIndices(label))
 
     /** Index of every token start, so a mid-label word match outranks a mid-word one. */
     private fun tokenStarts(label: String): List<Int> {
@@ -83,42 +99,61 @@ object AppMatcher {
     }
 
     /** Higher is better; null means no match at all. */
-    fun score(query: String, label: String, wordInitials: String, capitals: String): Int? {
-        if (query.isEmpty()) return 0
+    fun score(query: String, label: String, wordInitials: String, capitals: String): Int? =
+        match(query, label, wordInitials, capitals)?.score
+
+    /**
+     * Score plus the label positions the match covers. Both come from one pass so the emboldened
+     * characters are always the ones the winning tier actually matched on.
+     */
+    fun match(query: String, label: String, wordInitials: String, capitals: String): Match? {
+        if (query.isEmpty()) return Match(0, emptyList())
         val q = query.lowercase()
         val l = label.lowercase()
 
         // Shorter labels win within a tier: "Maps" should beat "Maps Go" for "map".
         val brevity = (60 - label.length).coerceAtLeast(0)
 
-        if (l == q) return EXACT_LABEL + brevity
-        if (wordInitials == q) return EXACT_WORD_INITIALS + brevity
-        if (capitals == q) return EXACT_CAPITALS + brevity
-        if (l.startsWith(q)) return PREFIX_LABEL + brevity
-        if (wordInitials.startsWith(q) || capitals.startsWith(q)) return PREFIX_INITIALS + brevity
-        if (tokenStarts(label).any { l.startsWith(q, it) }) return WORD_BOUNDARY + brevity
-        if (l.contains(q)) return SUBSTRING + brevity
+        if (l == q) return Match(EXACT_LABEL + brevity, label.indices.toList())
+        if (wordInitials == q) {
+            return Match(EXACT_WORD_INITIALS + brevity, wordInitialIndices(label))
+        }
+        if (capitals == q) return Match(EXACT_CAPITALS + brevity, capitalIndices(label))
+        if (l.startsWith(q)) return Match(PREFIX_LABEL + brevity, q.indices.toList())
+        if (wordInitials.startsWith(q)) {
+            return Match(PREFIX_INITIALS + brevity, wordInitialIndices(label).take(q.length))
+        }
+        if (capitals.startsWith(q)) {
+            return Match(PREFIX_INITIALS + brevity, capitalIndices(label).take(q.length))
+        }
+        tokenStarts(label).firstOrNull { l.startsWith(q, it) }?.let { start ->
+            return Match(WORD_BOUNDARY + brevity, (start until start + q.length).toList())
+        }
+        val at = l.indexOf(q)
+        if (at >= 0) return Match(SUBSTRING + brevity, (at until at + q.length).toList())
 
-        return subsequenceScore(q, l)?.let { FUZZY + it }
+        return subsequenceMatch(q, l)?.let { (bonus, indices) -> Match(FUZZY + bonus, indices) }
     }
 
     /**
      * Characters in order but not adjacent. Penalises gaps so tightly-clustered matches rank above
      * ones scattered across the whole label.
      */
-    private fun subsequenceScore(q: String, l: String): Int? {
+    private fun subsequenceMatch(q: String, l: String): Pair<Int, List<Int>>? {
         var qi = 0
         var lastHit = -1
         var gaps = 0
+        val hits = mutableListOf<Int>()
         for (li in l.indices) {
             if (qi >= q.length) break
             if (l[li] == q[qi]) {
                 if (lastHit >= 0) gaps += li - lastHit - 1
                 lastHit = li
+                hits.add(li)
                 qi++
             }
         }
         if (qi < q.length) return null
-        return (200 - gaps).coerceAtLeast(0)
+        return (200 - gaps).coerceAtLeast(0) to hits
     }
 }

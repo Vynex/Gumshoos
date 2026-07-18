@@ -78,7 +78,10 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -107,7 +110,7 @@ private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
 
 /** "Search using" label plus its icon row, shown only while a query is present. */
-private val SearchUsingHeight = 64.dp
+private val SearchUsingHeight = 78.dp
 private val ProviderIconSize = 26.dp
 
 private const val GridColumns = 5
@@ -518,6 +521,7 @@ private fun SearchPanel(
                 emptyMessage = "No matches",
                 onLaunch = launch,
                 onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
+                query = query,
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         } else {
@@ -536,6 +540,7 @@ private fun SearchPanel(
                 emptyMessage = emptyMessageFor(pageTab),
                 onLaunch = launch,
                 onLongPress = { entry, index -> onMenuTargetChange(entry to index) },
+                query = query,
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         }
@@ -748,18 +753,22 @@ private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
     Column(
         modifier = Modifier
             .requiredHeight(SearchUsingHeight)
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.Center,
+            .fillMaxWidth(),
     ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(Modifier.height(12.dp))
         Text(
+            modifier = Modifier.padding(horizontal = 16.dp),
             text = "Search using",
             fontSize = 11.sp,
             letterSpacing = 0.5.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
             SearchProviders.enabled.forEach { provider ->
                 Icon(
                     painter = painterResource(provider.icon),
@@ -879,6 +888,7 @@ private fun AppGrid(
     emptyMessage: String,
     onLaunch: (AppEntry) -> Unit,
     onLongPress: (AppEntry, Int) -> Unit,
+    query: String,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.height(GridContentHeight)) {
@@ -917,6 +927,7 @@ private fun AppGrid(
                         } else {
                             AppCell(
                                 entry = entry,
+                                query = query,
                                 onClick = { onLaunch(entry) },
                                 onLongClick = { onLongPress(entry, index) },
                                 modifier = Modifier.weight(1f),
@@ -933,6 +944,7 @@ private fun AppGrid(
 @Composable
 private fun AppCell(
     entry: AppEntry,
+    query: String,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -959,8 +971,27 @@ private fun AppCell(
             modifier = Modifier.size(AppIconSize),
         )
         Spacer(Modifier.height(6.dp))
+        // Emboldens exactly the characters the winning tier matched on, so an initials hit lights
+        // up the initials rather than a contiguous run that was never matched.
+        val label = remember(entry.label, query) {
+            val matched = if (query.isBlank()) {
+                emptySet()
+            } else {
+                AppMatcher.match(query, entry.label, entry.wordInitials, entry.capitals)
+                    ?.indices.orEmpty().toSet()
+            }
+            buildAnnotatedString {
+                entry.label.forEachIndexed { i, ch ->
+                    if (i in matched) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(ch) }
+                    } else {
+                        append(ch)
+                    }
+                }
+            }
+        }
         Text(
-            text = entry.label,
+            text = label,
             fontSize = 12.sp,
             lineHeight = 14.sp,
             color = MaterialTheme.colorScheme.onSurface,
