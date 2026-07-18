@@ -141,6 +141,10 @@ class OverlayService :
                 .onFailure { Log.e(TAG, "app index load failed", it) }
             runCatching { UsageRepository.refresh(this@OverlayService) }
                 .onFailure { Log.e(TAG, "usage stats refresh failed", it) }
+            runCatching { ContactsRepository.load(this@OverlayService) }
+                .onFailure { Log.e(TAG, "contacts load failed", it) }
+            runCatching { ContactsRepository.loadActionIcons(this@OverlayService) }
+                .onFailure { Log.e(TAG, "contact action icons failed", it) }
         }
     }
 
@@ -295,6 +299,11 @@ class OverlayService :
             // land on the show path.
             lifecycleScope.launch {
                 runCatching { UsageRepository.refresh(this@OverlayService) }
+                // Picks up a permission granted since warm-up, and any contacts added since.
+                if (ContactsRepository.contacts.isEmpty()) {
+                    runCatching { ContactsRepository.load(this@OverlayService) }
+                    runCatching { ContactsRepository.loadActionIcons(this@OverlayService) }
+                }
             }
         }
         neverShown = false

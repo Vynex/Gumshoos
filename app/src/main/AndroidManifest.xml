@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Optional: without it the contacts section simply doesn't appear. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!--
       Package visibility filtering (Android 11+) hides other apps from queryIntentActivities unless
@@ -48,6 +50,23 @@
         <intent>
             <action android:name="android.intent.action.WEB_SEARCH" />
         </intent>
+        <!--
+          Resolved to find which app handles each contact action, so the row can show that app's
+          real icon rather than a generic glyph.
+        -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <package android:name="com.whatsapp" />
     </queries>
 
     <application

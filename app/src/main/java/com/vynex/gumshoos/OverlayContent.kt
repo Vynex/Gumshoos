@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -63,12 +65,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -121,6 +125,20 @@ private val ProviderLabelGap = 10.dp
 private val ProviderIconSpacing = 30.dp
 private val ProviderRowBottomSpacing = 22.dp
 
+// Contacts section, shown while searching when the permission is granted and something matches.
+private val ContactRowHeight = 46.dp
+private val ContactAvatarSize = 34.dp
+private val ContactActionSize = 26.dp
+private val ContactActionSpacing = 14.dp
+private const val MaxContactRows = 3
+
+/** Label block above the rows, matching the "Search using" header. */
+private val ContactsHeaderHeight =
+    DividerHeight + 14.dp + 14.dp + 8.dp
+
+private val ContactsSectionMaxHeight =
+    ContactsHeaderHeight + (ContactRowHeight * MaxContactRows) + 10.dp
+
 private val SearchUsingHeight =
     DividerHeight + ProviderRowTopSpacing + ProviderLabelHeight +
         ProviderLabelGap + ProviderIconSize + ProviderRowBottomSpacing
@@ -143,7 +161,8 @@ private val CardExpandedHeight =
  * use a subset. The slack is clipped by whatever height the card currently animates to.
  */
 private val PanelMaxHeight =
-    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight + SearchUsingHeight
+    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight +
+        ContactsSectionMaxHeight + SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -331,7 +350,21 @@ fun OverlayContent(
         )
         val tabHeight = TabRowHeight * (1f - searchProgress)
         val providerRowHeight = SearchUsingHeight * searchProgress
-        val heightDelta = providerRowHeight - (TabRowHeight - tabHeight)
+
+        // Grows and shrinks with the number of matching contacts, so the card stays tight to its
+        // content rather than reserving space for rows that aren't there.
+        var contactRows by remember { mutableStateOf(0) }
+        val contactsHeight by animateDpAsState(
+            targetValue = if (contactRows == 0) {
+                0.dp
+            } else {
+                ContactsHeaderHeight + (ContactRowHeight * contactRows) + 10.dp
+            },
+            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            label = "contactsHeight",
+        )
+
+        val heightDelta = providerRowHeight + contactsHeight - (TabRowHeight - tabHeight)
 
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
@@ -375,6 +408,8 @@ fun OverlayContent(
                     onMenuTargetChange = { menuTarget = it },
                     tabHeight = tabHeight,
                     providerRowHeight = providerRowHeight,
+                    contactsHeight = contactsHeight,
+                    onContactRowsChange = { contactRows = it },
                     onSearchingChange = { searching = it },
                 )
             }
@@ -391,6 +426,8 @@ private fun SearchPanel(
     onMenuTargetChange: (Pair<AppEntry, Int>?) -> Unit,
     tabHeight: Dp,
     providerRowHeight: Dp,
+    contactsHeight: Dp,
+    onContactRowsChange: (Int) -> Unit,
     onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -557,6 +594,32 @@ private fun SearchPanel(
                 modifier = Modifier.requiredWidth(pinnedWidth),
             )
         }
+        }
+
+        val matchedContacts = if (query.isBlank()) {
+            emptyList()
+        } else {
+            ContactsRepository.search(query, MaxContactRows)
+        }
+        LaunchedEffect(matchedContacts.size) { onContactRowsChange(matchedContacts.size) }
+
+        Box(
+            Modifier
+                .height(contactsHeight)
+                .clipToBounds(),
+        ) {
+            ContactsSection(
+                contacts = matchedContacts,
+                query = query,
+                onAction = { contact, action ->
+                    ContactsRepository.perform(context, contact, action)
+                    onDismiss()
+                },
+                onOpen = { contact ->
+                    ContactsRepository.openContact(context, contact)
+                    onDismiss()
+                },
+            )
         }
 
         // Clipped like the tab row, so it slides into view rather than appearing.
@@ -754,6 +817,139 @@ private fun ContextMenuItem(
         )
         Spacer(Modifier.width(12.dp))
         Text(text = label, fontSize = 14.sp, color = tint)
+    }
+}
+
+/**
+ * Matching contacts, with the real icon of whichever app handles each action. Tapping the row opens
+ * the contact; tapping an icon performs that action directly.
+ */
+@Composable
+private fun ContactsSection(
+    contacts: List<ContactEntry>,
+    query: String,
+    onAction: (ContactEntry, ContactAction) -> Unit,
+    onOpen: (ContactEntry) -> Unit,
+) {
+    if (contacts.isEmpty()) return
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(Modifier.height(14.dp))
+        Text(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            text = "Contacts",
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            letterSpacing = 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        contacts.forEach { contact ->
+            ContactRow(
+                contact = contact,
+                query = query,
+                onAction = { onAction(contact, it) },
+                onOpen = { onOpen(contact) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContactRow(
+    contact: ContactEntry,
+    query: String,
+    onAction: (ContactAction) -> Unit,
+    onOpen: () -> Unit,
+) {
+    val context = LocalContext.current
+    LaunchedEffect(contact.id) { ContactPhotos.load(context, contact) }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ContactRowHeight)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onOpen,
+            )
+            .padding(horizontal = 16.dp),
+    ) {
+        ContactAvatar(contact)
+        Spacer(Modifier.width(12.dp))
+
+        val name = remember(contact.name, query) {
+            val matched = AppMatcher.match(query, contact.indexed)?.indices.orEmpty().toSet()
+            buildAnnotatedString {
+                contact.name.forEachIndexed { i, ch ->
+                    if (i in matched) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(ch) }
+                    } else {
+                        append(ch)
+                    }
+                }
+            }
+        }
+        Text(
+            text = name,
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+
+        Spacer(Modifier.width(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(ContactActionSpacing)) {
+            // Only the actions this contact actually supports: no number means no call or message,
+            // and WhatsApp appears only for contacts it has a data row for.
+            contact.actions().forEach { action ->
+                ContactsRepository.actionIcons[action]?.let { icon ->
+                    Image(
+                        bitmap = icon,
+                        contentDescription = action.name.lowercase(),
+                        modifier = Modifier
+                            .size(ContactActionSize)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                            ) { onAction(action) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactAvatar(contact: ContactEntry) {
+    val photo = ContactPhotos.cached(contact.id)
+    if (photo != null) {
+        Image(
+            bitmap = photo,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(ContactAvatarSize)
+                .clip(CircleShape),
+        )
+    } else {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(ContactAvatarSize)
+                .clip(CircleShape)
+                .background(Color(ContactPhotos.fallbackColour(contact.name))),
+        ) {
+            Text(
+                text = ContactPhotos.initial(contact.name),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White,
+            )
+        }
     }
 }
 

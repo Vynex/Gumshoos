@@ -1,11 +1,14 @@
 package com.vynex.gumshoos
 
+import android.Manifest
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,6 +69,20 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasUsageAccess by remember { mutableStateOf(UsageRepository.hasPermission(context)) }
+    var hasContacts by remember { mutableStateOf(ContactsRepository.hasPermission(context)) }
+
+    // Runtime dialog, so it has to be launched from here — a service has no activity to show it.
+    val contactsPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasContacts = granted
+        if (granted) {
+            // Re-warm so the service picks the contacts up without waiting for the next boot.
+            context.startForegroundService(
+                OverlayService.intent(context, OverlayService.ACTION_WARM)
+            )
+        }
+    }
 
     // Permission is granted in a different app, so re-check whenever we come back to the front.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -74,6 +91,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 hasOverlay = Settings.canDrawOverlays(context)
                 hasUsageAccess = UsageRepository.hasPermission(context)
+                hasContacts = ContactsRepository.hasPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -160,7 +178,26 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("4 · Hide the notification", style = MaterialTheme.typography.titleMedium)
+        Text("4 · Contacts", style = MaterialTheme.typography.titleMedium)
+        Text(
+            if (hasContacts) {
+                "Granted. Matching contacts appear below the app results."
+            } else {
+                "Optional. Without it the contacts section simply doesn't appear; nothing else " +
+                    "changes."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = { contactsPermission.launch(Manifest.permission.READ_CONTACTS) },
+            enabled = !hasContacts,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Allow contacts access") }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("5 · Hide the notification", style = MaterialTheme.typography.titleMedium)
         Text(
             "A foreground service must supply a notification — the system won't let it run " +
                 "without one. It can't be suppressed from inside the app, but on Android 13+ the " +
@@ -185,7 +222,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("6 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("7 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
