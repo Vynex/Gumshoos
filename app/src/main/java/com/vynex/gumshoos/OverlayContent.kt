@@ -370,14 +370,13 @@ private fun SearchPanel(
         onDismiss()
     }
 
-    // Enter/Search on the keyboard takes the top-ranked result of whichever tab is showing.
+    // Enter/Search on the keyboard takes the top-ranked result of whichever tab is showing, with
+    // or without a query — with none, that's the first app in the current ordering.
     //
-    // An empty query must never launch anything. Results are ordered by most-recently-used, so with
-    // no query the first result is whatever app you opened last — meaning any stray editor action
-    // (IMEs can deliver one when the field regains focus, and the overlay re-focuses on every show)
-    // silently relaunches it. That is exactly the "tapping the widget reopens the last app" bug.
+    // Guarded on `visible` only. Because an empty query is a legitimate submit, the guard cannot
+    // also be the defence against a stray editor action; see the keyboardActions note instead.
     val submit: () -> Unit = {
-        if (visible && query.isNotBlank()) {
+        if (visible) {
             AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
                 .firstOrNull()
                 ?.let(launch)
@@ -690,12 +689,14 @@ private fun SearchHeader(
             ),
             // Search rather than Go purely for the glyph: most keyboards draw a magnifier for
             // Search and an arrow for Go, and onSearch launches the top result either way.
+            //
+            // onSearch ONLY. An onDone handler was here as defensive coverage and had to go: IMEs
+            // deliver IME_ACTION_DONE on lifecycle events — the input connection closing, the
+            // keyboard being dismissed — not just on a key press. Since submitting with an empty
+            // query legitimately opens the first result, treating those as a submit is what made
+            // hiding the overlay relaunch the app that had just been opened.
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(
-                onSearch = { onSubmit() },
-                // Some IMEs report Done regardless of the requested action.
-                onDone = { onSubmit() },
-            ),
+            keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
             singleLine = true,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { inner ->
