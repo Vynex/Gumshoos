@@ -1,5 +1,9 @@
 package com.vynex.gumshoos
 
+import android.annotation.SuppressLint
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
@@ -13,7 +17,7 @@ class SearchTileService : TileService() {
         super.onStartListening()
         qsTile?.apply {
             state = Tile.STATE_INACTIVE
-            label = "Gumshoos"
+            label = getString(R.string.app_name)
             updateTile()
         }
     }
@@ -23,15 +27,28 @@ class SearchTileService : TileService() {
         startForegroundService(
             OverlayService.intent(this, OverlayService.ACTION_SHOW, source = "tile")
         )
-        // Collapse the shade, otherwise it stays over our window.
-        @Suppress("DEPRECATION")
-        startActivityAndCollapse(
-            android.app.PendingIntent.getActivity(
-                this,
-                0,
-                android.content.Intent(this, NoOpActivity::class.java),
-                android.app.PendingIntent.FLAG_IMMUTABLE,
+        collapseShade()
+    }
+
+    /** The shade sits above our overlay window, so it has to come down or nothing is visible. */
+    // The Intent overload is deprecated but is the only option below API 34, which minSdk 31 allows.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun collapseShade() {
+        val intent = Intent(this, NoOpActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startActivityAndCollapse(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
             )
-        )
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
+        }
     }
 }

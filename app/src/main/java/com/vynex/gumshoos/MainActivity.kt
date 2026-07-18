@@ -12,8 +12,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -98,6 +101,8 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
                 "number that appears under the search bar.",
             style = MaterialTheme.typography.bodyMedium,
         )
+
+        CrashReport()
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -188,5 +193,55 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
             onClick = { Latency.reset() },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Reset measurements") }
+    }
+}
+
+/**
+ * Surfaces the last uncaught exception, including ones thrown inside the overlay service where
+ * there's no UI to show them. Copyable so the trace can be pasted somewhere useful.
+ */
+@Composable
+private fun CrashReport() {
+    val context = LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var crash by remember { mutableStateOf(CrashLog.read(context)) }
+    val trace = crash ?: return
+
+    androidx.compose.material3.Card(
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Last crash", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = trace,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontSize = 11.sp,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace))
+                    },
+                ) { Text("Copy") }
+                OutlinedButton(
+                    onClick = {
+                        CrashLog.clear(context)
+                        crash = null
+                    },
+                ) { Text("Clear") }
+            }
+        }
     }
 }
