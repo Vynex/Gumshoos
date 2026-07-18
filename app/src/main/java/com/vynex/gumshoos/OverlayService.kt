@@ -147,19 +147,30 @@ class OverlayService :
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
-        // Unconditionally, and first. The old code only promoted to foreground in the `else`
-        // branch, so a cold start carrying ACTION_SHOW never called this and the system killed us
-        // with ForegroundServiceDidNotStartInTimeException.
-        startForeground(NOTIFICATION_ID, buildNotification())
-
         // Captured as early as possible: everything after this is work we're trying to measure.
         val entry = SystemClock.uptimeMillis()
+
+        // Logged before anything else can fail, so the trace always shows that the intent arrived.
+        // Previously the first log line came after startForeground, which meant a failure there was
+        // indistinguishable from the intent never being delivered at all.
+        EventLog.record("onStartCommand ${intent?.action?.substringAfterLast('.') ?: "null"}")
+
+        // Unconditionally, and first among the work. The old code only promoted to foreground in
+        // the `else` branch, so a cold start carrying ACTION_SHOW never called this and the system
+        // killed us with ForegroundServiceDidNotStartInTimeException.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        } catch (t: Throwable) {
+            // Background FGS starts are restricted on Android 12+. Record it rather than dying
+            // silently: the window itself doesn't need foreground status to be shown.
+            EventLog.record("startForeground FAILED ${t.javaClass.simpleName}")
+            Log.e(TAG, "startForeground failed", t)
+        }
 
         // START_STICKY turns any throw in here into a restart loop: the system revives the service,
         // it throws again, and because the activity shares this process the app becomes unopenable.
         // Record and stand down instead — CrashLog still captures the trace for diagnosis.
         try {
-            EventLog.record("onStartCommand ${intent?.action?.substringAfterLast('.') ?: "null"}")
             when (intent?.action) {
                 ACTION_SHOW -> show(entry, intent.getStringExtra(EXTRA_SOURCE) ?: "unknown")
                 ACTION_HIDE -> hide()
