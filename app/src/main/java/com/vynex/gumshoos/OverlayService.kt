@@ -68,9 +68,6 @@ class OverlayService :
         /** Derived from the content's own exit timing so the two can't drift apart. */
         const val EXIT_ANIMATION_MILLIS = TotalExitMillis + 20L
 
-        /** Focus changes within this window of a show are ignored — see onWindowFocusChanged. */
-        private const val FOCUS_GRACE_MILLIS = 500L
-
         fun intent(context: Context, action: String, source: String? = null): Intent =
             Intent(context, OverlayService::class.java).apply {
                 this.action = action
@@ -102,25 +99,18 @@ class OverlayService :
     /** True until the first successful show, so we can tell warm shows from the very first one. */
     private var neverShown = true
 
-    /** When the current show began, for the focus-change grace period. */
-    private var shownAt = 0L
-
     private var pendingShowStart = 0L
     private var pendingShowSource = "unknown"
     private var hideRunnable: Runnable? = null
 
     /**
-     * Screen-off is a reliable signal; ACTION_CLOSE_SYSTEM_DIALOGS is the traditional (and only
-     * public) hint that Home or Recents was pressed, since neither is delivered as a key event.
-     * Its behaviour has been tightened over recent releases, so onWindowFocusChanged backs it up.
+     * Screen-off only. Home and Recents detection was removed deliberately: neither is delivered to
+     * apps as a key event, and the available proxies (ACTION_CLOSE_SYSTEM_DIALOGS, window focus
+     * loss) both arrive late enough that dismissal felt sluggish rather than snappy.
      */
-    private val systemEventReceiver = object : BroadcastReceiver() {
+    private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                Intent.ACTION_SCREEN_OFF,
-                Intent.ACTION_CLOSE_SYSTEM_DIALOGS,
-                -> hide()
-            }
+            if (intent.action == Intent.ACTION_SCREEN_OFF) hide()
         }
     }
 
@@ -128,14 +118,10 @@ class OverlayService :
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        @Suppress("DEPRECATION")
         ContextCompat.registerReceiver(
             this,
-            systemEventReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_SCREEN_OFF)
-                addAction(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-            },
+            screenOffReceiver,
+            IntentFilter(Intent.ACTION_SCREEN_OFF),
             ContextCompat.RECEIVER_EXPORTED,
         )
 
@@ -211,17 +197,6 @@ class OverlayService :
             }
             return super.dispatchKeyEvent(event)
         }
-
-        /**
-         * Home and Recents never reach an app as key events, but they do pull focus away, so this
-         * is the closest thing to a signal we get. The grace period guards the severe failure mode:
-         * if the IME taking focus were to count, the overlay would slam shut the instant it opened.
-         */
-        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-            super.onWindowFocusChanged(hasWindowFocus)
-            val settled = SystemClock.uptimeMillis() - shownAt > FOCUS_GRACE_MILLIS
-            if (!hasWindowFocus && overlayVisible && settled) hide()
-        }
     }
 
     private fun buildOverlayView() {
@@ -278,7 +253,6 @@ class OverlayService :
         pendingShowStart = entryMillis
         pendingShowSource = source
 
-        shownAt = SystemClock.uptimeMillis()
         composeView.visibility = View.VISIBLE
         layoutParams.flags = SHOWN_FLAGS
         windowManager.updateViewLayout(composeView, layoutParams)
@@ -398,7 +372,7 @@ class OverlayService :
     }
 
     override fun onDestroy() {
-        runCatching { unregisterReceiver(systemEventReceiver) }
+        runCatching { unregisterReceiver(screenOffReceiver) }
         hideRunnable?.let { composeView.removeCallbacks(it) }
         if (attached) {
             try {

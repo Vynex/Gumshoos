@@ -1,15 +1,11 @@
 package com.vynex.gumshoos
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
@@ -45,19 +40,14 @@ import com.vynex.gumshoos.ui.theme.GumshoosTheme
  */
 class MainActivity : ComponentActivity() {
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        // POST_NOTIFICATIONS is deliberately never requested. A foreground service must supply a
+        // notification, but on Android 13+ the system only displays it if that permission is
+        // granted — so leaving it denied is the supported way to run the service without a
+        // permanent notification in the shade.
 
         setContent {
             GumshoosTheme {
@@ -166,7 +156,28 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("4 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("4 · Hide the notification", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "A foreground service must supply a notification — the system won't let it run " +
+                "without one. It can't be suppressed from inside the app, but on Android 13+ the " +
+                "system only shows it when notification permission is granted, so switching " +
+                "notifications off here hides it while the service keeps running. Gumshoos will " +
+                "still be listed under \"Active apps\" in the shade; that part is unavoidable.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Open notification settings") }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("5 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
