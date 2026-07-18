@@ -3,6 +3,7 @@ package com.vynex.gumshoos
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -135,6 +136,25 @@ object AppRepository {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         runCatching { context.startActivity(intent) }
+    }
+
+    /** Play Store search. Prefers the market:// scheme so it opens the app, falling back to web. */
+    fun searchPlayStore(context: Context, query: String) {
+        val encoded = Uri.encode(query.trim())
+        if (encoded.isEmpty()) return
+
+        val market = Intent(
+            Intent.ACTION_VIEW,
+            "market://search?q=$encoded&c=apps".toUri(),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        val web = Intent(
+            Intent.ACTION_VIEW,
+            "https://play.google.com/store/search?q=$encoded&c=apps".toUri(),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        runCatching { context.startActivity(market) }
+            .recoverCatching { context.startActivity(web) }
     }
 
     fun openAppInfo(context: Context, entry: AppEntry) {

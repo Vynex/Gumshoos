@@ -10,6 +10,7 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -40,7 +41,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,12 +60,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -112,8 +114,12 @@ private val CardCollapsedHeight = HeaderHeight
 /** Half the collapsed height, so phase one is a true pill rather than a rounded rectangle. */
 private val PillCornerRadius = HeaderHeight / 2
 
-/** Measured 793/1037 at the first frame the card is detectable. */
-private const val CollapsedWidthFraction = 0.765f
+/**
+ * The capture measured 793/1037 = 0.765, but that was the first frame the card was *detectable* —
+ * it had already been fading in for some time by then, so 0.765 is an upper bound on the true start
+ * rather than the value itself. Narrower here, which also makes the horizontal phase read clearly.
+ */
+private const val CollapsedWidthFraction = 0.55f
 
 private const val CardSurfaceAlpha = 0.94f
 
@@ -146,9 +152,9 @@ private fun delayOf(startPct: Float) = (startPct * EnterTotalMillis).roundToInt(
  * proportionally, toward a pivot inside the header rather than the card's centre — the card falls
  * back into the search bar it grew out of.
  */
-// Measured at 106ms in the capture; deliberately slower than that by preference.
-private const val ExitMillis = 150
-private const val ExitAlphaMillis = 135
+// Measured at 106ms in the capture; deliberately much slower than that by preference.
+private const val ExitMillis = 220
+private const val ExitAlphaMillis = 200
 private const val ExitEndScale = 0.13f
 
 /** Pivot sits ~8.5% down the card, i.e. mid-header, so the top edge drifts down as it collapses. */
@@ -350,12 +356,32 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
     // requiredHeight pins the whole panel at full height so the card's shrinking height clips it
     // rather than squeezing it — that is what makes the grid look already-rendered as the card
     // grows. The header is left to fill the card's animating width, matching the reference.
-    Column(Modifier.requiredHeight(CardExpandedHeight)) {
+    //
+    // The alignment here is load-bearing and must not be left implicit. The panel is taller than
+    // the card for most of the entrance, and how an oversized child gets placed decides which slice
+    // shows through: top-aligned reveals the search bar, anything else reveals the middle of the
+    // grid. Relying on Surface's internal Box to do the right thing produced exactly that bug —
+    // the animation opened on a band of app icons instead of the search bar.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clipToBounds(),
+        contentAlignment = Alignment.TopStart,
+    ) {
+    Column(
+        Modifier
+            .requiredHeight(CardExpandedHeight)
+            .align(Alignment.TopStart)
+    ) {
         SearchHeader(
             query = query,
             onQueryChange = { query = it },
             focusRequester = focusRequester,
             onSubmit = submit,
+            onPlayStore = {
+                AppRepository.searchPlayStore(context, query)
+                onDismiss()
+            },
         )
 
         // Pinned to the settled width so the width animation never re-measures the tab row or the
@@ -445,6 +471,7 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             }
         }
     }
+    }
 }
 
 private enum class ContextAction { EDIT, APP_INFO, UNINSTALL }
@@ -517,9 +544,15 @@ private fun BoxScope.AppContextMenu(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
 
-            ContextMenuItem("Edit", enabled = false) { onAction(ContextAction.EDIT) }
-            ContextMenuItem("App info") { onAction(ContextAction.APP_INFO) }
-            ContextMenuItem("Uninstall") { onAction(ContextAction.UNINSTALL) }
+            ContextMenuItem("Edit", R.drawable.ic_edit, enabled = false) {
+                onAction(ContextAction.EDIT)
+            }
+            ContextMenuItem("App info", R.drawable.ic_app_info) {
+                onAction(ContextAction.APP_INFO)
+            }
+            ContextMenuItem("Uninstall", R.drawable.ic_uninstall) {
+                onAction(ContextAction.UNINSTALL)
+            }
         }
     }
 }
@@ -527,22 +560,31 @@ private fun BoxScope.AppContextMenu(
 @Composable
 private fun ContextMenuItem(
     label: String,
+    @DrawableRes icon: Int,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = label,
-        fontSize = 14.sp,
-        color = if (enabled) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-        },
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp),
-    )
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(text = label, fontSize = 14.sp, color = tint)
+    }
 }
 
 private fun emptyMessageFor(tab: SearchTab): String = when {
@@ -558,6 +600,7 @@ private fun SearchHeader(
     onQueryChange: (String) -> Unit,
     focusRequester: FocusRequester,
     onSubmit: () -> Unit,
+    onPlayStore: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -605,11 +648,22 @@ private fun SearchHeader(
         )
 
         Spacer(Modifier.width(12.dp))
+        // Dimmed and inert with an empty query — there is nothing to search the store for.
+        val storeEnabled = query.isNotBlank()
         Icon(
-            imageVector = Icons.Default.ShoppingCart,
+            painter = painterResource(R.drawable.ic_play_store),
             contentDescription = "Search the Play Store",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                alpha = if (storeEnabled) 1f else 0.35f,
+            ),
+            modifier = Modifier
+                .size(22.dp)
+                .clickable(
+                    enabled = storeEnabled,
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onPlayStore,
+                ),
         )
     }
 }
