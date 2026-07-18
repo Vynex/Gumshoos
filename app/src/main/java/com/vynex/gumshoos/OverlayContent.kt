@@ -76,11 +76,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -92,6 +94,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vynex.gumshoos.answers.Answer
+import com.vynex.gumshoos.answers.AnswerContextFactory
+import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlinx.coroutines.launch
 import kotlin.math.pow
@@ -124,6 +129,13 @@ private val ProviderLabelHeight = 14.dp
 private val ProviderLabelGap = 10.dp
 private val ProviderIconSpacing = 30.dp
 private val ProviderRowBottomSpacing = 22.dp
+
+// Answers section: arithmetic, conversions and the like, shown when a query carries its own answer.
+private val AnswerHeadlineHeight = 26.dp
+private val AnswerDetailHeight = 15.dp
+private val AnswerSectionHeight =
+    DividerHeight + 14.dp + ProviderLabelHeight + 8.dp +
+        AnswerDetailHeight + AnswerHeadlineHeight + 16.dp
 
 // Contacts section, shown while searching when the permission is granted and something matches.
 private val ContactRowHeight = 46.dp
@@ -162,7 +174,7 @@ private val CardExpandedHeight =
  */
 private val PanelMaxHeight =
     HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight +
-        ContactsSectionMaxHeight + SearchUsingHeight
+        AnswerSectionHeight + ContactsSectionMaxHeight + SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -365,6 +377,13 @@ fun OverlayContent(
         )
         val gridCollapse = (DividerHeight + GridContentHeight) - gridSectionHeight
 
+        var hasAnswer by remember { mutableStateOf(false) }
+        val answerHeight by animateDpAsState(
+            targetValue = if (hasAnswer) AnswerSectionHeight else 0.dp,
+            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            label = "answerHeight",
+        )
+
         // Grows and shrinks with the number of matching contacts, so the card stays tight to its
         // content rather than reserving space for rows that aren't there.
         var contactRows by remember { mutableStateOf(0) }
@@ -379,7 +398,8 @@ fun OverlayContent(
         )
 
         val heightDelta =
-            providerRowHeight + contactsHeight - (TabRowHeight - tabHeight) - gridCollapse
+            providerRowHeight + answerHeight + contactsHeight -
+                (TabRowHeight - tabHeight) - gridCollapse
 
         // No scrim: the reference leaves the wallpaper at full brightness.
         BoxWithConstraints(
@@ -425,6 +445,8 @@ fun OverlayContent(
                     providerRowHeight = providerRowHeight,
                     contactsHeight = contactsHeight,
                     onContactRowsChange = { contactRows = it },
+                    answerHeight = answerHeight,
+                    onHasAnswerChange = { hasAnswer = it },
                     gridSectionHeight = gridSectionHeight,
                     onHasAppResultsChange = { hasAppResults = it },
                     onSearchingChange = { searching = it },
@@ -445,6 +467,8 @@ private fun SearchPanel(
     providerRowHeight: Dp,
     contactsHeight: Dp,
     onContactRowsChange: (Int) -> Unit,
+    answerHeight: Dp,
+    onHasAnswerChange: (Boolean) -> Unit,
     gridSectionHeight: Dp,
     onHasAppResultsChange: (Boolean) -> Unit,
     onSearchingChange: (Boolean) -> Unit,
@@ -628,6 +652,22 @@ private fun SearchPanel(
         }
         }
         }
+        }
+
+        // Locale defaults are read once: they decide metres-vs-feet and rupees-vs-dollars, and
+        // they don't change while the overlay is open.
+        val answerContext = remember { AnswerContextFactory.forDevice(context) }
+        val answer = remember(query) {
+            if (query.isBlank()) null else AnswerProviders.answerFor(query, answerContext)
+        }
+        LaunchedEffect(answer != null) { onHasAnswerChange(answer != null) }
+
+        Box(
+            Modifier
+                .height(answerHeight)
+                .clipToBounds(),
+        ) {
+            answer?.let { AnswerSection(it) }
         }
 
         val matchedContacts = if (query.isBlank()) {
@@ -851,6 +891,70 @@ private fun ContextMenuItem(
         )
         Spacer(Modifier.width(12.dp))
         Text(text = label, fontSize = 14.sp, color = tint)
+    }
+}
+
+/**
+ * The result of a query that answers itself. The expression sits above the result, the way a
+ * calculator shows its tape, so the parse is visible and a misread is obvious.
+ */
+@Composable
+private fun AnswerSection(answer: Answer) {
+    val clipboard = LocalClipboardManager.current
+    Column(
+        Modifier
+            .requiredHeight(AnswerSectionHeight)
+            .fillMaxWidth(),
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(Modifier.height(14.dp))
+        Text(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            text = AnswerProviders.labelFor(answer.providerId),
+            fontSize = 11.sp,
+            lineHeight = ProviderLabelHeight.value.sp,
+            letterSpacing = 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                ) { clipboard.setText(AnnotatedString(answer.copyText)) },
+        ) {
+            Column(Modifier.weight(1f)) {
+                answer.detail?.let { detail ->
+                    Text(
+                        text = detail,
+                        fontSize = 12.sp,
+                        lineHeight = AnswerDetailHeight.value.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = answer.headline,
+                    fontSize = 21.sp,
+                    lineHeight = AnswerHeadlineHeight.value.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                painter = painterResource(R.drawable.ic_copy),
+                contentDescription = "Copy result",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
