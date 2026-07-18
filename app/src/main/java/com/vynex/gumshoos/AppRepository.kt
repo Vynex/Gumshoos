@@ -3,7 +3,6 @@ package com.vynex.gumshoos
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -20,14 +19,17 @@ data class AppEntry(
     /** First install. Distinct from [lastUpdateTime], which also moves on every update. */
     val firstInstallTime: Long,
     val lastUpdateTime: Long,
-)
+    /** Precomputed at index time so matching never recomputes it per keystroke. */
+    val initials: String,
+) {
+    val packageName: String get() = component.packageName
+}
 
 /**
  * In-memory index of launchable apps.
  *
  * Deliberately loaded once at warm time rather than on show. Icon decoding for a full app list runs
- * into the hundreds of milliseconds, which would wreck the sub-20ms show the POC just established.
- * Keeping it here means the service's resident process is what makes showing cheap.
+ * into the hundreds of milliseconds, which would wreck the sub-20ms show the POC established.
  */
 object AppRepository {
 
@@ -50,15 +52,17 @@ object AppRepository {
                 val packageInfo = runCatching {
                     pm.getPackageInfo(activity.packageName, 0)
                 }.getOrNull()
+                val label = info.loadLabel(pm).toString()
                 AppEntry(
-                    label = info.loadLabel(pm).toString(),
+                    label = label,
                     component = ComponentName(activity.packageName, activity.name),
                     icon = info.loadIcon(pm).toBitmap(iconPx, iconPx).asImageBitmap(),
                     firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
                     lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
+                    initials = AppMatcher.initialsOf(label),
                 )
             }.getOrNull()
-        }.sortedBy { it.label.lowercase() }
+        }
 
         withContext(Dispatchers.Main) {
             apps = entries
@@ -66,16 +70,46 @@ object AppRepository {
         }
     }
 
-    /** Substring match on the label. Placeholder for real ranked, multi-provider search. */
+    /**
+     * Ordering for a tab with no query. Recency and frequency both need usage access; without it
+     * they degrade to alphabetical rather than showing an arbitrary order.
+     */
+    private fun baseOrder(tab: SearchTab): List<AppEntry> = when (tab) {
+        SearchTab.FREQUENT ->
+            if (UsageRepository.granted) {
+                apps.sortedByDescending { UsageRepository.foregroundMillis(it.packageName) }
+            } else {
+                apps.sortedBy { it.label.lowercase() }
+            }
+
+        SearchTab.RECENT ->
+            if (UsageRepository.granted) {
+                apps.sortedByDescending { UsageRepository.lastUsed(it.packageName) }
+            } else {
+                apps.sortedBy { it.label.lowercase() }
+            }
+
+        SearchTab.NEW_UPDATED -> recentlyInstalledOrUpdated()
+    }
+
+    /**
+     * Ranked results. Score dominates; most-recently-opened breaks ties, so equally good textual
+     * matches surface in the order you actually use them.
+     */
     fun search(query: String, tab: SearchTab): List<AppEntry> {
-        val base = when (tab) {
-            // TODO: both need UsageStatsManager and the PACKAGE_USAGE_STATS permission, which is a
-            // separate user grant. Alphabetical until that's wired up.
-            SearchTab.FREQUENT, SearchTab.RECENT -> apps
-            SearchTab.NEW_UPDATED -> recentlyInstalledOrUpdated()
-        }
-        if (query.isBlank()) return base
-        return base.filter { it.label.contains(query.trim(), ignoreCase = true) }
+        if (query.isBlank()) return baseOrder(tab)
+
+        val pool = if (tab == SearchTab.NEW_UPDATED) recentlyInstalledOrUpdated() else apps
+        return pool
+            .mapNotNull { entry ->
+                AppMatcher.score(query.trim(), entry.label, entry.initials)?.let { entry to it }
+            }
+            .sortedWith(
+                compareByDescending<Pair<AppEntry, Int>> { it.second }
+                    .thenByDescending { UsageRepository.lastUsed(it.first.packageName) }
+                    .thenBy { it.first.label.lowercase() }
+            )
+            .map { it.first }
     }
 
     /**

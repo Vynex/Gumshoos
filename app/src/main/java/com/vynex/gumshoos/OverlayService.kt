@@ -114,6 +114,8 @@ class OverlayService :
         lifecycleScope.launch {
             runCatching { AppRepository.load(this@OverlayService) }
                 .onFailure { Log.e(TAG, "app index load failed", it) }
+            runCatching { UsageRepository.refresh(this@OverlayService) }
+                .onFailure { Log.e(TAG, "usage stats refresh failed", it) }
         }
     }
 
@@ -227,6 +229,13 @@ class OverlayService :
                 "show: ${elapsed}ms  source=$source" +
                     if (coldAttach) "  (first show — attach included, ignore this one)" else "",
             )
+
+            // Refreshed after the window is already on screen, never before it. Recency needs to be
+            // current, but querying a month of usage stats costs tens of milliseconds and must not
+            // land on the show path.
+            lifecycleScope.launch {
+                runCatching { UsageRepository.refresh(this@OverlayService) }
+            }
         }
         neverShown = false
     }

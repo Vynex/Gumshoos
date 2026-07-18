@@ -26,8 +26,12 @@ import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -46,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +69,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
+import kotlinx.coroutines.launch
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -121,8 +127,8 @@ private fun delayOf(startPct: Float) = (startPct * EnterTotalMillis).roundToInt(
  * proportionally, toward a pivot inside the header rather than the card's centre — the card falls
  * back into the search bar it grew out of.
  */
-private const val ExitMillis = 106
-private const val ExitAlphaMillis = 95
+private const val ExitMillis = 70
+private const val ExitAlphaMillis = 62
 private const val ExitEndScale = 0.13f
 
 /** Pivot sits ~8.5% down the card, i.e. mid-header, so the top edge drifts down as it collapses. */
@@ -263,20 +269,36 @@ fun OverlayContent(
 private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp) {
     val context = LocalContext.current
     var query by remember { mutableStateOf("") }
-    var tab by remember { mutableStateOf(SearchTab.FREQUENT) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
+
+    val pagerState = rememberPagerState(
+        initialPage = SearchTab.FREQUENT.ordinal,
+        pageCount = { SearchTab.entries.size },
+    )
+    val tab = SearchTab.entries[pagerState.currentPage]
 
     LaunchedEffect(visible) {
         if (visible) {
             query = ""
-            tab = SearchTab.FREQUENT
+            pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
             focusRequester.requestFocus()
             keyboard?.show()
         }
     }
 
-    val results = AppRepository.search(query, tab)
+    val launch: (AppEntry) -> Unit = { entry ->
+        AppRepository.launch(context, entry)
+        onDismiss()
+    }
+
+    // Enter/Search on the keyboard takes the top-ranked result of whichever tab is showing.
+    val submit: () -> Unit = {
+        AppRepository.search(query, SearchTab.entries[pagerState.currentPage])
+            .firstOrNull()
+            ?.let(launch)
+    }
 
     // requiredHeight pins the whole panel at full height so the card's shrinking height clips it
     // rather than squeezing it — that is what makes the grid look already-rendered as the card
@@ -286,6 +308,7 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             query = query,
             onQueryChange = { query = it },
             focusRequester = focusRequester,
+            onSubmit = submit,
         )
 
         // Pinned to the settled width so the width animation never re-measures the tab row or the
@@ -309,7 +332,9 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
             SearchTab.entries.forEach { entry ->
                 Tab(
                     selected = tab == entry,
-                    onClick = { tab = entry },
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(entry.ordinal) }
+                    },
                     text = {
                         Text(
                             text = entry.label,
@@ -327,14 +352,22 @@ private fun SearchPanel(visible: Boolean, onDismiss: () -> Unit, pinnedWidth: Dp
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
-        AppGrid(
-            entries = results,
-            emptyMessage = emptyMessageFor(tab),
-            onLaunch = { entry ->
-                AppRepository.launch(context, entry)
-                onDismiss()
-            },
-        )
+        // Each tab is a page, so the grid can be swiped as well as tapped. Pages are pinned to the
+        // card width; the pager itself is what makes tab and swipe share one source of truth.
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.requiredWidth(pinnedWidth),
+            pageSize = PageSize.Fill,
+            beyondViewportPageCount = 1,
+        ) { page ->
+            val pageTab = SearchTab.entries[page]
+            AppGrid(
+                entries = AppRepository.search(query, pageTab),
+                emptyMessage = emptyMessageFor(pageTab),
+                onLaunch = launch,
+                modifier = Modifier.requiredWidth(pinnedWidth),
+            )
+        }
         }
     }
 }
@@ -351,6 +384,7 @@ private fun SearchHeader(
     query: String,
     onQueryChange: (String) -> Unit,
     focusRequester: FocusRequester,
+    onSubmit: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -377,7 +411,12 @@ private fun SearchHeader(
                 fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             ),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(
+                onGo = { onSubmit() },
+                onSearch = { onSubmit() },
+                onDone = { onSubmit() },
+            ),
             singleLine = true,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { inner ->
@@ -411,9 +450,10 @@ private fun AppGrid(
     entries: List<AppEntry>,
     emptyMessage: String,
     onLaunch: (AppEntry) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (entries.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = emptyMessage,
                 style = MaterialTheme.typography.bodyMedium,
@@ -426,7 +466,7 @@ private fun AppGrid(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = GridVerticalPadding),
         verticalArrangement = Arrangement.spacedBy(GridRowSpacing),

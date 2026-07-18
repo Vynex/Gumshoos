@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
 private fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var hasUsageAccess by remember { mutableStateOf(UsageRepository.hasPermission(context)) }
 
     // Permission is granted in a different app, so re-check whenever we come back to the front.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -80,6 +81,7 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 hasOverlay = Settings.canDrawOverlays(context)
+                hasUsageAccess = UsageRepository.hasPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -144,7 +146,27 @@ private fun SetupScreen(modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        Text("3 · Compare", style = MaterialTheme.typography.titleMedium)
+        Text("3 · Usage access", style = MaterialTheme.typography.titleMedium)
+        Text(
+            if (hasUsageAccess) {
+                "Granted. Apps are ordered by most recently opened."
+            } else {
+                "Not granted. Ordering falls back to alphabetical — \"most recently opened\" needs " +
+                    "system usage data, which is a special access grant rather than a normal prompt."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (hasUsageAccess) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.error,
+        )
+        Button(
+            onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+            enabled = !hasUsageAccess,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Grant usage access") }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        Text("4 · Compare", style = MaterialTheme.typography.titleMedium)
         Text(
             "This button is the slow path on purpose — it shows the overlay from an activity, so " +
                 "you can feel the difference against the widget.",
