@@ -65,6 +65,9 @@ class OverlayService :
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "gumshoos_overlay"
 
+        /** How long the entrance takes to settle; focus changes before then are not dismissals. */
+        private const val ENTRANCE_SETTLE_MILLIS = TotalEnterMillis.toLong()
+
         /** Derived from the content's own exit timing so the two can't drift apart. */
         const val EXIT_ANIMATION_MILLIS = TotalExitMillis + 20L
 
@@ -98,6 +101,9 @@ class OverlayService :
 
     /** True until the first successful show, so we can tell warm shows from the very first one. */
     private var neverShown = true
+
+    /** When the current show began, so the entrance can be excluded from focus handling. */
+    private var shownAt = 0L
 
     private var pendingShowStart = 0L
     private var pendingShowSource = "unknown"
@@ -214,6 +220,26 @@ class OverlayService :
                 return true
             }
             return super.dispatchKeyEvent(event)
+        }
+
+        /**
+         * An overlay window floats above app windows by design, so nothing removes it when another
+         * app comes forward — tapping a notification would leave the search card sitting on top of
+         * whatever opened. Losing window focus is the signal that something else took over.
+         *
+         * It cannot distinguish *what* took over: a notification tap, the shade opening and Home
+         * all look the same from here. The Home gesture reports late, which is why it felt sluggish
+         * before; that is the cost of covering the rest.
+         *
+         * Changes during the entrance are ignored. The window is still settling then, and hiding on
+         * one would mean the card slamming shut just as it opened.
+         */
+        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+            super.onWindowFocusChanged(hasWindowFocus)
+            if (hasWindowFocus || !overlayVisible) return
+            if (SystemClock.uptimeMillis() - shownAt < ENTRANCE_SETTLE_MILLIS) return
+            EventLog.record("focus lost -> hide")
+            hide()
         }
     }
 

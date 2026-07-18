@@ -221,6 +221,9 @@ private val ExitTopDrift = 25.dp
 
 const val TotalExitMillis = ExitMillis
 
+/** How long the entrance runs, for callers that need to know when the window has settled. */
+const val TotalEnterMillis = EnterTotalMillis
+
 // --- Easings, fitted against the capture --------------------------------------------------------
 
 /** Opacity accelerates: t^1.5 fitted at rmse 0.021. Notably NOT a decelerate. */
