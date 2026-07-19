@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -43,6 +46,7 @@ import com.vynex.gumshoos.answers.AnswerFormat
 import com.vynex.gumshoos.answers.CurrencyRates
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.ContactAction
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.CrashLog
@@ -62,6 +66,69 @@ import com.vynex.gumshoos.UsageSource
  * The individual settings controls, moved out of MainActivity unchanged when the screen was split
  * into categories. Grouping them was the work; the controls themselves already behaved.
  */
+
+/**
+ * Rebuilds the app and contact indexes by hand.
+ *
+ * Package changes are picked up automatically now, so this is a backstop rather than the normal
+ * route: it covers the window where the service wasn't running to hear a change, and it is the
+ * quickest way to tell an indexing problem from a matching one.
+ *
+ * "Start & pre-warm" is not the same thing and never was — it starts the service, but on one that
+ * is already running nothing re-runs `onCreate`, which is where the index is built.
+ */
+@Composable
+internal fun IndexRefresh() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+
+    SettingsSection("Rebuild index")
+    SettingsNote(
+        result ?: "Re-reads every installed app and, if permitted, contacts. The app index also " +
+            "records how long it took, which is the number worth knowing before blaming the index " +
+            "for anything.",
+    )
+    Button(
+        onClick = {
+            running = true
+            result = null
+            scope.launch {
+                val started = System.currentTimeMillis()
+                runCatching { AppRepository.load(context) }
+                    .onFailure { EventLog.record("manual reindex FAILED ${it.javaClass.simpleName}") }
+                runCatching { SearchProviders.refreshAvailability(context) }
+                if (ContactsRepository.hasPermission(context)) {
+                    runCatching { ContactsRepository.load(context) }
+                }
+                val elapsed = System.currentTimeMillis() - started
+                result = "${AppRepository.apps.size} apps, " +
+                    "${ContactsRepository.contacts.size} contacts, in ${elapsed}ms."
+                running = false
+            }
+        },
+        enabled = !running,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            Icons.Filled.Refresh,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(if (running) "Rebuilding…" else "Rebuild index now")
+    }
+}
+
+/**
+ * Rebuilds the placed widgets by hand.
+ *
+ * The upgrade case is handled automatically now, but this stays as the recovery path, because the
+ * failure it addresses is one where the widget can't open anything — including this screen. Cheap
+ * enough to reach for whenever a widget looks stale.
+ */
+@Composable
 internal fun WidgetRefresh() {
     val context = LocalContext.current
     var done by remember { mutableStateOf(false) }

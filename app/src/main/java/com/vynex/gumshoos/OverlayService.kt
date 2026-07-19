@@ -8,9 +8,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.LauncherApps
 import android.graphics.PixelFormat
 import android.os.IBinder
 import android.os.SystemClock
+import android.os.UserHandle
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -135,6 +137,60 @@ class OverlayService :
         }
     }
 
+    /**
+     * Keeps the app index current as packages come and go.
+     *
+     * The index was previously built once here and never again, so an app installed after the
+     * service warmed didn't appear, and an uninstalled one kept showing, until the process next
+     * died. LauncherApps is the API meant for this — it reports per package rather than as a
+     * blanket "something changed", which is what makes an incremental update possible.
+     *
+     * Registered at runtime rather than in the manifest, which is also the only option: the package
+     * broadcasts are implicit, and Android 8+ won't deliver those to a manifest-declared receiver.
+     * This service is resident to keep the overlay warm, so there is always something listening.
+     */
+    private val packageCallback = object : LauncherApps.Callback() {
+        override fun onPackageAdded(packageName: String, user: UserHandle) =
+            reindex(packageName, "added")
+
+        override fun onPackageChanged(packageName: String, user: UserHandle) =
+            reindex(packageName, "changed")
+
+        override fun onPackageRemoved(packageName: String, user: UserHandle) {
+            EventLog.record("app index removed $packageName")
+            lifecycleScope.launch { runCatching { AppRepository.removePackage(packageName) } }
+        }
+
+        // Fired when a package becomes reachable or not without being installed or uninstalled —
+        // external storage remounting, or a work profile being turned on and off.
+        override fun onPackagesAvailable(
+            packageNames: Array<out String>,
+            user: UserHandle,
+            replacing: Boolean,
+        ) = packageNames.forEach { reindex(it, "available") }
+
+        override fun onPackagesUnavailable(
+            packageNames: Array<out String>,
+            user: UserHandle,
+            replacing: Boolean,
+        ) {
+            packageNames.forEach { name ->
+                lifecycleScope.launch { runCatching { AppRepository.removePackage(name) } }
+            }
+        }
+
+        private fun reindex(packageName: String, reason: String) {
+            EventLog.record("app index $reason $packageName")
+            lifecycleScope.launch {
+                runCatching { AppRepository.reindexPackage(this@OverlayService, packageName) }
+                    .onFailure { Log.w(TAG, "reindex $packageName failed", it) }
+                // The "Search using" row is gated on Spotify and ChatGPT being installed, and was
+                // resolved once at warm for the same reason the app index was. Two package lookups.
+                runCatching { SearchProviders.refreshAvailability(this@OverlayService) }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -145,6 +201,10 @@ class OverlayService :
             IntentFilter(Intent.ACTION_SCREEN_OFF),
             ContextCompat.RECEIVER_EXPORTED,
         )
+
+        runCatching {
+            getSystemService(LauncherApps::class.java)?.registerCallback(packageCallback)
+        }.onFailure { EventLog.record("package callback FAILED ${it.javaClass.simpleName}") }
 
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
@@ -469,6 +529,9 @@ class OverlayService :
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenOffReceiver) }
+        runCatching {
+            getSystemService(LauncherApps::class.java)?.unregisterCallback(packageCallback)
+        }
         hideRunnable?.let { composeView.removeCallbacks(it) }
         if (attached) {
             try {

@@ -50,13 +50,37 @@ object AppRepository {
         private set
 
     suspend fun load(context: Context) = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        val entries = indexPackage(context, packageName = null)
+        val elapsed = System.currentTimeMillis() - started
+
+        // Recorded rather than estimated. This is the number that decides whether reacting to a
+        // package change can afford a full rebuild, and it varies enormously by how many apps are
+        // installed and by screen density.
+        EventLog.record("app index ${entries.size} apps in ${elapsed}ms")
+
+        withContext(Dispatchers.Main) {
+            apps = entries
+            loaded = true
+        }
+    }
+
+    /**
+     * Builds entries for one package, or for every launchable app when [packageName] is null.
+     *
+     * One implementation for both so a re-indexed app can never be built differently from one that
+     * came out of the initial sweep — a subtle drift there would show as an app that matches oddly
+     * only until the next reboot.
+     */
+    private fun indexPackage(context: Context, packageName: String?): List<AppEntry> {
         val pm = context.packageManager
         val iconPx = context.resources.displayMetrics.density.times(48).toInt().coerceAtLeast(48)
 
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val resolved = pm.queryIntentActivities(intent, 0)
+        val intent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .apply { if (packageName != null) setPackage(packageName) }
 
-        val entries = resolved.mapNotNull { info ->
+        return pm.queryIntentActivities(intent, 0).mapNotNull { info ->
             runCatching {
                 val activity = info.activityInfo
                 val packageInfo = runCatching {
@@ -74,11 +98,30 @@ object AppRepository {
                 )
             }.getOrNull()
         }
+    }
 
-        withContext(Dispatchers.Main) {
-            apps = entries
-            loaded = true
+    /**
+     * Re-reads one package after it was installed, updated or changed.
+     *
+     * Incremental on purpose. A full [load] decodes an icon for every installed app — the cost it
+     * exists to keep off the show path — and a Play Store batch would trigger dozens of those in a
+     * burst. This touches one package: a scoped query and an icon or two.
+     *
+     * Also the removal path, since a package that no longer has a launchable activity yields no
+     * entries and the old ones drop out.
+     */
+    suspend fun reindexPackage(context: Context, packageName: String) =
+        withContext(Dispatchers.IO) {
+            val entries = indexPackage(context, packageName)
+            withContext(Dispatchers.Main) {
+                apps = apps.filterNot { it.packageName == packageName } + entries
+            }
         }
+
+    /** Drops a package outright, for an uninstall where querying it would return nothing anyway. */
+    suspend fun removePackage(packageName: String) = withContext(Dispatchers.Main) {
+        apps = apps.filterNot { it.packageName == packageName }
+    }
 
     private fun aliasesFor(packageName: String): List<AppMatcher.Indexed> =
         GumshoosConfig.appAliases[packageName]
