@@ -1,5 +1,6 @@
 package com.vynex.gumshoos.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,12 +8,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
@@ -36,6 +40,7 @@ internal data class PickerItem(
     val id: String,
     val title: String,
     val subtitle: String? = null,
+    val icon: ImageBitmap? = null,
 )
 
 /**
@@ -152,6 +157,117 @@ private fun PickerRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+
+/**
+ * The same filterable list, but multi-select.
+ *
+ * Used by the hidden-app and hidden-contact lists, where the list is everything installed or
+ * everyone in the address book — far too long to present without a filter.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MultiSelectPicker(
+    title: String,
+    items: List<PickerItem>,
+    selected: Set<String>,
+    header: String,
+    emptyNote: String,
+    onToggle: (String, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+
+    val filtered = remember(query, items) {
+        if (query.isBlank()) {
+            items
+        } else {
+            val needle = query.trim().lowercase()
+            items.filter {
+                it.title.lowercase().contains(needle) || it.id.lowercase().contains(needle)
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Text(
+                header,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Filter") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+
+            if (items.isEmpty()) {
+                Text(
+                    emptyNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(20.dp),
+                )
+                return@Column
+            }
+
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(filtered, key = { it.id }) { entry ->
+                    val isHidden = entry.id in selected
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggle(entry.id, !isHidden) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Checkbox(
+                            checked = isHidden,
+                            onCheckedChange = { onToggle(entry.id, it) },
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        entry.icon?.let { icon ->
+                            Image(
+                                bitmap = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(28.dp),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Column {
+                            Text(entry.title, style = MaterialTheme.typography.bodyMedium)
+                            if (!entry.subtitle.isNullOrEmpty()) {
+                                Text(
+                                    entry.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

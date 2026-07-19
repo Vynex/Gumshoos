@@ -24,6 +24,8 @@ object GumshoosConfig {
     private const val KEY_PREFERRED_ZONE = "preferred_zone"
     private const val KEY_ANIMATION_MODE = "animation_mode"
     private const val KEY_ANSWER_PROVIDERS = "answer_providers_enabled"
+    private const val KEY_HIDDEN_APPS = "hidden_apps"
+    private const val KEY_HIDDEN_CONTACTS = "hidden_contacts"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -139,6 +141,29 @@ object GumshoosConfig {
         }.apply()
     }
 
+    /** Packages excluded from results entirely — search, tabs and all. */
+    var hiddenApps by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /**
+     * Contacts excluded from results, keyed on LOOKUP_KEY rather than _ID.
+     *
+     * Row ids are reassigned when an account re-syncs, so a blacklist keyed on them would quietly
+     * start hiding the wrong people, or nobody at all. The lookup key survives that.
+     */
+    var hiddenContacts by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    fun setAppHidden(context: Context, packageName: String, hidden: Boolean) {
+        hiddenApps = if (hidden) hiddenApps + packageName else hiddenApps - packageName
+        prefs(context).edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
+    }
+
+    fun setContactHidden(context: Context, lookupKey: String, hidden: Boolean) {
+        hiddenContacts = if (hidden) hiddenContacts + lookupKey else hiddenContacts - lookupKey
+        prefs(context).edit().putStringSet(KEY_HIDDEN_CONTACTS, hiddenContacts).apply()
+    }
+
     /** Where the Frequent and Recent tabs take their ordering from. */
     var usageSource by mutableStateOf(DEFAULT_USAGE_SOURCE)
         private set
@@ -176,6 +201,10 @@ object GumshoosConfig {
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)
         widgetIconOffsetDp = p.getInt(KEY_WIDGET_ICON_OFFSET, DEFAULT_WIDGET_ICON_OFFSET_DP)
         hideOnFocusLoss = p.getBoolean(KEY_HIDE_ON_FOCUS_LOSS, DEFAULT_HIDE_ON_FOCUS_LOSS)
+        // Copied: the set from SharedPreferences must not be mutated or read after the fact.
+        hiddenApps = p.getStringSet(KEY_HIDDEN_APPS, null)?.toSet() ?: emptySet()
+        hiddenContacts = p.getStringSet(KEY_HIDDEN_CONTACTS, null)?.toSet() ?: emptySet()
+
         unitSystemOverride = p.getString(KEY_UNIT_SYSTEM, null)
             ?.let { name -> MeasurementSystem.entries.firstOrNull { it.name == name } }
         preferredCurrency = p.getString(KEY_PREFERRED_CURRENCY, null)

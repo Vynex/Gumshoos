@@ -89,7 +89,11 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
             )
             CategoryRow(
                 title = "Contacts",
-                summary = if (hasContacts) "On" else "Off — results won't include contacts",
+                summary = when {
+                    !hasContacts -> "Off — results won't include contacts"
+                    GumshoosConfig.hiddenContacts.isEmpty() -> "On"
+                    else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
+                },
                 onClick = { onOpen(Screen.Contacts) },
             )
             CategoryRow(
@@ -133,10 +137,14 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
     }
 }
 
-private fun appsSummary(hasUsage: Boolean): String = when {
-    GumshoosConfig.usageSource == UsageSource.GUMSHOOS -> "Ordered by launches from Gumshoos"
-    hasUsage -> "Ordered by system-wide usage"
-    else -> "Alphabetical — usage access not granted"
+private fun appsSummary(hasUsage: Boolean): String {
+    val ordering = when {
+        GumshoosConfig.usageSource == UsageSource.GUMSHOOS -> "Ordered by launches from Gumshoos"
+        hasUsage -> "Ordered by system-wide usage"
+        else -> "Alphabetical — usage access not granted"
+    }
+    val hidden = GumshoosConfig.hiddenApps.size
+    return if (hidden == 0) ordering else "$ordering · $hidden hidden"
 }
 
 private fun answersSummary(): String {

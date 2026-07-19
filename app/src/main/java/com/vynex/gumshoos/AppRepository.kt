@@ -79,15 +79,28 @@ object AppRepository {
      * Ordering for a tab with no query. Recency and frequency both need usage access; without it
      * they degrade to alphabetical rather than showing an arbitrary order.
      */
+    /**
+     * Everything except the hidden ones.
+     *
+     * Filtered here rather than at load, so the settings picker can still list a hidden app in
+     * order to un-hide it.
+     */
+    private val visible: List<AppEntry>
+        get() = if (GumshoosConfig.hiddenApps.isEmpty()) {
+            apps
+        } else {
+            apps.filterNot { it.packageName in GumshoosConfig.hiddenApps }
+        }
+
     private fun baseOrder(tab: SearchTab): List<AppEntry> = when (tab) {
         // Alphabetical is the fallback whenever a signal is missing rather than an arbitrary
         // order, so an ungranted permission or an empty history still reads sensibly.
-        SearchTab.FREQUENT -> apps.sortedWith(
+        SearchTab.FREQUENT -> visible.sortedWith(
             compareByDescending<AppEntry> { frequencyOf(it.packageName) }
                 .thenBy { it.label.lowercase() }
         )
 
-        SearchTab.RECENT -> apps.sortedWith(
+        SearchTab.RECENT -> visible.sortedWith(
             compareByDescending<AppEntry> { recencyOf(it.packageName) }
                 .thenBy { it.label.lowercase() }
         )
@@ -127,7 +140,7 @@ object AppRepository {
     fun search(query: String, tab: SearchTab): List<AppEntry> {
         if (query.isBlank()) return baseOrder(tab)
 
-        return apps
+        return visible
             .mapNotNull { entry ->
                 AppMatcher.score(query.trim(), entry.indexed)?.let { entry to it }
             }
@@ -148,7 +161,7 @@ object AppRepository {
     private fun recentlyInstalledOrUpdated(): List<AppEntry> {
         val cutoff = System.currentTimeMillis() -
             GumshoosConfig.newUpdatedWindowHours * 60 * 60 * 1000
-        return apps
+        return visible
             .filter { it.lastUpdateTime >= cutoff }
             .sortedByDescending { it.lastUpdateTime }
     }

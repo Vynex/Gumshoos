@@ -27,6 +27,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
+import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayService
@@ -55,7 +56,7 @@ private fun rememberPermission(check: () -> Boolean): Boolean {
 }
 
 @Composable
-internal fun AppsScreen(onBack: () -> Unit) {
+internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
     val hasUsage = rememberPermission { UsageRepository.hasPermission(context) }
 
@@ -99,11 +100,55 @@ internal fun AppsScreen(onBack: () -> Unit) {
             valueRange = 1f..168f,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        SettingsDivider()
+        CategoryRow(
+            title = "Hidden apps",
+            summary = GumshoosConfig.hiddenApps.size.let {
+                if (it == 0) "None hidden" else "$it hidden"
+            },
+            onClick = { onOpen(Screen.HiddenApps) },
+        )
     }
 }
 
 @Composable
-internal fun ContactsScreen(onBack: () -> Unit) {
+internal fun HiddenAppsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val hidden = GumshoosConfig.hiddenApps
+
+    MultiSelectPicker(
+        title = "Hidden apps",
+        header = "Checked apps never appear in results, in search or the tabs.",
+        emptyNote = "No apps indexed yet. Open search once and come back.",
+        items = AppRepository.apps.map {
+            PickerItem(id = it.packageName, title = it.label, subtitle = it.packageName, icon = it.icon)
+        },
+        selected = hidden,
+        onToggle = { packageName, hide -> GumshoosConfig.setAppHidden(context, packageName, hide) },
+        onBack = onBack,
+    )
+}
+
+@Composable
+internal fun HiddenContactsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    MultiSelectPicker(
+        title = "Hidden contacts",
+        header = "Checked contacts never appear in results.",
+        emptyNote = "No contacts loaded. Grant contacts access and open search once.",
+        items = ContactsRepository.contacts.map {
+            PickerItem(id = it.lookupKey, title = it.name, subtitle = it.phone ?: it.email)
+        },
+        selected = GumshoosConfig.hiddenContacts,
+        onToggle = { key, hide -> GumshoosConfig.setContactHidden(context, key, hide) },
+        onBack = onBack,
+    )
+}
+
+@Composable
+internal fun ContactsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
     var hasContacts by remember { mutableStateOf(ContactsRepository.hasPermission(context)) }
 
@@ -135,6 +180,15 @@ internal fun ContactsScreen(onBack: () -> Unit) {
         ) { Text("Allow contacts access") }
 
         if (hasContacts) {
+            SettingsDivider()
+            CategoryRow(
+                title = "Hidden contacts",
+                summary = GumshoosConfig.hiddenContacts.size.let {
+                    if (it == 0) "None hidden" else "$it hidden"
+                },
+                onClick = { onOpen(Screen.HiddenContacts) },
+            )
+
             SettingsDivider()
             EmailAppPicker()
         }

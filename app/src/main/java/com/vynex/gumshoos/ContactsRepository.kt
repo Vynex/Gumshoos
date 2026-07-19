@@ -21,6 +21,11 @@ import kotlinx.coroutines.withContext
 
 data class ContactEntry(
     val id: Long,
+    /**
+     * Stable across account re-syncs, unlike [id], which is why the hidden-contacts list keys on
+     * this instead.
+     */
+    val lookupKey: String,
     val name: String,
     val photoUri: String?,
     val phone: String?,
@@ -89,6 +94,7 @@ object ContactsRepository {
                 ContactsContract.Contacts.CONTENT_URI,
                 arrayOf(
                     ContactsContract.Contacts._ID,
+                    ContactsContract.Contacts.LOOKUP_KEY,
                     ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
                     ContactsContract.Contacts.PHOTO_THUMBNAIL_URI,
                 ),
@@ -98,6 +104,7 @@ object ContactsRepository {
                 "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} ASC",
             )?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(ContactsContract.Contacts._ID)
+                val lookupCol = cursor.getColumnIndexOrThrow(ContactsContract.Contacts.LOOKUP_KEY)
                 val nameCol =
                     cursor.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
                 val photoCol =
@@ -109,6 +116,7 @@ object ContactsRepository {
                     loaded.add(
                         ContactEntry(
                             id = id,
+                            lookupKey = cursor.getString(lookupCol) ?: continue,
                             name = name,
                             photoUri = cursor.getString(photoCol),
                             phone = phones[id],
@@ -172,7 +180,10 @@ object ContactsRepository {
 
     fun search(query: String, limit: Int): List<ContactEntry> {
         if (query.isBlank() || contacts.isEmpty()) return emptyList()
+        // Filtered here rather than at load, so the settings picker can still list a hidden contact
+        // in order to un-hide it.
         return contacts
+            .filterNot { it.lookupKey in GumshoosConfig.hiddenContacts }
             .mapNotNull { entry ->
                 AppMatcher.score(query.trim(), entry.indexed)?.let { entry to it }
             }
