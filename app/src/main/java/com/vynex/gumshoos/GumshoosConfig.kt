@@ -6,6 +6,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.MeasurementSystem
+import com.vynex.gumshoos.widget.WidgetAction
+import com.vynex.gumshoos.widget.WidgetBarFill
+import com.vynex.gumshoos.widget.WidgetBarLogo
+import com.vynex.gumshoos.widget.WidgetBarMetrics
+import com.vynex.gumshoos.widget.WidgetBarStyle
 
 /**
  * Tunables that will eventually be exposed in a settings screen. Persisted now so that screen only
@@ -31,6 +36,18 @@ object GumshoosConfig {
     private const val KEY_DISABLED_PROVIDERS = "disabled_providers"
     private const val KEY_PROVIDER_ORDER = "provider_order"
     private const val KEY_SETUP_COMPLETE = "setup_complete"
+    private const val KEY_WIDGET_BAR_FILL_MODE = "widget_bar_fill_mode"
+    private const val KEY_WIDGET_BAR_FILL_COLOR = "widget_bar_fill_color"
+    private const val KEY_WIDGET_BAR_FILL_ALPHA = "widget_bar_fill_alpha"
+    private const val KEY_WIDGET_BAR_WIREFRAME = "widget_bar_wireframe"
+    private const val KEY_WIDGET_BAR_CORNER = "widget_bar_corner"
+    private const val KEY_WIDGET_BAR_SHADOW = "widget_bar_shadow"
+    private const val KEY_WIDGET_BAR_SHOW_HINT = "widget_bar_show_hint"
+    private const val KEY_WIDGET_BAR_LOGO = "widget_bar_logo"
+    private const val KEY_WIDGET_BAR_ACTIONS = "widget_bar_actions_enabled"
+    private const val KEY_WIDGET_BAR_ACTION_ORDER = "widget_bar_action_order"
+    private const val KEY_WIDGET_BAR_PAD_H = "widget_bar_padding_h"
+    private const val KEY_WIDGET_BAR_PAD_V = "widget_bar_padding_v"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -53,6 +70,10 @@ object GumshoosConfig {
      * Zero centres it, which is where most launchers draw an app icon; some sit slightly lower.
      */
     const val DEFAULT_WIDGET_ICON_OFFSET_DP = 0
+
+    /** Full width, slightly inset vertically — the bar sits in its row rather than filling it. */
+    const val DEFAULT_WIDGET_BAR_PAD_H = 0
+    const val DEFAULT_WIDGET_BAR_PAD_V = 8
 
     /** How recently an app must have been installed or updated to show under NEW/UPDATED. */
     var newUpdatedWindowHours by mutableStateOf(DEFAULT_NEW_UPDATED_WINDOW_HOURS)
@@ -198,6 +219,173 @@ object GumshoosConfig {
         prefs(context).edit().putStringSet(KEY_MATCH_TIERS, tiers.map { it.id }.toSet()).apply()
     }
 
+    // --- wide search bar widget ------------------------------------------------------------------
+    //
+    // Defaults reproduce the bar this widget is modelled on: a pill, filled with the wallpaper's
+    // neutral surface, shadowed, Google mark on the left, no hint text, voice and lens on the right.
+
+    /** Where the bar's colour comes from. Adaptive follows the system theme — see WidgetBarFill. */
+    var widgetBarFill by mutableStateOf<WidgetBarFill>(WidgetBarFill.Adaptive)
+        private set
+
+    /** 0..100, kept apart from the colour so changing one doesn't reset the other. */
+    var widgetBarFillAlpha by mutableStateOf(100)
+        private set
+
+    var widgetBarWireframe by mutableStateOf(false)
+        private set
+
+    /** 0 = square, 100 = pill. A fraction of the bar's height, since the bar is resizable. */
+    var widgetBarCorner by mutableStateOf(100)
+        private set
+
+    var widgetBarShadow by mutableStateOf(true)
+        private set
+
+    /**
+     * Gap between the bar and its cell, in dp.
+     *
+     * Horizontal defaults to nothing so the bar spans the full cell; vertical to a small inset,
+     * which is what makes it read as a bar sitting in the row rather than filling it. Independent
+     * of [widgetBarShadow] — the shadow draws into this margin instead of creating its own.
+     */
+    var widgetBarPaddingH by mutableStateOf(DEFAULT_WIDGET_BAR_PAD_H)
+        private set
+
+    var widgetBarPaddingV by mutableStateOf(DEFAULT_WIDGET_BAR_PAD_V)
+        private set
+
+    var widgetBarShowHint by mutableStateOf(false)
+        private set
+
+    var widgetBarLogo by mutableStateOf(WidgetBarLogo.GOOGLE)
+        private set
+
+    /**
+     * Action icons switched **on**, by id.
+     *
+     * The inverse of [disabledProviders], deliberately. That stores the off-set so a provider added
+     * later defaults on; here there are only three slots in the layout, so an action added later
+     * must not push itself into a bar someone has already arranged.
+     */
+    var widgetBarActions by mutableStateOf(WidgetAction.DEFAULT_ENABLED)
+        private set
+
+    /** Action ids in display order; unlisted ids sort last, as with [providerOrder]. */
+    var widgetBarActionOrder by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Everything the renderer needs, in one value. */
+    val widgetBarStyle: WidgetBarStyle
+        get() = WidgetBarStyle(
+            fill = widgetBarFill,
+            fillAlphaPercent = widgetBarFillAlpha,
+            wireframe = widgetBarWireframe,
+            cornerPercent = widgetBarCorner,
+            shadow = widgetBarShadow,
+            showHint = widgetBarShowHint,
+            logo = widgetBarLogo,
+            paddingHDp = widgetBarPaddingH,
+            paddingVDp = widgetBarPaddingV,
+        )
+
+    fun setWidgetBarPaddingH(context: Context, dp: Int) {
+        widgetBarPaddingH = dp.coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_PAD_H, widgetBarPaddingH).apply()
+    }
+
+    fun setWidgetBarPaddingV(context: Context, dp: Int) {
+        widgetBarPaddingV = dp.coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_PAD_V, widgetBarPaddingV).apply()
+    }
+
+    fun setWidgetBarFill(context: Context, fill: WidgetBarFill) {
+        widgetBarFill = fill
+        prefs(context).edit().apply {
+            when (fill) {
+                WidgetBarFill.Adaptive -> putString(
+                    KEY_WIDGET_BAR_FILL_MODE, WidgetBarFill.ADAPTIVE_ID,
+                )
+                is WidgetBarFill.Solid -> {
+                    putString(KEY_WIDGET_BAR_FILL_MODE, WidgetBarFill.SOLID_ID)
+                    putInt(KEY_WIDGET_BAR_FILL_COLOR, fill.color)
+                }
+            }
+        }.apply()
+    }
+
+    fun setWidgetBarFillAlpha(context: Context, percent: Int) {
+        widgetBarFillAlpha = percent.coerceIn(0, 100)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_FILL_ALPHA, widgetBarFillAlpha).apply()
+    }
+
+    fun setWidgetBarWireframe(context: Context, enabled: Boolean) {
+        widgetBarWireframe = enabled
+        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_WIREFRAME, enabled).apply()
+    }
+
+    fun setWidgetBarCorner(context: Context, percent: Int) {
+        widgetBarCorner = percent.coerceIn(0, 100)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_CORNER, widgetBarCorner).apply()
+    }
+
+    fun setWidgetBarShadow(context: Context, enabled: Boolean) {
+        widgetBarShadow = enabled
+        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_SHADOW, enabled).apply()
+    }
+
+    fun setWidgetBarShowHint(context: Context, show: Boolean) {
+        widgetBarShowHint = show
+        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_SHOW_HINT, show).apply()
+    }
+
+    fun setWidgetBarLogo(context: Context, logo: WidgetBarLogo) {
+        widgetBarLogo = logo
+        prefs(context).edit().putString(KEY_WIDGET_BAR_LOGO, logo.id).apply()
+    }
+
+    fun setWidgetBarActionEnabled(context: Context, id: String, enabled: Boolean) {
+        widgetBarActions = if (enabled) widgetBarActions + id else widgetBarActions - id
+        prefs(context).edit().putStringSet(KEY_WIDGET_BAR_ACTIONS, widgetBarActions).apply()
+    }
+
+    /**
+     * Back to the shipped look.
+     *
+     * Clears the keys rather than writing the defaults over them, so the defaults stay defined in
+     * exactly one place — [load] — and can't drift into a second copy here.
+     */
+    fun resetWidgetBar(context: Context) {
+        prefs(context).edit().apply {
+            remove(KEY_WIDGET_BAR_FILL_MODE)
+            remove(KEY_WIDGET_BAR_FILL_COLOR)
+            remove(KEY_WIDGET_BAR_FILL_ALPHA)
+            remove(KEY_WIDGET_BAR_WIREFRAME)
+            remove(KEY_WIDGET_BAR_CORNER)
+            remove(KEY_WIDGET_BAR_SHADOW)
+            remove(KEY_WIDGET_BAR_SHOW_HINT)
+            remove(KEY_WIDGET_BAR_LOGO)
+            remove(KEY_WIDGET_BAR_ACTIONS)
+            remove(KEY_WIDGET_BAR_ACTION_ORDER)
+            remove(KEY_WIDGET_BAR_PAD_H)
+            remove(KEY_WIDGET_BAR_PAD_V)
+        }.apply()
+        load(context)
+    }
+
+    fun setWidgetBarActionOrder(context: Context, ids: List<String>) {
+        widgetBarActionOrder = ids
+        prefs(context).edit()
+            .putString(KEY_WIDGET_BAR_ACTION_ORDER, ids.joinToString(","))
+            .apply()
+    }
+
+    /**
+     * Whether the setup screen has been through once.
+     *
+     * Only records that the optional permissions have been *explained*, not that they were granted
+     * — refusing contacts access is a legitimate way to finish setup.
+     */
     var setupComplete by mutableStateOf(false)
         private set
 
@@ -294,6 +482,29 @@ object GumshoosConfig {
             }
             .toMap()
         setupComplete = p.getBoolean(KEY_SETUP_COMPLETE, false)
+
+        widgetBarFill = if (p.getString(KEY_WIDGET_BAR_FILL_MODE, null) == WidgetBarFill.SOLID_ID) {
+            WidgetBarFill.Solid(p.getInt(KEY_WIDGET_BAR_FILL_COLOR, 0xFFFFFFFF.toInt()))
+        } else {
+            WidgetBarFill.Adaptive
+        }
+        widgetBarFillAlpha = p.getInt(KEY_WIDGET_BAR_FILL_ALPHA, 100).coerceIn(0, 100)
+        widgetBarWireframe = p.getBoolean(KEY_WIDGET_BAR_WIREFRAME, false)
+        widgetBarCorner = p.getInt(KEY_WIDGET_BAR_CORNER, 100).coerceIn(0, 100)
+        widgetBarShadow = p.getBoolean(KEY_WIDGET_BAR_SHADOW, true)
+        widgetBarShowHint = p.getBoolean(KEY_WIDGET_BAR_SHOW_HINT, false)
+        widgetBarLogo = WidgetBarLogo.fromId(p.getString(KEY_WIDGET_BAR_LOGO, null))
+            ?: WidgetBarLogo.GOOGLE
+        widgetBarActions = p.getStringSet(KEY_WIDGET_BAR_ACTIONS, null)?.toSet()
+            ?: WidgetAction.DEFAULT_ENABLED
+        widgetBarPaddingH = p.getInt(KEY_WIDGET_BAR_PAD_H, DEFAULT_WIDGET_BAR_PAD_H)
+            .coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
+        widgetBarPaddingV = p.getInt(KEY_WIDGET_BAR_PAD_V, DEFAULT_WIDGET_BAR_PAD_V)
+            .coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
+        widgetBarActionOrder = p.getString(KEY_WIDGET_BAR_ACTION_ORDER, null)
+            ?.split(',')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
         disabledProviders = p.getStringSet(KEY_DISABLED_PROVIDERS, null)?.toSet() ?: emptySet()
         providerOrder = p.getString(KEY_PROVIDER_ORDER, null)
             ?.split(',')

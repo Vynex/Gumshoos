@@ -5,8 +5,15 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.content.res.ColorStateList
+import android.os.Bundle
+import android.util.SizeF
 import android.util.TypedValue
+import android.view.View
 import android.widget.RemoteViews
+import com.vynex.gumshoos.widget.WidgetAction
+import com.vynex.gumshoos.widget.WidgetBarMetrics
+import com.vynex.gumshoos.widget.WidgetBarRenderer
 
 /**
  * The fast invoke path.
@@ -27,24 +34,66 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
     protected abstract val sourceTag: String
 
     /** Hook for size/position overrides applied on top of the static layout. */
-    protected open fun decorate(context: Context, views: RemoteViews) = Unit
+    protected open fun decorate(
+        context: Context,
+        views: RemoteViews,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ) = Unit
 
+    /**
+     * One RemoteViews per widget, not one for all of them.
+     *
+     * The bar is resizable, so two placed copies can be different widths, and its background is
+     * rasterised to match. A single shared bitmap would be stretched to fit both and show visibly
+     * elliptical corners on the wider one.
+     */
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        appWidgetManager.updateAppWidget(appWidgetIds, buildViews(context))
+        appWidgetIds.forEach { id ->
+            appWidgetManager.updateAppWidget(id, buildViews(context, appWidgetManager, id))
+        }
+    }
+
+    /**
+     * Resize hook. Without it a bar keeps whatever width it was first drawn at, and the background
+     * is stretched to the new size instead of redrawn for it.
+     */
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle,
+    ) {
+        appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, appWidgetManager, appWidgetId))
     }
 
     // Deliberately no onEnabled hook. Starting a foreground service from a broadcast receiver is a
     // background FGS start, which Android 12+ blocks with ForegroundServiceStartNotAllowedException.
     // A widget *click* is exempt; widget *placement* is not. Warming happens from the app instead.
 
-    protected fun buildViews(context: Context): RemoteViews =
+    /**
+     * The tap target is wired before styling, and styling is allowed to fail.
+     *
+     * A throw inside [decorate] would otherwise leave the host with no RemoteViews at all — a
+     * widget that reads as broken rather than as unstyled. This way the worst case is the static
+     * layout, which still opens search, and the reason lands in the event trace.
+     *
+     * Note this cannot catch an *inflation* failure: that happens in the launcher's process, from
+     * the layout XML, and is invisible here. See the note in widget_search_bar.xml.
+     */
+    internal fun buildViews(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ): RemoteViews =
         RemoteViews(context.packageName, layoutRes).apply {
             setOnClickPendingIntent(R.id.widget_root, showPendingIntent(context))
-            decorate(context, this)
+            runCatching { decorate(context, this, manager, appWidgetId) }
+                .onFailure { EventLog.record("widget decorate FAILED $sourceTag ${it.javaClass.simpleName}: ${it.message}") }
         }
 
     private fun showPendingIntent(context: Context): PendingIntent =
@@ -56,11 +105,133 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
         )
 }
 
+/**
+ * Re-pushes every placed widget of one provider, so config changes show up without re-adding it.
+ *
+ * Free function rather than an inherited companion — companions aren't inheritable, which is why
+ * the 1x1 previously had this and the bar had nothing at all.
+ */
+private fun refreshProvider(context: Context, provider: SearchWidgetProviderBase, type: Class<*>) {
+    val manager = AppWidgetManager.getInstance(context) ?: return
+    val ids = manager.getAppWidgetIds(ComponentName(context, type))
+    if (ids.isEmpty()) return
+    ids.forEach { id -> manager.updateAppWidget(id, provider.buildViews(context, manager, id)) }
+}
+
 /** Full-width search bar, closest to the Nova home screen widget. */
 class SearchWidgetProvider : SearchWidgetProviderBase() {
     override val layoutRes = R.layout.widget_search_bar
     override val requestCode = 100
     override val sourceTag = "widget-bar"
+
+    /**
+     * Applies the configured style.
+     *
+     * The background is a bitmap because RemoteViews cannot set a Drawable and a shape drawable
+     * cannot cast a shadow — see [WidgetBarRenderer]. Everything else is plain RemoteViews calls
+     * against the ids the layout declares.
+     */
+    override fun decorate(
+        context: Context,
+        views: RemoteViews,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ) {
+        val style = GumshoosConfig.widgetBarStyle
+        val density = context.resources.displayMetrics.density
+        val (widthDp, heightDp) = measuredSizeDp(context, manager, appWidgetId)
+        val (wPx, hPx) = WidgetBarMetrics.renderSizePx(widthDp, heightDp, density)
+
+        views.setImageViewBitmap(
+            R.id.widget_background,
+            WidgetBarRenderer.toBitmap(context, style, wPx, hPx, density),
+        )
+
+        val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
+        val content = WidgetBarMetrics.contentColor(resolved, style)
+
+        // The content sits inside the bar, so it has to move with the bar's own padding — otherwise
+        // dropping the horizontal padding to zero leaves the logo hanging off the left edge.
+        val edge = ((style.paddingHDp + CONTENT_INSET_DP) * density).toInt()
+        views.setViewPadding(R.id.widget_content, edge, 0, edge, 0)
+
+        views.setImageViewResource(R.id.widget_logo, style.logo.icon)
+        // Null, not a colour, for a brand mark: a tint would flatten it to one tone.
+        views.setColorStateList(
+            R.id.widget_logo,
+            "setImageTintList",
+            if (style.logo.tintable) ColorStateList.valueOf(content) else null,
+        )
+
+        views.setViewVisibility(R.id.widget_hint, if (style.showHint) View.VISIBLE else View.GONE)
+        views.setTextColor(R.id.widget_hint, content)
+
+        val enabled = SearchProviders.inConfiguredOrder(
+            WidgetAction.entries.filter { it.id in GumshoosConfig.widgetBarActions },
+            GumshoosConfig.widgetBarActionOrder,
+            WidgetAction::id,
+        )
+        WidgetAction.slots(enabled).forEachIndexed { index, action ->
+            val slot = ACTION_SLOTS[index]
+            if (action == null) {
+                views.setViewVisibility(slot, View.GONE)
+                return@forEachIndexed
+            }
+            views.setViewVisibility(slot, View.VISIBLE)
+            views.setImageViewResource(slot, action.icon)
+            views.setColorStateList(
+                slot,
+                "setImageTintList",
+                if (action.tintable) ColorStateList.valueOf(content) else null,
+            )
+            views.setOnClickPendingIntent(slot, WidgetActionActivity.pendingIntent(context, action))
+        }
+    }
+
+    /**
+     * The size the launcher says this widget occupies, in dp.
+     *
+     * Prefers the exact size list the host provides, falling back to the min-width/max-height pair
+     * and then to the size declared in the widget metadata. Hosts report zero before the first
+     * layout pass, which is why [WidgetBarMetrics.renderSizePx] floors everything at a pixel.
+     */
+    private fun measuredSizeDp(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ): Pair<Int, Int> {
+        val options = runCatching { manager.getAppWidgetOptions(appWidgetId) }.getOrNull()
+            ?: return DEFAULT_WIDTH_DP to DEFAULT_HEIGHT_DP
+
+        @Suppress("DEPRECATION")
+        val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+        val largest = sizes?.maxByOrNull { it.width * it.height }
+        if (largest != null && largest.width > 0f && largest.height > 0f) {
+            return largest.width.toInt() to largest.height.toInt()
+        }
+
+        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+        return (if (width > 0) width else DEFAULT_WIDTH_DP) to
+            (if (height > 0) height else DEFAULT_HEIGHT_DP)
+    }
+
+    companion object {
+        /** Matches search_widget_info.xml, used until the host reports a real size. */
+        private const val DEFAULT_WIDTH_DP = 250
+        private const val DEFAULT_HEIGHT_DP = 56
+
+        /** Gap from the bar's own edge to the logo. Mirrors @dimen/widget_bar_inset. */
+        private const val CONTENT_INSET_DP = 18
+
+        private val ACTION_SLOTS = intArrayOf(
+            R.id.widget_action_1, R.id.widget_action_2, R.id.widget_action_3,
+        )
+
+        fun refreshAll(context: Context) {
+            refreshProvider(context, SearchWidgetProvider(), SearchWidgetProvider::class.java)
+        }
+    }
 }
 
 /** Single cell, styled to pass for an app icon. */
@@ -77,8 +248,16 @@ class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
      * margins: with gravity=center, a top margin of 2N shifts the child down by exactly N. Setting
      * one side to twice the offset and the other to zero therefore gives an exact nudge in either
      * direction, which a single margin would not.
+     *
+     * Ignores the manager and id: this widget is a fixed single cell, so its rendering doesn't
+     * depend on the size the host reports.
      */
-    override fun decorate(context: Context, views: RemoteViews) {
+    override fun decorate(
+        context: Context,
+        views: RemoteViews,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ) {
         val size = GumshoosConfig.widgetIconSizeDp.toFloat()
         views.setViewLayoutWidth(R.id.widget_icon, size, TypedValue.COMPLEX_UNIT_DIP)
         views.setViewLayoutHeight(R.id.widget_icon, size, TypedValue.COMPLEX_UNIT_DIP)
@@ -97,12 +276,9 @@ class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
     companion object {
         /** Re-pushes every placed 1x1 widget so config changes show up without re-adding it. */
         fun refreshAll(context: Context) {
-            val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(
-                ComponentName(context, SearchWidgetSmallProvider::class.java)
+            refreshProvider(
+                context, SearchWidgetSmallProvider(), SearchWidgetSmallProvider::class.java,
             )
-            if (ids.isEmpty()) return
-            manager.updateAppWidget(ids, SearchWidgetSmallProvider().buildViews(context))
         }
     }
 }

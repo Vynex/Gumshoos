@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
+import com.vynex.gumshoos.WidgetActionActivity
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.answers.MeasurementSystem
@@ -584,6 +586,19 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
         EventTrace()
 
         SettingsDivider()
+        SettingsSection("Voice search targets")
+        SettingsNote(
+            "Lists what the Google app exposes for voice search on this device, into the trace " +
+                "above. The intent that ought to be right lands on a hands-free activity that " +
+                "hands off to the assistant, so the working entry point has to be read off the " +
+                "device rather than reasoned about.",
+        )
+        OutlinedButton(
+            onClick = { WidgetActionActivity.probeVoiceTargets(context) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Probe voice search targets") }
+
+        SettingsDivider()
         SettingsSection("Compare launch paths")
         SettingsNote(
             "Opens the overlay from here, which goes through an activity and is deliberately the " +
@@ -639,7 +654,31 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 },
             )
         }
+
+        SettingsDivider()
+        SettingsSection("Widgets")
+        CategoryRow(
+            title = "Search bar widget",
+            summary = widgetBarSummary(),
+            onClick = { onOpen(Screen.WidgetBar) },
+        )
+
+        SettingsDivider()
+        WidgetTuning()
     }
+}
+
+/** Leads with the shape, since that is what distinguishes one bar from another at a glance. */
+private fun widgetBarSummary(): String {
+    val style = GumshoosConfig.widgetBarStyle
+    val shape = when {
+        style.wireframe -> "Outline"
+        style.cornerPercent >= 95 -> "Pill"
+        style.cornerPercent <= 5 -> "Square"
+        else -> "Rounded"
+    }
+    val actions = GumshoosConfig.widgetBarActions.size
+    return "$shape · ${style.logo.label} · $actions action${if (actions == 1) "" else "s"}"
 }
 
 @Composable

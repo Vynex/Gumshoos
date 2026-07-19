@@ -8,4 +8,14 @@
     -->
     <dimen name="widget_icon_size">46dp</dimen>
 
+    <!--
+      Wide search bar metrics. Referenced from widget_search_bar.xml and, via dimensionResource,
+      from the settings preview — one source, so the preview can't quietly disagree with the widget
+      about how much room the logo takes or how far the content sits from the edge.
+    -->
+    <dimen name="widget_bar_inset">18dp</dimen>
+    <dimen name="widget_bar_gap">12dp</dimen>
+    <dimen name="widget_bar_logo_size">22dp</dimen>
+    <dimen name="widget_bar_action_size">22dp</dimen>
+
 </resources>

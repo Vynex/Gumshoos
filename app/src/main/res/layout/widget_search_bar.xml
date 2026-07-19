@@ -1,27 +1,96 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  The wide search bar.
+
+  The background is an ImageView rather than a View background because it is rasterised at runtime —
+  RemoteViews cannot set a Drawable, and shape drawables cannot cast a shadow. The static src is
+  what the launcher's widget picker shows, and what a placed widget looks like for the instant
+  before the first update lands; the bitmap replaces it immediately after.
+
+  Action slots are fixed at three because RemoteViews cannot add views. WidgetAction.SLOT_COUNT
+  mirrors this number and a unit test holds the two together.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_search_bar_bg"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:paddingStart="18dp"
-    android:paddingEnd="18dp">
+    android:layout_height="match_parent">
 
     <ImageView
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:contentDescription="@string/widget_search_hint"
-        android:src="@android:drawable/ic_menu_search"
-        android:tint="#99FFFFFF" />
+        android:id="@+id/widget_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_search_bar_bg" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:text="@string/widget_search_hint"
-        android:textColor="#99FFFFFF"
-        android:textSize="16sp" />
+    <LinearLayout
+        android:id="@+id/widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/widget_bar_inset"
+        android:paddingEnd="@dimen/widget_bar_inset">
 
-</LinearLayout>
+        <ImageView
+            android:id="@+id/widget_logo"
+            android:layout_width="@dimen/widget_bar_logo_size"
+            android:layout_height="@dimen/widget_bar_logo_size"
+            android:contentDescription="@string/widget_search_hint"
+            android:src="@drawable/ic_provider_search" />
+
+        <TextView
+            android:id="@+id/widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:text="@string/widget_search_hint"
+            android:textColor="#99FFFFFF"
+            android:textSize="16sp" />
+
+        <!--
+          A weighted spacer of its own, rather than weighting the hint. Weighting the hint would let
+          the actions slide left the moment the hint is hidden, which is a setting away.
+
+          An empty FrameLayout, and NOT <View> or <Space>. RemoteViews inflates in the launcher's
+          process behind a filter that only admits classes annotated @RemoteViews.RemoteView, and
+          neither of those carries it — the layout then fails to inflate and the launcher shows
+          "An error occurred when loading widget" with nothing to say which view was at fault.
+          The full permitted set is FrameLayout, LinearLayout, RelativeLayout, GridLayout,
+          AbsoluteLayout, TextView, TextClock, Button, ImageButton, ImageView, ProgressBar,
+          AnalogClock, Chronometer, CheckBox, RadioButton, RadioGroup, Switch, ViewStub,
+          ViewFlipper, AdapterViewFlipper, ListView, GridView and StackView.
+        -->
+        <FrameLayout
+            android:id="@+id/widget_spacer"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:id="@+id/widget_action_1"
+            android:layout_width="@dimen/widget_bar_action_size"
+            android:layout_height="@dimen/widget_bar_action_size"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_action_2"
+            android:layout_width="@dimen/widget_bar_action_size"
+            android:layout_height="@dimen/widget_bar_action_size"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_action_3"
+            android:layout_width="@dimen/widget_bar_action_size"
+            android:layout_height="@dimen/widget_bar_action_size"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</FrameLayout>

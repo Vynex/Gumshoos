@@ -450,6 +450,23 @@ class OverlayService :
             .build()
     }
 
+    /**
+     * Re-pushes the search bar widget when the system theme flips.
+     *
+     * An adaptive bar resolves its colour against night mode at draw time, so it needs redrawing to
+     * follow a light/dark switch — and ACTION_CONFIGURATION_CHANGED cannot be manifest-registered on
+     * modern Android, so a widget provider can't hear it on its own. This service is resident to keep
+     * the overlay warm, which makes it the one component that does hear it.
+     *
+     * If the service isn't running the bar keeps its previous colours until the next update. That is
+     * the accepted edge; the alternative is a receiver that can't be registered.
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        runCatching { SearchWidgetProvider.refreshAll(this) }
+            .onFailure { EventLog.record("widget refresh on config change FAILED ${it.javaClass.simpleName}") }
+    }
+
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenOffReceiver) }
         hideRunnable?.let { composeView.removeCallbacks(it) }

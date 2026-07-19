@@ -82,6 +82,23 @@
         -->
         <package android:name="com.openai.chatgpt" />
         <package android:name="com.spotify.music" />
+
+        <!--
+          Targets of the search bar's action icons. The intent filters cover resolving a handler;
+          the named packages are for the explicit fallbacks each chain ends with, which resolve by
+          package rather than by action.
+        -->
+        <intent>
+            <action android:name="android.intent.action.VOICE_COMMAND" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.WEB_SEARCH" />
+        </intent>
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <package android:name="com.google.android.apps.bard" />
     </queries>
 
     <application
@@ -111,6 +128,20 @@
         -->
         <activity
             android:name=".LaunchSearchActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Gumshoos.Invisible" />
+
+        <!--
+          Reached from the search bar widget's action icons. Same shape as LaunchSearchActivity, and
+          exported for the same reason: a PendingIntent held by the launcher starts it. It exists
+          because a PendingIntent carries one Intent and these destinations each need a fallback
+          chain — see WidgetActionActivity.
+        -->
+        <activity
+            android:name=".WidgetActionActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:noHistory="true"

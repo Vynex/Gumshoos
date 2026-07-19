@@ -61,3 +61,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
+// WidgetLayoutTest reads the widget layouts off disk to check they only use view classes
+// RemoteViews will inflate. Gradle has no way to know that, so without this the test is cached as
+// up-to-date and skipped on exactly the change it exists to catch — editing a layout doesn't touch
+// the test classpath.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/res/layout")
+        .withPropertyName("widgetLayouts")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
