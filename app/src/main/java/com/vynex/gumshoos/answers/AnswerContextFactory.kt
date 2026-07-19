@@ -3,6 +3,7 @@ package com.vynex.gumshoos.answers
 import android.content.Context
 import android.icu.util.LocaleData
 import android.icu.util.ULocale
+import com.vynex.gumshoos.GumshoosConfig
 import java.time.ZoneId
 import java.util.Currency
 import java.util.Locale
@@ -18,10 +19,12 @@ object AnswerContextFactory {
 
     fun forDevice(context: Context, rates: RateTable? = null): AnswerContext {
         val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+        // An explicit choice wins; otherwise the device decides, which is the behaviour that
+        // existed before any of these were settable.
         return AnswerContext(
-            measurementSystem = measurementSystemOf(locale),
-            currencyCode = currencyOf(locale),
-            zoneId = ZoneId.systemDefault().id,
+            measurementSystem = GumshoosConfig.unitSystemOverride ?: measurementSystemOf(locale),
+            currencyCode = GumshoosConfig.preferredCurrency ?: currencyOf(locale),
+            zoneId = GumshoosConfig.preferredZone ?: ZoneId.systemDefault().id,
             locale = locale,
             rates = rates,
         )

@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,11 +26,18 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayService
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
+import com.vynex.gumshoos.answers.AnswerProviders
+import com.vynex.gumshoos.answers.CurrencyRates
+import com.vynex.gumshoos.answers.MeasurementSystem
+import java.time.ZoneId
+import java.util.Currency
+import kotlin.math.roundToInt
 
 /** Re-reads a permission whenever the screen comes back to the front, since it's granted elsewhere. */
 @Composable
@@ -71,6 +80,25 @@ internal fun AppsScreen(onBack: () -> Unit) {
             enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Grant usage access") }
+
+        SettingsDivider()
+        SettingsSection("NEW/UPDATED tab")
+        var windowHours by remember {
+            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat())
+        }
+        SettingsNote(
+            "How recently an app must have been installed or updated to appear there: " +
+                "${windowHours.roundToInt()} hours.",
+        )
+        Slider(
+            value = windowHours,
+            onValueChange = { windowHours = it },
+            onValueChangeFinished = {
+                GumshoosConfig.setNewUpdatedWindowHours(context, windowHours.roundToInt().toLong())
+            },
+            valueRange = 1f..168f,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -114,15 +142,83 @@ internal fun ContactsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-internal fun AnswersScreen(onBack: () -> Unit) {
+internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(AnswerProviders.enabledIds) }
+    var unitSystem by remember { mutableStateOf(GumshoosConfig.unitSystemOverride) }
+
     SettingsScaffold(title = "Instant answers", onBack = onBack) {
         SettingsNote(
             "Some queries answer themselves. Typing 2+2, 5ft, 0x1F, \$5 or \"time in tokyo\" " +
                 "shows a result above the contacts section.",
         )
+
+        SettingsSection("Modules")
+        AnswerProviders.all.forEach { provider ->
+            SettingsSwitchRow(
+                title = provider.label,
+                description = answerExample(provider.id),
+                checked = provider.id in enabled,
+                onCheckedChange = { on ->
+                    enabled = if (on) enabled + provider.id else enabled - provider.id
+                    GumshoosConfig.setAnswerProvidersEnabled(context, enabled)
+                },
+            )
+        }
+
+        SettingsDivider()
+        SettingsSection("Defaults")
+        SettingsNote(
+            "What a conversion becomes when the query doesn't say. Writing the target explicitly " +
+                "— \"5ft to inches\", \"\$5 to CAD\" — always wins over these.",
+        )
+
+        Spacer(Modifier.height(8.dp))
+        Text("Measurements", style = MaterialTheme.typography.bodyMedium)
+        listOf(
+            null to "Follow device",
+            MeasurementSystem.SI to "Metric",
+            MeasurementSystem.US to "Imperial",
+        ).forEach { (option, label) ->
+            SettingsRadioRow(
+                title = label,
+                description = when (option) {
+                    null -> "Whatever your phone's region implies."
+                    MeasurementSystem.SI -> "5ft answers in metres."
+                    else -> "5m answers in feet."
+                },
+                selected = unitSystem == option,
+                onClick = {
+                    unitSystem = option
+                    GumshoosConfig.setUnitSystemOverride(context, option)
+                },
+            )
+        }
+
+        SettingsDivider()
+        CategoryRow(
+            title = "Currency",
+            summary = GumshoosConfig.preferredCurrency ?: "Follow device",
+            onClick = { onOpen(Screen.CurrencyPicker) },
+        )
+        CategoryRow(
+            title = "Time zone",
+            summary = GumshoosConfig.preferredZone ?: "Follow device",
+            onClick = { onOpen(Screen.ZonePicker) },
+        )
+
         SettingsDivider()
         CurrencyRatesSettings()
     }
+}
+
+private fun answerExample(providerId: String): String = when (providerId) {
+    "math" -> "2+2, 10% of 50, sqrt 16"
+    "units" -> "5ft, 100 km/h to mph, 499 min"
+    "bases" -> "0x1F, 255 to binary"
+    "time" -> "time in tokyo, 3pm IST to PST"
+    "currency" -> "\$5, 500 inr to usd"
+    else -> ""
 }
 
 @Composable
@@ -246,4 +342,97 @@ internal fun AdvancedScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Show overlay from app") }
     }
+}
+
+@Composable
+internal fun AppearanceScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(GumshoosConfig.animationMode) }
+    val systemDisabled = GumshoosConfig.systemAnimationScale(context) == 0f
+
+    SettingsScaffold(title = "Appearance & motion", onBack = onBack) {
+        SettingsSection("Animations")
+        SettingsNote(
+            "The search window opens in about 20ms; the animation is what makes that legible " +
+                "rather than abrupt. Turning it off makes the window appear instantly.",
+        )
+
+        AnimationMode.entries.forEach { option ->
+            SettingsRadioRow(
+                title = when (option) {
+                    AnimationMode.FOLLOW_SYSTEM -> "Follow system setting"
+                    AnimationMode.ALWAYS_ON -> "Always on"
+                    AnimationMode.ALWAYS_OFF -> "Always off"
+                },
+                description = when (option) {
+                    AnimationMode.FOLLOW_SYSTEM ->
+                        if (systemDisabled) {
+                            "Your phone currently has animations turned off, so this means off."
+                        } else {
+                            "Your phone currently has animations turned on."
+                        }
+                    AnimationMode.ALWAYS_ON ->
+                        "Except when the phone has animations disabled system-wide — Compose's own " +
+                            "clock honours that, and nothing here can override it."
+                    AnimationMode.ALWAYS_OFF -> "Window and sections appear instantly."
+                },
+                selected = mode == option,
+                onClick = {
+                    mode = option
+                    GumshoosConfig.setAnimationMode(context, option)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun CurrencyPickerScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    // The rate table is the honest list: a currency it doesn't carry cannot be converted to.
+    val codes = CurrencyRates.table?.let { table ->
+        (table.rates.keys + table.base).sorted()
+    } ?: emptyList()
+
+    SearchablePicker(
+        title = "Default currency",
+        items = codes.map { code ->
+            PickerItem(
+                id = code,
+                title = code,
+                subtitle = runCatching { Currency.getInstance(code).displayName }.getOrNull(),
+            )
+        },
+        selectedId = GumshoosConfig.preferredCurrency,
+        defaultLabel = "Follow device",
+        defaultDescription = "Uses the currency your phone's region implies.",
+        onPick = { GumshoosConfig.setPreferredCurrency(context, it); onBack() },
+        onBack = onBack,
+    )
+}
+
+@Composable
+internal fun ZonePickerScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val zones = remember {
+        ZoneId.getAvailableZoneIds()
+            .filter { it.contains('/') && !it.startsWith("Etc/") && !it.startsWith("SystemV/") }
+            .sorted()
+    }
+
+    SearchablePicker(
+        title = "Default time zone",
+        items = zones.map { id ->
+            PickerItem(
+                id = id,
+                title = id.substringAfterLast('/').replace('_', ' '),
+                subtitle = id,
+            )
+        },
+        selectedId = GumshoosConfig.preferredZone,
+        defaultDescription = "Uses whatever your phone is set to.",
+        defaultLabel = "Follow device",
+        onPick = { GumshoosConfig.setPreferredZone(context, it); onBack() },
+        onBack = onBack,
+    )
 }

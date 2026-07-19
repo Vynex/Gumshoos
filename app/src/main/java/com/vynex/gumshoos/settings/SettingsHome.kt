@@ -23,12 +23,15 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
+import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
+import com.vynex.gumshoos.answers.MeasurementSystem
 
 /**
  * The settings root.
@@ -100,6 +103,15 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 onClick = { onOpen(Screen.Launching) },
             )
             CategoryRow(
+                title = "Appearance & motion",
+                summary = when (GumshoosConfig.animationMode) {
+                    AnimationMode.FOLLOW_SYSTEM -> "Animations follow system"
+                    AnimationMode.ALWAYS_ON -> "Animations always on"
+                    AnimationMode.ALWAYS_OFF -> "Animations off"
+                },
+                onClick = { onOpen(Screen.Appearance) },
+            )
+            CategoryRow(
                 title = "Behaviour",
                 summary = if (GumshoosConfig.hideOnFocusLoss) {
                     "Closes when focus is lost"
@@ -128,12 +140,15 @@ private fun appsSummary(hasUsage: Boolean): String = when {
 }
 
 private fun answersSummary(): String {
-    val rates = CurrencyRates.table
-    return if (rates == null) {
-        "Calculator, conversions, time · no exchange rates yet"
-    } else {
-        "Calculator, conversions, time · ${rates.rates.size} currencies"
+    val on = AnswerProviders.enabledIds.size
+    val total = AnswerProviders.all.size
+    val units = when (GumshoosConfig.unitSystemOverride) {
+        MeasurementSystem.SI -> "Metric"
+        MeasurementSystem.US, MeasurementSystem.UK -> "Imperial"
+        null -> "Device units"
     }
+    val currency = GumshoosConfig.preferredCurrency ?: "device currency"
+    return "$on of $total on · $units · $currency"
 }
 
 private fun launchingSummary(hasOverlay: Boolean, drawerIcon: Boolean): String = when {

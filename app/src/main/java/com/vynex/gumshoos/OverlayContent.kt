@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -96,6 +97,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.answers.Answer
 import com.vynex.gumshoos.answers.AnswerContextFactory
+import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
@@ -261,6 +263,11 @@ fun OverlayContent(
     onDismiss: () -> Unit,
 ) {
     GumshoosTheme(darkTheme = true, dynamicColor = true) {
+        val context = LocalContext.current
+        // Re-read while hidden rather than per frame: the system setting can change under us, but
+        // only between one opening and the next does it matter.
+        val animate = remember(resetToken) { GumshoosConfig.animationsEnabled(context) }
+
         val transition = updateTransition(targetState = visible, label = "overlay")
 
         // Entrance is staged: opacity and width run together up front, then the card grows
@@ -272,16 +279,16 @@ fun OverlayContent(
         // ~0, so it is invisible.
         val widthFraction by transition.animateFloat(
             transitionSpec = {
-                if (targetState) {
-                    keyframes {
+                when {
+                    !animate -> snap()
+                    targetState -> keyframes {
                         durationMillis =
                             delayOf(WidthStartPct) + durationOf(WidthStartPct, WidthEndPct)
                         CollapsedWidthFraction at 0 using WidthEnterEasing
                         CollapsedWidthFraction at delayOf(WidthStartPct) using WidthEnterEasing
                         1f at durationMillis
                     }
-                } else {
-                    tween(ExitMillis, easing = ExitEasing)
+                    else -> tween(ExitMillis, easing = ExitEasing)
                 }
             },
             label = "width",
@@ -289,13 +296,13 @@ fun OverlayContent(
 
         val cardAlpha by transition.animateFloat(
             transitionSpec = {
-                if (targetState) {
-                    tween(
+                when {
+                    !animate -> snap()
+                    targetState -> tween(
                         durationMillis = durationOf(OpacityStartPct, OpacityEndPct),
                         easing = AccelerateEasing,
                     )
-                } else {
-                    tween(ExitAlphaMillis, easing = ExitEasing)
+                    else -> tween(ExitAlphaMillis, easing = ExitEasing)
                 }
             },
             label = "alpha",
@@ -303,16 +310,16 @@ fun OverlayContent(
 
         val cardHeight by transition.animateDp(
             transitionSpec = {
-                if (targetState) {
-                    keyframes {
+                when {
+                    !animate -> snap()
+                    targetState -> keyframes {
                         durationMillis =
                             delayOf(HeightStartPct) + durationOf(HeightStartPct, HeightEndPct)
                         CardCollapsedHeight at 0 using SmoothStepEasing
                         CardCollapsedHeight at delayOf(HeightStartPct) using SmoothStepEasing
                         CardExpandedHeight at durationMillis
                     }
-                } else {
-                    tween(ExitMillis, easing = ExitEasing)
+                    else -> tween(ExitMillis, easing = ExitEasing)
                 }
             },
             label = "height",
@@ -322,16 +329,16 @@ fun OverlayContent(
         // grows. Morphing it earlier would blur the boundary between the two phases.
         val cornerRadius by transition.animateDp(
             transitionSpec = {
-                if (targetState) {
-                    keyframes {
+                when {
+                    !animate -> snap()
+                    targetState -> keyframes {
                         durationMillis =
                             delayOf(HeightStartPct) + durationOf(HeightStartPct, HeightEndPct)
                         PillCornerRadius at 0 using SmoothStepEasing
                         PillCornerRadius at delayOf(HeightStartPct) using SmoothStepEasing
                         CardCornerRadius at durationMillis
                     }
-                } else {
-                    tween(ExitMillis, easing = ExitEasing)
+                    else -> tween(ExitMillis, easing = ExitEasing)
                 }
             },
             label = "corner",
@@ -341,7 +348,7 @@ fun OverlayContent(
         // Snapped to zero on enter, where the card is strictly top-anchored.
         val topDrift by transition.animateDp(
             transitionSpec = {
-                if (targetState) tween(1) else tween(ExitMillis, easing = ExitEasing)
+                if (!animate) snap() else if (targetState) tween(1) else tween(ExitMillis, easing = ExitEasing)
             },
             label = "topDrift",
         ) { shown -> if (shown) 0.dp else ExitTopDrift }
@@ -365,7 +372,11 @@ fun OverlayContent(
         // lockstep — driving them from two animations lets them drift and the card jitter.
         val searchProgress by animateFloatAsState(
             targetValue = if (searching) 1f else 0f,
-            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            animationSpec = if (animate) {
+                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
+            } else {
+                snap()
+            },
             label = "searchProgress",
         )
         val tabHeight = TabRowHeight * (1f - searchProgress)
@@ -377,7 +388,11 @@ fun OverlayContent(
         var hasAppResults by remember { mutableStateOf(true) }
         val gridSectionHeight by animateDpAsState(
             targetValue = if (hasAppResults) DividerHeight + GridContentHeight else 0.dp,
-            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            animationSpec = if (animate) {
+                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
+            } else {
+                snap()
+            },
             label = "gridHeight",
         )
         val gridCollapse = (DividerHeight + GridContentHeight) - gridSectionHeight
@@ -385,7 +400,11 @@ fun OverlayContent(
         var hasAnswer by remember { mutableStateOf(false) }
         val answerHeight by animateDpAsState(
             targetValue = if (hasAnswer) AnswerSectionHeight else 0.dp,
-            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            animationSpec = if (animate) {
+                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
+            } else {
+                snap()
+            },
             label = "answerHeight",
         )
 
@@ -398,7 +417,11 @@ fun OverlayContent(
             } else {
                 ContactsHeaderHeight + (ContactRowHeight * contactRows) + 10.dp
             },
-            animationSpec = tween(TabCollapseMillis, easing = LinearOutSlowInEasing),
+            animationSpec = if (animate) {
+                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
+            } else {
+                snap()
+            },
             label = "contactsHeight",
         )
 
@@ -801,8 +824,14 @@ private fun BoxScope.AppContextMenu(
     // Composed only while open, so a fresh Animatable starting at 0 gives the open animation
     // without needing to keep the menu alive through a close transition.
     val appear = remember { Animatable(0f) }
+    val menuContext = LocalContext.current
     LaunchedEffect(Unit) {
-        appear.animateTo(1f, tween(140, easing = LinearOutSlowInEasing))
+        // The one animation outside the transition, so it needs the setting applied by hand.
+        if (GumshoosConfig.animationsEnabled(menuContext)) {
+            appear.animateTo(1f, tween(140, easing = LinearOutSlowInEasing))
+        } else {
+            appear.snapTo(1f)
+        }
     }
 
     val menuWidth = ContextMenuWidth.coerceAtMost(availableWidth - 16.dp)

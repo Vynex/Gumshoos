@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.vynex.gumshoos.answers.AnswerProviders
+import com.vynex.gumshoos.answers.MeasurementSystem
 
 /**
  * Tunables that will eventually be exposed in a settings screen. Persisted now so that screen only
@@ -17,6 +19,11 @@ object GumshoosConfig {
     private const val KEY_CONTACT_ACTION_PACKAGE = "contact_action_package_"
     private const val KEY_HIDE_ON_FOCUS_LOSS = "hide_on_focus_loss"
     private const val KEY_USAGE_SOURCE = "usage_source"
+    private const val KEY_UNIT_SYSTEM = "unit_system"
+    private const val KEY_PREFERRED_CURRENCY = "preferred_currency"
+    private const val KEY_PREFERRED_ZONE = "preferred_zone"
+    private const val KEY_ANIMATION_MODE = "animation_mode"
+    private const val KEY_ANSWER_PROVIDERS = "answer_providers_enabled"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -63,6 +70,75 @@ object GumshoosConfig {
     var hideOnFocusLoss by mutableStateOf(DEFAULT_HIDE_ON_FOCUS_LOSS)
         private set
 
+    /**
+     * Overrides for what the device would otherwise imply. Null means follow the device, which is
+     * the existing behaviour and stays the default — an Indian phone keeps answering 5ft in metres
+     * and $5 in rupees without anyone choosing anything.
+     */
+    var unitSystemOverride by mutableStateOf<MeasurementSystem?>(null)
+        private set
+
+    var preferredCurrency by mutableStateOf<String?>(null)
+        private set
+
+    var preferredZone by mutableStateOf<String?>(null)
+        private set
+
+    var animationMode by mutableStateOf(AnimationMode.FOLLOW_SYSTEM)
+        private set
+
+    fun setUnitSystemOverride(context: Context, system: MeasurementSystem?) {
+        unitSystemOverride = system
+        putOrRemove(context, KEY_UNIT_SYSTEM, system?.name)
+    }
+
+    fun setPreferredCurrency(context: Context, code: String?) {
+        preferredCurrency = code
+        putOrRemove(context, KEY_PREFERRED_CURRENCY, code)
+    }
+
+    fun setPreferredZone(context: Context, zoneId: String?) {
+        preferredZone = zoneId
+        putOrRemove(context, KEY_PREFERRED_ZONE, zoneId)
+    }
+
+    fun setAnimationMode(context: Context, mode: AnimationMode) {
+        animationMode = mode
+        prefs(context).edit().putString(KEY_ANIMATION_MODE, mode.name).apply()
+    }
+
+    /**
+     * Whether the overlay should animate.
+     *
+     * Following the system is the default so anyone who has already turned animations off
+     * phone-wide gets that here without having to find this setting too.
+     */
+    fun animationsEnabled(context: Context): Boolean = when (animationMode) {
+        AnimationMode.ALWAYS_OFF -> false
+        AnimationMode.ALWAYS_ON -> true
+        AnimationMode.FOLLOW_SYSTEM -> systemAnimationScale(context) != 0f
+    }
+
+    fun systemAnimationScale(context: Context): Float = runCatching {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        )
+    }.getOrDefault(1f)
+
+    /** Which instant-answer modules are on. Pushed into AnswerProviders, which owns the dispatch. */
+    fun setAnswerProvidersEnabled(context: Context, ids: Set<String>) {
+        AnswerProviders.enabledIds = ids
+        prefs(context).edit().putStringSet(KEY_ANSWER_PROVIDERS, ids).apply()
+    }
+
+    private fun putOrRemove(context: Context, key: String, value: String?) {
+        prefs(context).edit().apply {
+            if (value == null) remove(key) else putString(key, value)
+        }.apply()
+    }
+
     /** Where the Frequent and Recent tabs take their ordering from. */
     var usageSource by mutableStateOf(DEFAULT_USAGE_SOURCE)
         private set
@@ -100,6 +176,16 @@ object GumshoosConfig {
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)
         widgetIconOffsetDp = p.getInt(KEY_WIDGET_ICON_OFFSET, DEFAULT_WIDGET_ICON_OFFSET_DP)
         hideOnFocusLoss = p.getBoolean(KEY_HIDE_ON_FOCUS_LOSS, DEFAULT_HIDE_ON_FOCUS_LOSS)
+        unitSystemOverride = p.getString(KEY_UNIT_SYSTEM, null)
+            ?.let { name -> MeasurementSystem.entries.firstOrNull { it.name == name } }
+        preferredCurrency = p.getString(KEY_PREFERRED_CURRENCY, null)
+        preferredZone = p.getString(KEY_PREFERRED_ZONE, null)
+        animationMode = p.getString(KEY_ANIMATION_MODE, null)
+            ?.let { name -> AnimationMode.entries.firstOrNull { it.name == name } }
+            ?: AnimationMode.FOLLOW_SYSTEM
+        AnswerProviders.enabledIds =
+            p.getStringSet(KEY_ANSWER_PROVIDERS, null) ?: AnswerProviders.all.map { it.id }.toSet()
+
         usageSource = p.getString(KEY_USAGE_SOURCE, null)
             ?.let { name -> UsageSource.entries.firstOrNull { it.name == name } }
             ?: DEFAULT_USAGE_SOURCE
@@ -123,3 +209,6 @@ object GumshoosConfig {
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 }
+
+/** How the overlay's animations relate to the system-wide accessibility setting. */
+enum class AnimationMode { FOLLOW_SYSTEM, ALWAYS_ON, ALWAYS_OFF }

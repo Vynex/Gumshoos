@@ -15,6 +15,9 @@ internal sealed interface Screen {
     data object Answers : Screen
     data object Launching : Screen
     data object Behaviour : Screen
+    data object Appearance : Screen
+    data object CurrencyPicker : Screen
+    data object ZonePicker : Screen
     data object Advanced : Screen
 }
 
@@ -39,9 +42,12 @@ fun SettingsHost() {
         Screen.Home -> SettingsHome(onOpen = ::push)
         Screen.Apps -> AppsScreen(onBack = ::pop)
         Screen.Contacts -> ContactsScreen(onBack = ::pop)
-        Screen.Answers -> AnswersScreen(onBack = ::pop)
+        Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
         Screen.Behaviour -> BehaviourScreen(onBack = ::pop)
+        Screen.Appearance -> AppearanceScreen(onBack = ::pop)
+        Screen.CurrencyPicker -> CurrencyPickerScreen(onBack = ::pop)
+        Screen.ZonePicker -> ZonePickerScreen(onBack = ::pop)
         Screen.Advanced -> AdvancedScreen(onBack = ::pop)
     }
 }
