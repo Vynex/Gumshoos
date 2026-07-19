@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hand-maintained. The only drawable here without a source in design/icons/, so convert-icons.sh
+  does not regenerate it and verify-icons.py does not check it.
+
+  The current Gemini artwork is in design/icons-unsupported/ instead: it is built from an alpha mask
+  over ten Gaussian-blurred colour blobs, and Android vector drawables have neither filters nor
+  blur. Converting it produced hard-edged flat colour patches clipped to the star — it built, it
+  passed lint, and it looked broken. This file is the earlier, simpler mark, kept because it is
+  correct rather than because it is current.
+
+  To use the real artwork it has to be a raster: export ~192px with transparency into
+  res/drawable-nodpi/ (nodpi matters — a bitmap in plain res/drawable/ is treated as mdpi and
+  upscaled about fourfold).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:pathData="M512 256.5c-137.5 8.4-247.1 118-255.5 255.5h-1C247.1 374.5 137.5 264.9 0 256.5v-1c137.5-8.4 247.1-118 255.5-255.5h1c8.4 137.5 118 247.1 255.5 255.5z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="50.83"
+                android:centerY="208.15"
+                android:gradientRadius="544.96">
+                <item
+                    android:color="#FF9168C0"
+                    android:offset=".067"/>
+                <item
+                    android:color="#FF5684D1"
+                    android:offset=".343"/>
+                <item
+                    android:color="#FF1BA1E3"
+                    android:offset=".672"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

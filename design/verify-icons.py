@@ -54,45 +54,74 @@ def gradient_to_svg(node, index):
             f'gradientUnits="userSpaceOnUse">{stops}</linearGradient>')
 
 
+def elements_to_svg(node, state):
+    """Walk paths and groups, in order, returning SVG body text.
+
+    Recursive because a path can sit inside a <group> — which is how prepare-svg.py restores a
+    viewBox origin that Android has no way to express. A flat scan over direct children finds no
+    paths at all in that case and renders an empty image, which reads as a 100% pixel difference on
+    an icon that is actually correct.
+
+    Only translate is honoured. A group carrying scale or rotation is reported rather than
+    approximated: Android applies pivot, scale and rotation in an order SVG does not share, and a
+    near-miss here would quietly move the goalposts for every icon it touches.
+    """
+    body = ''
+    for element in node:
+        if element.tag.endswith('group'):
+            for unsupported in ('scaleX', 'scaleY', 'rotation'):
+                if element.get(f'{ANDROID}{unsupported}'):
+                    state['warnings'].append(f'group {unsupported} not modelled; comparison approximate')
+            x = element.get(f'{ANDROID}translateX', '0')
+            y = element.get(f'{ANDROID}translateY', '0')
+            body += f'<g transform="translate({x},{y})">{elements_to_svg(element, state)}</g>'
+        elif element.tag.endswith('path'):
+            body += path_to_svg(element, state)
+    return body
+
+
+def path_to_svg(element, state):
+    data = element.get(f'{ANDROID}pathData', '')
+    fill_colour, fill_alpha = argb_to_svg(element.get(f'{ANDROID}fillColor'))
+    stroke_colour, stroke_alpha = argb_to_svg(element.get(f'{ANDROID}strokeColor'))
+
+    gradient = None
+    for child in element:
+        if child.tag == f'{AAPT}attr' and child.get('name') == 'android:fillColor':
+            for grandchild in child:
+                gradient = grandchild
+    if gradient is not None:
+        state['defs'] += gradient_to_svg(gradient, state['index'])
+        fill = f'url(#g{state["index"]})'
+        fill_alpha = 1.0
+        state['index'] += 1
+    else:
+        fill = fill_colour or 'none'
+
+    attributes = f'fill="{fill}" fill-opacity="{fill_alpha}"'
+    if element.get(f'{ANDROID}fillType', '').lower() == 'evenodd':
+        attributes += ' fill-rule="evenodd"'
+    if stroke_colour:
+        attributes += (f' stroke="{stroke_colour}" stroke-opacity="{stroke_alpha}"'
+                       f' stroke-width="{element.get(f"{ANDROID}strokeWidth", "1")}"')
+        cap = element.get(f'{ANDROID}strokeLineCap')
+        if cap:
+            attributes += f' stroke-linecap="{cap}"'
+    return f'<path d="{data}" {attributes}/>'
+
+
 def drawable_to_svg(path):
     root = ET.parse(path).getroot()
     width = root.get(f'{ANDROID}viewportWidth', '24')
     height = root.get(f'{ANDROID}viewportHeight', '24')
 
-    defs, body, index = '', '', 0
-    for element in root:
-        if not element.tag.endswith('path'):
-            continue
-        data = element.get(f'{ANDROID}pathData', '')
-        fill_colour, fill_alpha = argb_to_svg(element.get(f'{ANDROID}fillColor'))
-        stroke_colour, stroke_alpha = argb_to_svg(element.get(f'{ANDROID}strokeColor'))
-
-        gradient = None
-        for child in element:
-            if child.tag == f'{AAPT}attr' and child.get('name') == 'android:fillColor':
-                for grandchild in child:
-                    gradient = grandchild
-        if gradient is not None:
-            defs += gradient_to_svg(gradient, index)
-            fill = f'url(#g{index})'
-            fill_alpha = 1.0
-            index += 1
-        else:
-            fill = fill_colour or 'none'
-
-        attributes = f'fill="{fill}" fill-opacity="{fill_alpha}"'
-        if element.get(f'{ANDROID}fillType', '').lower() == 'evenodd':
-            attributes += ' fill-rule="evenodd"'
-        if stroke_colour:
-            attributes += (f' stroke="{stroke_colour}" stroke-opacity="{stroke_alpha}"'
-                           f' stroke-width="{element.get(f"{ANDROID}strokeWidth", "1")}"')
-            cap = element.get(f'{ANDROID}strokeLineCap')
-            if cap:
-                attributes += f' stroke-linecap="{cap}"'
-        body += f'<path d="{data}" {attributes}/>'
+    state = {'defs': '', 'index': 0, 'warnings': []}
+    body = elements_to_svg(root, state)
+    for warning in state['warnings']:
+        print(f'    WARNING {warning}', file=sys.stderr)
 
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">'
-            f'<defs>{defs}</defs>{body}</svg>')
+            f'<defs>{state["defs"]}</defs>{body}</svg>')
 
 
 def main():
