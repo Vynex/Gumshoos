@@ -5,14 +5,18 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -103,6 +107,26 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
 
         SettingsDivider()
         CategoryRow(
+            title = "Matching",
+            summary = AppMatcher.MatchTier.entries
+                .count { it in GumshoosConfig.matchOptions }
+                .let { on ->
+                    if (on == AppMatcher.MatchTier.entries.size) {
+                        "All ways of matching are on"
+                    } else {
+                        "$on of ${AppMatcher.MatchTier.entries.size} on"
+                    }
+                },
+            onClick = { onOpen(Screen.Matching) },
+        )
+        CategoryRow(
+            title = "Custom names",
+            summary = GumshoosConfig.appAliases.size.let {
+                if (it == 0) "None set" else "$it app${if (it == 1) "" else "s"} renamed"
+            },
+            onClick = { onOpen(Screen.CustomNames) },
+        )
+        CategoryRow(
             title = "Hidden apps",
             summary = GumshoosConfig.hiddenApps.size.let {
                 if (it == 0) "None hidden" else "$it hidden"
@@ -110,6 +134,110 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             onClick = { onOpen(Screen.HiddenApps) },
         )
     }
+
+@Composable
+internal fun MatchingScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val options = GumshoosConfig.matchOptions
+
+    SettingsScaffold(title = "Matching", onBack = onBack) {
+        SettingsNote(
+            "Which ways of matching a query count. An app's full name and anything starting with " +
+                "what you typed always match — those aren't listed, because search without them " +
+                "isn't search.",
+        )
+
+        SettingsSection("Ways to match")
+        AppMatcher.MatchTier.entries.forEach { tier ->
+            SettingsSwitchRow(
+                title = tier.label,
+                description = tier.example,
+                checked = tier in options,
+                onCheckedChange = { GumshoosConfig.setMatchTierEnabled(context, tier, it) },
+            )
+        }
+
+        SettingsDivider()
+        SettingsNote(
+            "Switching one off doesn't score it lower, it stops it counting: with camel case off, " +
+                "\"bms\" no longer pulls BookMyShow above an app actually starting with those " +
+                "letters. Turning off skipped letters is the one that most reduces stray results.",
+        )
+    }
+}
+
+/**
+ * Per-app extra names.
+ *
+ * Presented over the whole app list rather than as a list of the ones already renamed, because the
+ * task always starts from "this app" — the alternative is an add button that opens a second picker.
+ */
+@Composable
+internal fun CustomNamesScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var editing by remember { mutableStateOf<AppEntry?>(null) }
+
+    editing?.let { entry ->
+        AliasDialog(
+            label = entry.label,
+            initial = GumshoosConfig.appAliases[entry.packageName].orEmpty(),
+            onDismiss = { editing = null },
+            onConfirm = { text ->
+                GumshoosConfig.setAppAliases(context, entry.packageName, text)
+                editing = null
+            },
+        )
+    }
+
+    AppListPicker(
+        title = "Custom names",
+        header = "Extra names an app answers to, on top of its real one. Separate several with " +
+            "commas. Results still show the app's real name.",
+        emptyNote = "No apps indexed yet. Open search once and come back.",
+        items = AppRepository.apps.sortedBy { it.label.lowercase() }.map { entry ->
+            PickerItem(
+                id = entry.packageName,
+                title = entry.label,
+                subtitle = GumshoosConfig.appAliases[entry.packageName],
+                icon = entry.icon,
+            )
+        },
+        onClick = { packageName ->
+            editing = AppRepository.apps.firstOrNull { it.packageName == packageName }
+        },
+        onBack = onBack,
+    )
+}
+
+@Composable
+private fun AliasDialog(
+    label: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember(label) { mutableStateOf(initial) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(label) },
+        text = {
+            Column {
+                SettingsNote("Comma separated. Clearing the field removes them.")
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Also matches") },
+                    placeholder = { Text("insta, ig") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

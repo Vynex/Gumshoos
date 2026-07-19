@@ -26,6 +26,11 @@ data class AppEntry(
      * put Unicode normalisation in the type-ahead path for every installed app.
      */
     val indexed: AppMatcher.Indexed,
+    /**
+     * Custom names this app also answers to, indexed the same way. Empty for almost every app —
+     * they exist only where someone has typed one in settings.
+     */
+    val aliases: List<AppMatcher.Indexed> = emptyList(),
 ) {
     val packageName: String get() = component.packageName
 }
@@ -65,6 +70,7 @@ object AppRepository {
                     firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
                     lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
                     indexed = AppMatcher.index(label),
+                    aliases = aliasesFor(activity.packageName),
                 )
             }.getOrNull()
         }
@@ -73,6 +79,20 @@ object AppRepository {
             apps = entries
             loaded = true
         }
+
+    private fun aliasesFor(packageName: String): List<AppMatcher.Indexed> =
+        GumshoosConfig.appAliases[packageName]
+            ?.let { AppMatcher.indexAliases(it) }
+            .orEmpty()
+
+    /**
+     * Re-indexes aliases against the current config, without touching icons.
+     *
+     * Called when an alias is edited in settings. A full reload would re-decode every icon, which
+     * is the hundreds of milliseconds the warm-time load exists to keep off this path.
+     */
+    fun reindexAliases() {
+        apps = apps.map { it.copy(aliases = aliasesFor(it.packageName)) }
     }
 
     /**
@@ -142,7 +162,12 @@ object AppRepository {
 
         return visible
             .mapNotNull { entry ->
-                AppMatcher.score(query.trim(), entry.indexed)?.let { entry to it }
+                AppMatcher.matchBest(
+                    query.trim(),
+                    entry.indexed,
+                    entry.aliases,
+                    GumshoosConfig.matchOptions,
+                )?.let { entry to it.score }
             }
             .sortedWith(
                 compareByDescending<Pair<AppEntry, Int>> { it.second }

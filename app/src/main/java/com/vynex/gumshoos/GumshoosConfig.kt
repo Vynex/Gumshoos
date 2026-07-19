@@ -26,6 +26,8 @@ object GumshoosConfig {
     private const val KEY_ANSWER_PROVIDERS = "answer_providers_enabled"
     private const val KEY_HIDDEN_APPS = "hidden_apps"
     private const val KEY_HIDDEN_CONTACTS = "hidden_contacts"
+    private const val KEY_APP_ALIASES = "app_aliases_"
+    private const val KEY_MATCH_TIERS = "match_tiers"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -154,6 +156,45 @@ object GumshoosConfig {
     var hiddenContacts by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    /**
+     * Extra names an app answers to, as typed — "insta, ig" — keyed by package.
+     *
+     * Kept as the raw text rather than a parsed list so the settings field can show back exactly
+     * what was entered. [AppRepository] owns the indexed form.
+     */
+    var appAliases by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
+    /**
+     * Which optional match tiers are live. Everything on by default, which is how matching behaved
+     * before it was configurable.
+     */
+    var matchOptions by mutableStateOf(AppMatcher.MatchOptions.ALL)
+        private set
+
+    fun setAppAliases(context: Context, packageName: String, text: String) {
+        val trimmed = text.trim()
+        appAliases = if (trimmed.isEmpty()) {
+            appAliases - packageName
+        } else {
+            appAliases + (packageName to trimmed)
+        }
+        putOrRemove(context, KEY_APP_ALIASES + packageName, trimmed.ifEmpty { null })
+        // Aliases are indexed once and matched on every keystroke, so the index is rebuilt here
+        // rather than folded on the type-ahead path. Same reason AnswerProviders is pushed to.
+        AppRepository.reindexAliases()
+    }
+
+    fun setMatchTierEnabled(context: Context, tier: AppMatcher.MatchTier, enabled: Boolean) {
+        val tiers = if (enabled) {
+            matchOptions.enabled + tier
+        } else {
+            matchOptions.enabled - tier
+        }
+        matchOptions = AppMatcher.MatchOptions(tiers)
+        prefs(context).edit().putStringSet(KEY_MATCH_TIERS, tiers.map { it.id }.toSet()).apply()
+    }
+
     fun setAppHidden(context: Context, packageName: String, hidden: Boolean) {
         hiddenApps = if (hidden) hiddenApps + packageName else hiddenApps - packageName
         prefs(context).edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
@@ -204,6 +245,23 @@ object GumshoosConfig {
         // Copied: the set from SharedPreferences must not be mutated or read after the fact.
         hiddenApps = p.getStringSet(KEY_HIDDEN_APPS, null)?.toSet() ?: emptySet()
         hiddenContacts = p.getStringSet(KEY_HIDDEN_CONTACTS, null)?.toSet() ?: emptySet()
+
+        // One key per package, so the map is recovered by scanning rather than parsing a blob.
+        appAliases = p.all
+            .filterKeys { it.startsWith(KEY_APP_ALIASES) }
+            .mapNotNull { (key, value) ->
+                (value as? String)?.takeIf { it.isNotBlank() }
+                    ?.let { key.removePrefix(KEY_APP_ALIASES) to it }
+            }
+            .toMap()
+
+        // An unknown id is dropped rather than failing the load, so removing a tier later can't
+        // leave a stored set that no longer parses.
+        matchOptions = p.getStringSet(KEY_MATCH_TIERS, null)
+            ?.mapNotNull { id -> AppMatcher.MatchTier.entries.firstOrNull { it.id == id } }
+            ?.toSet()
+            ?.let { AppMatcher.MatchOptions(it) }
+            ?: AppMatcher.MatchOptions.ALL
 
         unitSystemOverride = p.getString(KEY_UNIT_SYSTEM, null)
             ?.let { name -> MeasurementSystem.entries.firstOrNull { it.name == name } }

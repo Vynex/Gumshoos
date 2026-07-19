@@ -158,4 +158,184 @@ class AppMatcherTest {
     fun `empty query matches everything`() {
         assertNotNull(score("", "Anything"))
     }
+
+    // --- match toggles -------------------------------------------------------------------------
+
+    private fun options(vararg off: AppMatcher.MatchTier) =
+        AppMatcher.MatchOptions(AppMatcher.MatchTier.entries.toSet() - off.toSet())
+
+    private fun score(query: String, label: String, options: AppMatcher.MatchOptions): Int? =
+        AppMatcher.score(query, AppMatcher.index(label), options)
+
+    private fun rank(
+        query: String,
+        labels: List<String>,
+        options: AppMatcher.MatchOptions,
+    ): List<String> =
+        labels.mapNotNull { label -> score(query, label, options)?.let { label to it } }
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+    @Test
+    fun `the always-on tiers survive every toggle being off`() {
+        val none = AppMatcher.MatchOptions(emptySet())
+        assertNotNull(score("spotify", "Spotify", none))
+        assertNotNull(score("spot", "Spotify", none))
+    }
+
+    @Test
+    fun `disabling fuzzy drops a subsequence-only match`() {
+        assertNotNull(score("bkmy", "BookMyShow"))
+        assertNull(score("bkmy", "BookMyShow", options(AppMatcher.MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `disabling substring drops a mid-label match`() {
+        assertNotNull(score("tube", "YouTube"))
+        assertNull(
+            score("tube", "YouTube", options(AppMatcher.MatchTier.SUBSTRING, AppMatcher.MatchTier.FUZZY)),
+        )
+    }
+
+    @Test
+    fun `disabling substring also drops the word-boundary case`() {
+        // The two are one switch: leaving boundary matching on would still find "my" in
+        // "Book My Show", which is exactly what switching it off is meant to stop.
+        assertNull(
+            score(
+                "my",
+                "Book My Show",
+                options(AppMatcher.MatchTier.SUBSTRING, AppMatcher.MatchTier.FUZZY),
+            ),
+        )
+    }
+
+    @Test
+    fun `disabling initials drops an initials match`() {
+        assertNotNull(score("bb", "Big Basket"))
+        assertNull(
+            score(
+                "bb",
+                "Big Basket",
+                options(
+                    AppMatcher.MatchTier.INITIALS,
+                    AppMatcher.MatchTier.CAPITALS,
+                    AppMatcher.MatchTier.FUZZY,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a disabled tier is skipped, not scored to zero`() {
+        // With camel case on, BookMyShow wins on exact capitals. With it off it must fall through
+        // to a weaker tier rather than staying ahead — a zeroed tier would still be returned here.
+        val off = options(AppMatcher.MatchTier.CAPITALS)
+        assertEquals("BookMyShow", rank("bms", listOf("Bmsoft", "BookMyShow")).first())
+        assertEquals("Bmsoft", rank("bms", listOf("Bmsoft", "BookMyShow"), off).first())
+    }
+
+    @Test
+    fun `a query only a disabled tier accepted still matches through a weaker one`() {
+        // Skipping is not the same as excluding: capitals off leaves fuzzy to accept "bms".
+        assertNotNull(score("bms", "BookMyShow", options(AppMatcher.MatchTier.CAPITALS)))
+    }
+
+    // --- aliases -------------------------------------------------------------------------------
+
+    private fun matchWithAliases(
+        query: String,
+        label: String,
+        aliases: String,
+        options: AppMatcher.MatchOptions = AppMatcher.MatchOptions.ALL,
+    ): AppMatcher.Match? = AppMatcher.matchBest(
+        query,
+        AppMatcher.index(label),
+        AppMatcher.indexAliases(aliases),
+        options,
+    )
+
+    @Test
+    fun `aliases are split on commas and trimmed`() {
+        val indexed = AppMatcher.indexAliases(" insta ,ig ")
+        assertEquals(listOf("insta", "ig"), indexed.map { it.original })
+    }
+
+    @Test
+    fun `a blank alias is dropped rather than matching everything`() {
+        assertEquals(emptyList<String>(), AppMatcher.indexAliases(" , ,").map { it.original })
+        // An empty alias folds to "", which every label starts with.
+        assertNull(matchWithAliases("zzz", "Instagram", ",  ,"))
+    }
+
+    @Test
+    fun `an alias finds an app its label never would`() {
+        assertNull(score("ig", "Camera"))
+        assertNotNull(matchWithAliases("ig", "Camera", "ig"))
+    }
+
+    @Test
+    fun `an alias lifts a match out of the fuzzy tier`() {
+        // "ig" already reaches Instagram as a subsequence, far down the results. The alias is what
+        // puts it at the top.
+        val fuzzy = score("ig", "Instagram")!!
+        assertTrue(matchWithAliases("ig", "Instagram", "ig")!!.score > fuzzy)
+    }
+
+    @Test
+    fun `an alias win highlights nothing`() {
+        // The label holds none of the characters that were matched, so emboldening any would lie.
+        val match = matchWithAliases("ig", "Instagram", "ig")
+        assertEquals(emptyList<Int>(), match?.indices)
+        assertTrue(match!!.viaAlias)
+    }
+
+    @Test
+    fun `a label match still highlights when an alias also matches`() {
+        // Both hit the label-prefix tier, and the shorter alias scores higher on brevity. Comparing
+        // on score rather than tier would hand the win — and the highlight — to the alias.
+        val match = matchWithAliases("inst", "Instagram", "insta")
+        assertEquals(false, match?.viaAlias)
+        assertEquals(listOf(0, 1, 2, 3), match?.indices)
+    }
+
+    @Test
+    fun `the label wins a tie with an alias`() {
+        // Both hit the exact-label tier; the app actually called that must not be demoted.
+        val match = matchWithAliases("photos", "Photos", "photos")
+        assertEquals(false, match?.viaAlias)
+    }
+
+    @Test
+    fun `an alias only promotes, never demotes`() {
+        val labelOnly = score("insta", "Instagram")!!
+        val withAlias = matchWithAliases("insta", "Instagram", "gram")!!.score
+        assertTrue(withAlias >= labelOnly)
+    }
+
+    @Test
+    fun `an alias respects the match toggles`() {
+        // The alias is matched through the same tiers as a label, so a disabled one can't sneak
+        // back in through it.
+        assertNotNull(matchWithAliases("bm", "Instagram", "BookMy"))
+        assertNull(
+            matchWithAliases(
+                "bm",
+                "Instagram",
+                "BookMy",
+                options(
+                    AppMatcher.MatchTier.INITIALS,
+                    AppMatcher.MatchTier.CAPITALS,
+                    AppMatcher.MatchTier.FUZZY,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `an alias beats a weaker label match on another app`() {
+        val instagram = matchWithAliases("ig", "Instagram", "ig")!!.score
+        val fuzzy = score("ig", "Imagine Grid")!!
+        assertTrue(instagram > fuzzy)
+    }
 }

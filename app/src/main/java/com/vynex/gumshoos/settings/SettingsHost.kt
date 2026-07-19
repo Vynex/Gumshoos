@@ -18,6 +18,8 @@ internal sealed interface Screen {
     data object Appearance : Screen
     data object HiddenApps : Screen
     data object HiddenContacts : Screen
+    data object Matching : Screen
+    data object CustomNames : Screen
     data object CurrencyPicker : Screen
     data object ZonePicker : Screen
     data object Advanced : Screen
@@ -46,6 +48,8 @@ fun SettingsHost() {
         Screen.Contacts -> ContactsScreen(onBack = ::pop, onOpen = ::push)
         Screen.HiddenApps -> HiddenAppsScreen(onBack = ::pop)
         Screen.HiddenContacts -> HiddenContactsScreen(onBack = ::pop)
+        Screen.Matching -> MatchingScreen(onBack = ::pop)
+        Screen.CustomNames -> CustomNamesScreen(onBack = ::pop)
         Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
         Screen.Behaviour -> BehaviourScreen(onBack = ::pop)

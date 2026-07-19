@@ -185,7 +185,9 @@ object ContactsRepository {
         return contacts
             .filterNot { it.lookupKey in GumshoosConfig.hiddenContacts }
             .mapNotNull { entry ->
-                AppMatcher.score(query.trim(), entry.indexed)?.let { entry to it }
+                // Same tier toggles as apps: they describe how matching works, not what it's over.
+                AppMatcher.score(query.trim(), entry.indexed, GumshoosConfig.matchOptions)
+                    ?.let { entry to it }
             }
             .sortedWith(
                 compareByDescending<Pair<ContactEntry, Int>> { it.second }

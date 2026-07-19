@@ -20,6 +20,9 @@ import java.text.Normalizer
  *   6  word-boundary substring    "my"      -> Book*My*Show
  *   7  substring anywhere         "tube"    -> YouTube
  *   8  fuzzy subsequence          "bkmy"    -> BookMyShow
+ *
+ * Tiers 2-3 and 5-8 can be switched off — see [MatchTier] — and a label can carry aliases, which
+ * match alongside it. Both are settings; both are pure logic and tested here rather than on-device.
  */
 object AppMatcher {
 
@@ -43,8 +46,53 @@ object AppMatcher {
         'ð' to "d", 'ł' to "l", 'þ' to "th", 'ħ' to "h", 'ı' to "i",
     )
 
-    /** Which characters a match covers, as indices into the original label. */
-    data class Match(val score: Int, val indices: List<Int>)
+    /**
+     * Which characters a match covers, as indices into the original label.
+     *
+     * [indices] is empty when the match came from an alias: the label contains none of the
+     * characters the query hit, so emboldening any of them would be a lie.
+     */
+    data class Match(
+        val score: Int,
+        val indices: List<Int>,
+        val viaAlias: Boolean = false,
+    )
+
+    /**
+     * A tier that can be switched off.
+     *
+     * The strong tiers — exact label and label prefix — are not here. Typing a name and having the
+     * app that is called that not come up is not a preference anyone holds, and a search with them
+     * off is not a search.
+     *
+     * Word-boundary and interior substrings are one switch because they are one behaviour: turning
+     * off "anywhere" while leaving the boundary case on would still find *Book*My*Show* for "my",
+     * which is precisely what someone switching it off is trying to stop.
+     */
+    enum class MatchTier(val id: String, val label: String, val example: String) {
+        INITIALS("initials", "Initials", "\"bb\" finds Big Basket"),
+        CAPITALS("capitals", "Camel case", "\"bms\" finds BookMyShow"),
+        SUBSTRING("substring", "Anywhere in the name", "\"tube\" finds YouTube"),
+        FUZZY("fuzzy", "Skipped letters", "\"bkmy\" finds BookMyShow"),
+    }
+
+    /**
+     * Which optional tiers are live.
+     *
+     * A disabled tier is skipped, not scored to zero. Zeroing keeps the match at that tier and its
+     * result would still be returned ahead of a weaker tier that is enabled — "bms" would go on
+     * finding BookMyShow with camel case off. Skipping lets the query fall through to whatever
+     * weaker tier still accepts it, or to no match at all.
+     */
+    @JvmInline
+    value class MatchOptions(val enabled: Set<MatchTier>) {
+        operator fun contains(tier: MatchTier): Boolean = tier in enabled
+
+        companion object {
+            /** Everything on, which is how matching behaved before any of this was configurable. */
+            val ALL = MatchOptions(MatchTier.entries.toSet())
+        }
+    }
 
     /**
      * A label prepared for matching: the folded text, plus everything needed to map a hit in that
@@ -112,6 +160,16 @@ object AppMatcher {
         )
     }
 
+    /**
+     * Aliases as they are typed in settings — one line's worth, comma separated — each indexed the
+     * same way a label is, so an alias matches through every tier a real name does.
+     *
+     * Blank entries are dropped rather than indexed: an empty alias folds to an empty string, which
+     * every label starts with, so it would match everything.
+     */
+    fun indexAliases(text: String): List<Indexed> =
+        text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.map { index(it) }
+
     /** Positions in the label of each token's first character. */
     fun wordInitialIndices(label: String): List<Int> {
         val out = mutableListOf<Int>()
@@ -155,13 +213,50 @@ object AppMatcher {
     }
 
     /** Higher is better; null means no match at all. */
-    fun score(query: String, indexed: Indexed): Int? = match(query, indexed)?.score
+    fun score(
+        query: String,
+        indexed: Indexed,
+        options: MatchOptions = MatchOptions.ALL,
+    ): Int? = match(query, indexed, options)?.score
+
+    /**
+     * The best match across a label and its aliases.
+     *
+     * An alias wins only on a strictly stronger tier, not on score. Score carries the brevity
+     * bonus, and an alias is almost always shorter than the name it stands in for — comparing on it
+     * would let "insta" outscore Instagram for "inst" at the very same tier, costing the highlight
+     * for no gain in rank. So the label keeps a tie, and an alias only ever promotes an app that
+     * matched weakly or not at all.
+     */
+    fun matchBest(
+        query: String,
+        indexed: Indexed,
+        aliases: List<Indexed>,
+        options: MatchOptions = MatchOptions.ALL,
+    ): Match? {
+        var best = match(query, indexed, options)
+        for (alias in aliases) {
+            val hit = match(query, alias, options) ?: continue
+            if (best == null || tierOf(hit.score) > tierOf(best.score)) {
+                // Indices are dropped: they point into the alias, and the cell draws the label.
+                best = Match(hit.score, emptyList(), viaAlias = true)
+            }
+        }
+        return best
+    }
+
+    /** The tier a score came from, with the brevity and gap bonuses — both under [TIER] — cut off. */
+    private fun tierOf(score: Int): Int = score / TIER
 
     /**
      * Score plus the label positions the match covers. Both come from one pass so the emboldened
      * characters are always the ones the winning tier actually matched on.
      */
-    fun match(query: String, indexed: Indexed): Match? {
+    fun match(
+        query: String,
+        indexed: Indexed,
+        options: MatchOptions = MatchOptions.ALL,
+    ): Match? {
         if (query.isEmpty()) return Match(0, emptyList())
         val q = foldQuery(query)
         if (q.isEmpty()) return Match(0, emptyList())
@@ -170,32 +265,38 @@ object AppMatcher {
         // Shorter labels win within a tier: "Maps" should beat "Maps Go" for "map".
         val brevity = (60 - indexed.original.length).coerceAtLeast(0)
 
+        val initials = MatchTier.INITIALS in options
+        val capitals = MatchTier.CAPITALS in options
+
         if (l == q) return Match(EXACT_LABEL + brevity, indexed.original.indices.toList())
-        if (indexed.wordInitials == q) {
+        if (initials && indexed.wordInitials == q) {
             return Match(EXACT_WORD_INITIALS + brevity, indexed.sourcesForWordInitials(q.length))
         }
-        if (indexed.capitals == q) {
+        if (capitals && indexed.capitals == q) {
             return Match(EXACT_CAPITALS + brevity, indexed.sourcesForCapitals(q.length))
         }
         if (l.startsWith(q)) {
             return Match(PREFIX_LABEL + brevity, indexed.sourcesForFolded(0 until q.length))
         }
-        if (indexed.wordInitials.startsWith(q)) {
+        if (initials && indexed.wordInitials.startsWith(q)) {
             return Match(PREFIX_INITIALS + brevity, indexed.sourcesForWordInitials(q.length))
         }
-        if (indexed.capitals.startsWith(q)) {
+        if (capitals && indexed.capitals.startsWith(q)) {
             return Match(PREFIX_INITIALS + brevity, indexed.sourcesForCapitals(q.length))
         }
-        tokenStarts(l).firstOrNull { l.startsWith(q, it) }?.let { start ->
-            return Match(
-                WORD_BOUNDARY + brevity,
-                indexed.sourcesForFolded(start until start + q.length),
-            )
+        if (MatchTier.SUBSTRING in options) {
+            tokenStarts(l).firstOrNull { l.startsWith(q, it) }?.let { start ->
+                return Match(
+                    WORD_BOUNDARY + brevity,
+                    indexed.sourcesForFolded(start until start + q.length),
+                )
+            }
+            val at = l.indexOf(q)
+            if (at >= 0) {
+                return Match(SUBSTRING + brevity, indexed.sourcesForFolded(at until at + q.length))
+            }
         }
-        val at = l.indexOf(q)
-        if (at >= 0) {
-            return Match(SUBSTRING + brevity, indexed.sourcesForFolded(at until at + q.length))
-        }
+        if (MatchTier.FUZZY !in options) return null
 
         return subsequenceMatch(q, l)?.let { (bonus, hits) ->
             Match(FUZZY + bonus, hits.flatMap { indexed.sourcesForFolded(it..it) })

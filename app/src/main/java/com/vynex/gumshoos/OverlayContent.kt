@@ -1064,7 +1064,8 @@ private fun ContactRow(
         Spacer(Modifier.width(12.dp))
 
         val name = remember(contact.name, query) {
-            val matched = AppMatcher.match(query, contact.indexed)?.indices.orEmpty().toSet()
+            val matched = AppMatcher.match(query, contact.indexed, GumshoosConfig.matchOptions)
+                ?.indices.orEmpty().toSet()
             buildAnnotatedString {
                 contact.name.forEachIndexed { i, ch ->
                     if (i in matched) {
@@ -1373,12 +1374,18 @@ private fun AppCell(
         )
         Spacer(Modifier.height(6.dp))
         // Emboldens exactly the characters the winning tier matched on, so an initials hit lights
-        // up the initials rather than a contiguous run that was never matched.
-        val label = remember(entry.label, query) {
+        // up the initials rather than a contiguous run that was never matched. An alias win
+        // highlights nothing: the label holds none of the characters that were matched.
+        val label = remember(entry.label, entry.aliases, query) {
             val matched = if (query.isBlank()) {
                 emptySet()
             } else {
-                AppMatcher.match(query, entry.indexed)?.indices.orEmpty().toSet()
+                AppMatcher.matchBest(
+                    query,
+                    entry.indexed,
+                    entry.aliases,
+                    GumshoosConfig.matchOptions,
+                )?.indices.orEmpty().toSet()
             }
             buildAnnotatedString {
                 entry.label.forEachIndexed { i, ch ->
