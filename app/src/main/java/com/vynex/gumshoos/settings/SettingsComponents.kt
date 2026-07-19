@@ -34,6 +34,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 
 /**
@@ -48,6 +50,36 @@ import androidx.compose.ui.unit.dp
  * padding disagree either overhangs the screen or leaves a visible notch.
  */
 internal val SettingsInset = 20.dp
+
+/**
+ * Lets a row's touch target and ripple reach the screen edges while its content stays inset.
+ *
+ * The list applies its padding to the scrolling column, so everything inside is already narrower
+ * than the window and a ripple can only fill the width its row was given — it stops where the text
+ * starts, which reads as a misaligned highlight rather than a row being pressed.
+ *
+ * Rather than move the inset onto every child in every screen, this measures the row [SettingsInset]
+ * wider on each side and draws it shifted back out, while still reporting the original width to the
+ * column. Nothing above or below it moves. The row then re-applies the inset internally, so its
+ * content lands exactly where it did before.
+ *
+ * Safe because both lists apply their padding *inside* `verticalScroll`, so the clip bounds are the
+ * full window width and the widened row isn't cut off.
+ */
+internal fun Modifier.fullBleedRow(): Modifier = layout { measurable, constraints ->
+    val bleed = SettingsInset.roundToPx()
+    val extra = bleed * 2
+    val widened = if (constraints.hasBoundedWidth) {
+        constraints.copy(maxWidth = constraints.maxWidth + extra)
+    } else {
+        constraints
+    }
+    val placeable = measurable.measure(widened)
+    // The reported width excludes the bleed, so the column lays out as though nothing changed.
+    layout((placeable.width - extra).coerceAtLeast(0), placeable.height) {
+        placeable.place(-bleed, 0)
+    }
+}
 
 /** A screen with a title and a back arrow. Content scrolls; the bar does not. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,7 +106,7 @@ internal fun SettingsScaffold(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = SettingsInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             content()
@@ -96,9 +128,10 @@ internal fun CategoryRow(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fillMaxWidth()
+            .fullBleedRow()
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 14.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
@@ -152,9 +185,10 @@ internal fun SettingsSwitchRow(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fillMaxWidth()
+            .fullBleedRow()
             .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 8.dp),
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 8.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
@@ -248,9 +282,10 @@ internal fun SettingsRadioRow(
 ) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            .fullBleedRow()
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 6.dp),
     ) {
         RadioButton(selected = selected, onClick = onClick)
         Spacer(Modifier.width(4.dp))

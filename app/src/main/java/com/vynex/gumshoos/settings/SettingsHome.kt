@@ -67,7 +67,7 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = SettingsInset),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Spacer(Modifier.height(16.dp))
