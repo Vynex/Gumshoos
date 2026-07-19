@@ -35,6 +35,8 @@ import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayService
+import com.vynex.gumshoos.SearchProviders
+import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
 import com.vynex.gumshoos.answers.AnswerProviders
@@ -134,6 +136,70 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             onClick = { onOpen(Screen.HiddenApps) },
         )
     }
+}
+
+/**
+ * Which hand-off targets appear under "Search using", and in what order.
+ *
+ * Enabling and ordering share one screen because they are one question — what the row looks like —
+ * and splitting them would mean scrolling the same list twice to arrange it.
+ */
+@Composable
+internal fun ProvidersScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val ordered = SearchProviders.inConfiguredOrder(
+        SearchProviders.all,
+        GumshoosConfig.providerOrder,
+    )
+
+    // Availability is otherwise resolved once at warm time, so an app installed since then would
+    // still read "Not installed" on the one screen that talks about it.
+    LaunchedEffect(Unit) { SearchProviders.refreshAvailability(context) }
+
+    fun move(id: String, delta: Int) {
+        // The order is persisted in full from what's on screen. Saving only the moved id would
+        // leave the rest implicit, and "unlisted sorts last" would then scramble them.
+        GumshoosConfig.setProviderOrder(
+            context,
+            SearchProviders.reorder(ordered.map { it.id }, id, delta),
+        )
+    }
+
+    SettingsScaffold(title = "Search providers", onBack = onBack) {
+        SettingsNote(
+            "The row of marks under \"Search using\", shown once a query matches no installed " +
+                "app. The first one is also where Enter goes when nothing matched.",
+        )
+
+        SettingsSection("Providers")
+        ordered.forEachIndexed { index, provider ->
+            val isMissing = provider.id in SearchProviders.missing
+            ProviderRow(
+                label = provider.label,
+                icon = provider.icon,
+                description = when {
+                    isMissing -> "Not installed, so it stays hidden"
+                    else -> null
+                },
+                checked = provider.id !in GumshoosConfig.disabledProviders,
+                enabled = !isMissing,
+                canMoveUp = index > 0,
+                canMoveDown = index < ordered.lastIndex,
+                onCheckedChange = {
+                    GumshoosConfig.setProviderEnabled(context, provider.id, it)
+                },
+                onMoveUp = { move(provider.id, -1) },
+                onMoveDown = { move(provider.id, 1) },
+            )
+        }
+
+        SettingsDivider()
+        SettingsNote(
+            "Spotify and ChatGPT appear only when their app is installed — searching either " +
+                "on the web lands on a login wall rather than a result.",
+        )
+    }
+}
 
 @Composable
 internal fun MatchingScreen(onBack: () -> Unit) {

@@ -26,7 +26,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
-import com.vynex.gumshoos.SearchShortcuts
+import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
 import com.vynex.gumshoos.answers.AnswerProviders
@@ -163,4 +163,23 @@ private fun launchingSummary(hasOverlay: Boolean, drawerIcon: Boolean): String =
     !hasOverlay -> "Permission needed"
     drawerIcon -> "Widget · second app icon on"
     else -> "Widget ${GumshoosConfig.widgetIconSizeDp}dp"
+}
+
+/** Counts what actually appears, so an uninstalled provider isn't reported as available. */
+private fun providersSummary(): String {
+    val shown = SearchProviders.enabled
+    return when {
+        shown.isEmpty() -> "None — the \"Search using\" row is hidden"
+        else -> "${shown.size} shown · ${shown.first().label} first"
+    }
+}
+
+/** Motion first: it's the setting here that changes how the whole app feels. */
+private fun appearanceSummary(): String {
+    val animations = when (GumshoosConfig.animationMode) {
+        AnimationMode.FOLLOW_SYSTEM -> "Animations follow system"
+        AnimationMode.ALWAYS_ON -> "Animations always on"
+        AnimationMode.ALWAYS_OFF -> "Animations off"
+    }
+    return "$animations · widget ${GumshoosConfig.widgetIconSizeDp}dp"
 }

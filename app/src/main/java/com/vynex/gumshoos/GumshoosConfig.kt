@@ -28,6 +28,8 @@ object GumshoosConfig {
     private const val KEY_HIDDEN_CONTACTS = "hidden_contacts"
     private const val KEY_APP_ALIASES = "app_aliases_"
     private const val KEY_MATCH_TIERS = "match_tiers"
+    private const val KEY_DISABLED_PROVIDERS = "disabled_providers"
+    private const val KEY_PROVIDER_ORDER = "provider_order"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -195,6 +197,28 @@ object GumshoosConfig {
         prefs(context).edit().putStringSet(KEY_MATCH_TIERS, tiers.map { it.id }.toSet()).apply()
     }
 
+    var disabledProviders by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /**
+     * Provider ids in display order. Empty until something is reordered, which means declaration
+     * order; ids missing from it sort to the end. See [SearchProviders.inConfiguredOrder].
+     */
+    var providerOrder by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    fun setProviderEnabled(context: Context, id: String, enabled: Boolean) {
+        disabledProviders = if (enabled) disabledProviders - id else disabledProviders + id
+        prefs(context).edit().putStringSet(KEY_DISABLED_PROVIDERS, disabledProviders).apply()
+    }
+
+    fun setProviderOrder(context: Context, ids: List<String>) {
+        providerOrder = ids
+        // Joined rather than a string set: SharedPreferences sets are unordered, and order is the
+        // entire content of this value. Ids are slugs, so the separator can't appear inside one.
+        prefs(context).edit().putString(KEY_PROVIDER_ORDER, ids.joinToString(",")).apply()
+    }
+
     fun setAppHidden(context: Context, packageName: String, hidden: Boolean) {
         hiddenApps = if (hidden) hiddenApps + packageName else hiddenApps - packageName
         prefs(context).edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
@@ -254,6 +278,11 @@ object GumshoosConfig {
                     ?.let { key.removePrefix(KEY_APP_ALIASES) to it }
             }
             .toMap()
+        disabledProviders = p.getStringSet(KEY_DISABLED_PROVIDERS, null)?.toSet() ?: emptySet()
+        providerOrder = p.getString(KEY_PROVIDER_ORDER, null)
+            ?.split(',')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
 
         // An unknown id is dropped rather than failing the load, so removing a tier later can't
         // leave a stored set that no longer parses.

@@ -75,8 +75,13 @@
             <data android:scheme="mailto" />
         </intent>
         <package android:name="com.whatsapp" />
-        <!-- Checked for installation, and forced on the intent so the browser can't claim the link. -->
+        <!--
+          Checked for installation, and forced on the intent so the browser can't claim the link.
+          The MAIN/LAUNCHER query above already makes both visible; these are declared by name
+          because that is the lookup the availability check actually performs.
+        -->
         <package android:name="com.openai.chatgpt" />
+        <package android:name="com.spotify.music" />
     </queries>
 
     <application

@@ -1,5 +1,7 @@
 package com.vynex.gumshoos.settings
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,12 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -154,6 +160,74 @@ internal fun SettingsSwitchRow(
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** Which control a [ProviderRow] toggles with. Purely presentational — both mean on or off. */
+internal enum class RowControl { SWITCH, CHECKBOX }
+
+/**
+ * A provider: brand mark, a toggle, and the two reorder arrows.
+ *
+ * Arrows rather than drag-and-drop. Reorderable dragging is a dependency or a few hundred lines of
+ * gesture handling, for a list of six that is arranged once.
+ */
+@Composable
+internal fun ProviderRow(
+    label: String,
+    @DrawableRes icon: Int,
+    description: String?,
+    checked: Boolean,
+    enabled: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    control: RowControl = RowControl.SWITCH,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        // Image, not Icon: these are full-colour brand marks and Icon would tint them flat.
+        Image(
+            painter = painterResource(icon),
+            contentDescription = null,
+            alpha = if (enabled) 1f else 0.38f,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                },
+            )
+            if (!description.isNullOrEmpty()) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move $label up")
+        }
+        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move $label down")
+        }
+        when (control) {
+            RowControl.SWITCH ->
+                Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+            RowControl.CHECKBOX ->
+                Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        }
     }
 }
 

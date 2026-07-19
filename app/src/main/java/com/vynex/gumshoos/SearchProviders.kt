@@ -15,8 +15,8 @@ import kotlinx.coroutines.withContext
 /**
  * A destination the current query can be handed off to when no installed app matches it.
  *
- * [id] is the persistence key: settings will eventually store which providers are enabled and in
- * what order, so it must stay stable even if the label or icon changes.
+ * [id] is the persistence key for the enabled set and the order, so it must stay stable even if the
+ * label or icon changes.
  */
 data class SearchProvider(
     val id: String,
@@ -37,6 +37,7 @@ data class SearchProvider(
 object SearchProviders {
 
     private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
+    private const val SPOTIFY_PACKAGE = "com.spotify.music"
 
     val google = SearchProvider(
         id = "google",
@@ -76,6 +77,9 @@ object SearchProviders {
         icon = R.drawable.ic_provider_spotify,
         appUri = { "spotify:search:$it" },
         webUri = { "https://open.spotify.com/search/$it" },
+        // Like ChatGPT: searching Spotify without Spotify lands on a web player behind a login
+        // wall, which is not what tapping the mark was asking for.
+        requiresPackage = SPOTIFY_PACKAGE,
     )
 
     val chatGpt = SearchProvider(
@@ -91,25 +95,77 @@ object SearchProviders {
     val all = listOf(google, playStore, maps, youtube, spotify, chatGpt)
 
     /**
-     * Providers whose required app is present. Resolved at warm time rather than per keystroke,
-     * since checking package installation is a binder call.
+     * Providers whose required app isn't installed.
+     *
+     * Starts out assuming every one of them is missing, so a provider is shown only once its app
+     * has actually been found. The other way round flashes a mark that then disappears.
+     *
+     * Resolved at warm time rather than per keystroke, since checking package installation is a
+     * binder call.
      */
-    private var available by mutableStateOf(all.filter { it.requiresPackage == null })
+    var missing by mutableStateOf(
+        all.filter { it.requiresPackage != null }.map { it.id }.toSet()
+    )
+        private set
 
     suspend fun refreshAvailability(context: Context) = withContext(Dispatchers.IO) {
         val pm = context.packageManager
-        val present = all.filter { provider ->
-            val required = provider.requiresPackage ?: return@filter true
-            runCatching { pm.getPackageInfo(required, 0) }.isSuccess
-        }
-        withContext(Dispatchers.Main) { available = present }
+        val absent = all.filter { provider ->
+            val required = provider.requiresPackage ?: return@filter false
+            runCatching { pm.getPackageInfo(required, 0) }.isFailure
+        }.map { it.id }.toSet()
+        withContext(Dispatchers.Main) { missing = absent }
     }
 
     /**
-     * Which providers appear, in order. Filtered only by availability for now; settings will layer
-     * a persisted, reorderable selection on top — hence [SearchProvider.id] being a stable key.
+     * The configured order, applied to whichever providers are passed in.
+     *
+     * Ids the order doesn't mention sort to the end in their declaration order, which is what makes
+     * a provider added in a later version appear at all: it lands at the end of an order that was
+     * saved before it existed, rather than being dropped for not being listed.
      */
-    val enabled: List<SearchProvider> get() = available
+    fun inConfiguredOrder(
+        providers: List<SearchProvider>,
+        order: List<String>,
+    ): List<SearchProvider> = inConfiguredOrder(providers, order, SearchProvider::id)
+
+    /**
+     * The same rule over anything with a stable id — the widget's action icons reuse it.
+     *
+     * `sortedBy` is stable, which is what makes "unlisted ids keep their declaration order" hold
+     * rather than being arbitrary.
+     */
+    fun <T> inConfiguredOrder(
+        items: List<T>,
+        order: List<String>,
+        id: (T) -> String,
+    ): List<T> = items.sortedBy { item ->
+        order.indexOf(id(item)).takeIf { it >= 0 } ?: Int.MAX_VALUE
+    }
+
+    /**
+     * Moves one id within a list, for the reorder buttons. Out-of-range moves are no-ops, so the
+     * top item's "up" needs no special case at the call site.
+     */
+    fun reorder(ids: List<String>, id: String, delta: Int): List<String> {
+        val from = ids.indexOf(id)
+        if (from < 0) return ids
+        val to = from + delta
+        if (to !in ids.indices) return ids
+        return ids.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    /**
+     * Which providers appear, in order: installed, switched on, and arranged as configured.
+     *
+     * Disabling is stored as the *off* set rather than the on set, so a provider added later is on
+     * by default instead of silently absent for everyone who already has settings saved.
+     */
+    val enabled: List<SearchProvider>
+        get() = inConfiguredOrder(
+            all.filterNot { it.id in missing || it.id in GumshoosConfig.disabledProviders },
+            GumshoosConfig.providerOrder,
+        )
 
     fun search(context: Context, provider: SearchProvider, query: String) {
         val trimmed = query.trim()

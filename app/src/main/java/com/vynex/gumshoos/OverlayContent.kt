@@ -380,7 +380,10 @@ fun OverlayContent(
             label = "searchProgress",
         )
         val tabHeight = TabRowHeight * (1f - searchProgress)
-        val providerRowHeight = SearchUsingHeight * searchProgress
+        // Collapses to nothing when every provider is switched off or uninstalled, rather than
+        // sliding an empty "Search using" strip into view.
+        val providerRowHeight =
+            if (SearchProviders.enabled.isEmpty()) 0.dp else SearchUsingHeight * searchProgress
 
         // Collapses away when a query matches no apps at all, so the card goes straight from the
         // search bar to whatever did match. The divider belongs to this block rather than sitting
@@ -1138,8 +1141,8 @@ private fun ContactAvatar(contact: ContactEntry) {
 }
 
 /**
- * Hand-off targets for the current query. Order comes from [SearchProviders.enabled], which settings
- * will eventually make configurable — nothing here assumes a fixed set.
+ * Hand-off targets for the current query. Both the set and the order come from
+ * [SearchProviders.enabled] — nothing here assumes a fixed set, or that there is one at all.
  */
 @Composable
 private fun SearchUsingRow(onPick: (SearchProvider) -> Unit) {
