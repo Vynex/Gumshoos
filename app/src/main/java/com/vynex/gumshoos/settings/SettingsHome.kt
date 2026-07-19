@@ -100,6 +100,11 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 onClick = { onOpen(Screen.Apps) },
             )
             CategoryRow(
+                title = "Instant answers",
+                summary = answersSummary(),
+                onClick = { onOpen(Screen.Answers) },
+            )
+            CategoryRow(
                 title = "Contacts",
                 summary = when {
                     !hasContacts -> "Off — results won't include contacts"
@@ -109,23 +114,9 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 onClick = { onOpen(Screen.Contacts) },
             )
             CategoryRow(
-                title = "Instant answers",
-                summary = answersSummary(),
-                onClick = { onOpen(Screen.Answers) },
-            )
-            CategoryRow(
-                title = "Launching Gumshoos",
-                summary = launchingSummary(hasOverlay, SearchShortcuts.isDrawerIconEnabled(context)),
-                onClick = { onOpen(Screen.Launching) },
-            )
-            CategoryRow(
-                title = "Appearance & motion",
-                summary = when (GumshoosConfig.animationMode) {
-                    AnimationMode.FOLLOW_SYSTEM -> "Animations follow system"
-                    AnimationMode.ALWAYS_ON -> "Animations always on"
-                    AnimationMode.ALWAYS_OFF -> "Animations off"
-                },
-                onClick = { onOpen(Screen.Appearance) },
+                title = "Search providers",
+                summary = providersSummary(),
+                onClick = { onOpen(Screen.Providers) },
             )
             CategoryRow(
                 title = "Behaviour",
@@ -141,7 +132,7 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
 
             CategoryRow(
                 title = "Advanced",
-                summary = "Diagnostics and troubleshooting",
+                summary = "Launching, diagnostics and troubleshooting",
                 onClick = { onOpen(Screen.Advanced) },
             )
             Spacer(Modifier.height(24.dp))
@@ -171,10 +162,16 @@ private fun answersSummary(): String {
     return "$on of $total on · $units · $currency"
 }
 
-private fun launchingSummary(hasOverlay: Boolean, drawerIcon: Boolean): String = when {
-    !hasOverlay -> "Permission needed"
-    drawerIcon -> "Widget · second app icon on"
-    else -> "Widget ${GumshoosConfig.widgetIconSizeDp}dp"
+/** Leads with the required one, since that's the only state that stops search working. */
+@Composable
+private fun permissionsSummary(): String {
+    val context = LocalContext.current
+    val missingRequired = AppPermission.required.filterNot { it.isGranted(context) }
+    val optionalOn = AppPermission.optional.count { it.isGranted(context) }
+    return when {
+        missingRequired.isNotEmpty() -> "${missingRequired.first().title} not granted"
+        else -> "Required granted · $optionalOn of ${AppPermission.optional.size} optional"
+    }
 }
 
 /** Counts what actually appears, so an uninstalled provider isn't reported as available. */

@@ -77,9 +77,9 @@ fun SettingsHost() {
         Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
         Screen.Behaviour -> BehaviourScreen(onBack = ::pop)
-        Screen.Appearance -> AppearanceScreen(onBack = ::pop)
+        Screen.Appearance -> AppearanceScreen(onBack = ::pop, onOpen = ::push)
         Screen.CurrencyPicker -> CurrencyPickerScreen(onBack = ::pop)
         Screen.ZonePicker -> ZonePickerScreen(onBack = ::pop)
-        Screen.Advanced -> AdvancedScreen(onBack = ::pop)
+        Screen.Advanced -> AdvancedScreen(onBack = ::pop, onOpen = ::push)
     }
 }

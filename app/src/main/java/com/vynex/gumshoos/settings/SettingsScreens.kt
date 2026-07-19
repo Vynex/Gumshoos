@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
@@ -471,36 +470,28 @@ private fun answerExample(providerId: String): String = when (providerId) {
     else -> ""
 }
 
+/**
+ * How search gets opened: keeping the process warm, and the launcher targets. Lives under Advanced
+ * — none of it needs touching once set up, and the widget is the intended way in.
+ *
+ * The overlay permission is only reported here, never granted. Two buttons onto the same system
+ * dialog is two places for the explanation to drift; Permissions owns that.
+ */
 @Composable
 internal fun LaunchingScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
 
     SettingsScaffold(title = "Launching Gumshoos", onBack = onBack) {
-        SettingsSection("Permission")
-        SettingsNote(
-            if (hasOverlay) {
-                "Granted. The search window is an overlay, so this one isn't optional."
-            } else {
-                "Required. The search window is an overlay drawn above whatever is on screen, " +
-                    "which is what lets it open from anywhere."
-            },
-            isWarning = !hasOverlay,
-        )
-        Button(
-            onClick = {
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        "package:${context.packageName}".toUri(),
-                    )
-                )
-            },
-            enabled = !hasOverlay,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Grant overlay permission") }
+        // Granting lives on the Permissions screen, not here. What this screen still owes the user
+        // is a reason for the dead button below, which is disabled without the permission.
+        if (!hasOverlay) {
+            SettingsNote(
+                "Nothing here works until \"draw over other apps\" is granted, under Permissions.",
+                isWarning = true,
+            )
+        }
 
-        SettingsDivider()
         SettingsSection("Keep it warm")
         SettingsNote(
             "Starts the service and pre-attaches the window, which is what makes opening search " +
@@ -518,9 +509,6 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
 
         SettingsDivider()
         SearchIconSettings()
-
-        SettingsDivider()
-        WidgetTuning()
     }
 }
 
@@ -564,10 +552,28 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
 }
 
 @Composable
-internal fun AdvancedScreen(onBack: () -> Unit) {
+internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
+    val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
 
     SettingsScaffold(title = "Advanced", onBack = onBack) {
+        CategoryRow(
+            title = "Launching Gumshoos",
+            summary = when {
+                !hasOverlay -> "Overlay permission needed"
+                SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
+                else -> "Widget, quick tile and shortcuts"
+            },
+            onClick = { onOpen(Screen.Launching) },
+        )
+
+        SettingsDivider()
+        IndexRefresh()
+
+        SettingsDivider()
+        WidgetRefresh()
+
+        SettingsDivider()
         SettingsNote(
             "Diagnostics. The event trace records what the overlay did and when, which is how " +
                 "the last few misbehaviours were pinned down without a debugger attached.",
@@ -595,12 +601,12 @@ internal fun AdvancedScreen(onBack: () -> Unit) {
 }
 
 @Composable
-internal fun AppearanceScreen(onBack: () -> Unit) {
+internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
     var mode by remember { mutableStateOf(GumshoosConfig.animationMode) }
     val systemDisabled = GumshoosConfig.systemAnimationScale(context) == 0f
 
-    SettingsScaffold(title = "Appearance & motion", onBack = onBack) {
+    SettingsScaffold(title = "Appearance", onBack = onBack) {
         SettingsSection("Animations")
         SettingsNote(
             "The search window opens in about 20ms; the animation is what makes that legible " +
