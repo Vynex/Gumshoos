@@ -1,0 +1,249 @@
+package com.vynex.gumshoos.settings
+
+import android.Manifest
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.vynex.gumshoos.ContactsRepository
+import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.OverlayService
+import com.vynex.gumshoos.UsageRepository
+import com.vynex.gumshoos.UsageSource
+
+/** Re-reads a permission whenever the screen comes back to the front, since it's granted elsewhere. */
+@Composable
+private fun rememberPermission(check: () -> Boolean): Boolean {
+    var granted by remember { mutableStateOf(check()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) granted = check()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return granted
+}
+
+@Composable
+internal fun AppsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val hasUsage = rememberPermission { UsageRepository.hasPermission(context) }
+
+    SettingsScaffold(title = "Apps", onBack = onBack) {
+        SettingsSection("Frequent & Recent ordering")
+        UsageSourcePicker()
+
+        Spacer(Modifier.height(8.dp))
+        SettingsNote(
+            when {
+                GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
+                    "Usage access isn't used with this option and can be revoked."
+                hasUsage -> "Granted. Apps are ordered by system-wide usage."
+                else ->
+                    "Not granted, so ordering falls back to alphabetical. System usage is a " +
+                        "special access grant rather than a normal prompt."
+            },
+            isWarning = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage,
+        )
+        Button(
+            onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+            enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Grant usage access") }
+    }
+}
+
+@Composable
+internal fun ContactsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var hasContacts by remember { mutableStateOf(ContactsRepository.hasPermission(context)) }
+
+    val request = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasContacts = granted
+        if (granted) {
+            // Re-warm so contacts appear without waiting for the next boot.
+            context.startForegroundService(
+                OverlayService.intent(context, OverlayService.ACTION_WARM)
+            )
+        }
+    }
+
+    SettingsScaffold(title = "Contacts", onBack = onBack) {
+        SettingsNote(
+            if (hasContacts) {
+                "Granted. Matching contacts appear below the app results."
+            } else {
+                "Optional. Without it the contacts section simply doesn't appear; nothing else " +
+                    "changes."
+            },
+        )
+        Button(
+            onClick = { request.launch(Manifest.permission.READ_CONTACTS) },
+            enabled = !hasContacts,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Allow contacts access") }
+
+        if (hasContacts) {
+            SettingsDivider()
+            EmailAppPicker()
+        }
+    }
+}
+
+@Composable
+internal fun AnswersScreen(onBack: () -> Unit) {
+    SettingsScaffold(title = "Instant answers", onBack = onBack) {
+        SettingsNote(
+            "Some queries answer themselves. Typing 2+2, 5ft, 0x1F, \$5 or \"time in tokyo\" " +
+                "shows a result above the contacts section.",
+        )
+        SettingsDivider()
+        CurrencyRatesSettings()
+    }
+}
+
+@Composable
+internal fun LaunchingScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
+
+    SettingsScaffold(title = "Launching Gumshoos", onBack = onBack) {
+        SettingsSection("Permission")
+        SettingsNote(
+            if (hasOverlay) {
+                "Granted. The search window is an overlay, so this one isn't optional."
+            } else {
+                "Required. The search window is an overlay drawn above whatever is on screen, " +
+                    "which is what lets it open from anywhere."
+            },
+            isWarning = !hasOverlay,
+        )
+        Button(
+            onClick = {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        "package:${context.packageName}".toUri(),
+                    )
+                )
+            },
+            enabled = !hasOverlay,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Grant overlay permission") }
+
+        SettingsDivider()
+        SettingsSection("Keep it warm")
+        SettingsNote(
+            "Starts the service and pre-attaches the window, which is what makes opening search " +
+                "near-instant. Needed once per boot; placing the widget does it too.",
+        )
+        Button(
+            onClick = {
+                context.startForegroundService(
+                    OverlayService.intent(context, OverlayService.ACTION_WARM)
+                )
+            },
+            enabled = hasOverlay,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Start & pre-warm") }
+
+        SettingsDivider()
+        SearchIconSettings()
+
+        SettingsDivider()
+        WidgetTuning()
+    }
+}
+
+@Composable
+internal fun BehaviourScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
+
+    SettingsScaffold(title = "Behaviour", onBack = onBack) {
+        SettingsSwitchRow(
+            title = "Close when focus is lost",
+            description = "Dismisses the search window when another app takes over — tapping a " +
+                "notification, or pulling down the shade. This also covers the Home gesture, " +
+                "which reports late and so feels sluggish.",
+            checked = hideOnFocusLoss,
+            onCheckedChange = {
+                hideOnFocusLoss = it
+                GumshoosConfig.setHideOnFocusLoss(context, it)
+            },
+        )
+
+        SettingsDivider()
+        SettingsSection("Notification")
+        SettingsNote(
+            "A foreground service must supply a notification — the system won't let it run " +
+                "without one, and it can't be suppressed from inside the app. On Android 13+ the " +
+                "system only shows it when notification permission is granted, so switching " +
+                "notifications off hides it while the service keeps running. Gumshoos will still " +
+                "be listed under \"Active apps\" in the shade; that part is unavoidable.",
+        )
+        OutlinedButton(
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Open notification settings") }
+    }
+}
+
+@Composable
+internal fun AdvancedScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    SettingsScaffold(title = "Advanced", onBack = onBack) {
+        SettingsNote(
+            "Diagnostics. The event trace records what the overlay did and when, which is how " +
+                "the last few misbehaviours were pinned down without a debugger attached.",
+        )
+
+        SettingsDivider()
+        CrashReport()
+        EventTrace()
+
+        SettingsDivider()
+        SettingsSection("Compare launch paths")
+        SettingsNote(
+            "Opens the overlay from here, which goes through an activity and is deliberately the " +
+                "slow path. Compare it against tapping the widget.",
+        )
+        OutlinedButton(
+            onClick = {
+                context.startForegroundService(
+                    OverlayService.intent(context, OverlayService.ACTION_SHOW, source = "in-app")
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Show overlay from app") }
+    }
+}
