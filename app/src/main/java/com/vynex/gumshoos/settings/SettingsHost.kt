@@ -6,6 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.vynex.gumshoos.AppPermission
+import com.vynex.gumshoos.GumshoosConfig
 
 /** Every destination in settings. */
 internal sealed interface Screen {
@@ -35,6 +38,24 @@ internal sealed interface Screen {
  */
 @Composable
 fun SettingsHost() {
+    val context = LocalContext.current
+
+    // Decided once per launch, not continuously. Re-reading it live would yank the screen away
+    // mid-grant — the user returns from the system's permission screen and setup vanishes before
+    // they've seen the optional two.
+    var showSetup by remember {
+        mutableStateOf(
+            AppPermission.shouldShowSetup(
+                missingRequired = AppPermission.required.any { !it.isGranted(context) },
+                setupComplete = GumshoosConfig.setupComplete,
+            )
+        )
+    }
+    if (showSetup) {
+        SetupScreen(onDone = { showSetup = false })
+        return
+    }
+
     var stack by remember { mutableStateOf<List<Screen>>(listOf(Screen.Home)) }
 
     fun push(screen: Screen) { stack = stack + screen }
@@ -52,6 +73,7 @@ fun SettingsHost() {
         Screen.Matching -> MatchingScreen(onBack = ::pop)
         Screen.CustomNames -> CustomNamesScreen(onBack = ::pop)
         Screen.Providers -> ProvidersScreen(onBack = ::pop)
+        Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
         Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
         Screen.Behaviour -> BehaviourScreen(onBack = ::pop)

@@ -30,6 +30,7 @@ object GumshoosConfig {
     private const val KEY_MATCH_TIERS = "match_tiers"
     private const val KEY_DISABLED_PROVIDERS = "disabled_providers"
     private const val KEY_PROVIDER_ORDER = "provider_order"
+    private const val KEY_SETUP_COMPLETE = "setup_complete"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -197,6 +198,20 @@ object GumshoosConfig {
         prefs(context).edit().putStringSet(KEY_MATCH_TIERS, tiers.map { it.id }.toSet()).apply()
     }
 
+    var setupComplete by mutableStateOf(false)
+        private set
+
+    fun setSetupComplete(context: Context) {
+        setupComplete = true
+        prefs(context).edit().putBoolean(KEY_SETUP_COMPLETE, true).apply()
+    }
+
+    /**
+     * Search providers switched off, by id.
+     *
+     * The off set rather than the on set, so a provider added in a later version is on by default
+     * rather than invisible to everyone who already has settings saved.
+     */
     var disabledProviders by mutableStateOf<Set<String>>(emptySet())
         private set
 
@@ -278,6 +293,7 @@ object GumshoosConfig {
                     ?.let { key.removePrefix(KEY_APP_ALIASES) to it }
             }
             .toMap()
+        setupComplete = p.getBoolean(KEY_SETUP_COMPLETE, false)
         disabledProviders = p.getStringSet(KEY_DISABLED_PROVIDERS, null)?.toSet() ?: emptySet()
         providerOrder = p.getString(KEY_PROVIDER_ORDER, null)
             ?.split(',')

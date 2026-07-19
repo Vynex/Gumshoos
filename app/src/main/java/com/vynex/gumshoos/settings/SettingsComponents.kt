@@ -41,6 +41,14 @@ import androidx.compose.ui.unit.dp
  * appears rather than being rebuilt per screen.
  */
 
+/**
+ * The inset every settings list holds its content at.
+ *
+ * Shared because [fullBleedRow] has to undo exactly this much. A row whose bleed and whose list's
+ * padding disagree either overhangs the screen or leaves a visible notch.
+ */
+internal val SettingsInset = 20.dp
+
 /** A screen with a title and a back arrow. Content scrolls; the bar does not. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

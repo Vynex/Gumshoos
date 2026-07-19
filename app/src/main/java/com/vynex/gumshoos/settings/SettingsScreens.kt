@@ -31,6 +31,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
+import com.vynex.gumshoos.AppEntry
+import com.vynex.gumshoos.AppMatcher
+import com.vynex.gumshoos.AppPermission
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
@@ -77,8 +80,8 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     "Usage access isn't used with this option and can be revoked."
                 hasUsage -> "Granted. Apps are ordered by system-wide usage."
                 else ->
-                    "Not granted, so ordering falls back to alphabetical. System usage is a " +
-                        "special access grant rather than a normal prompt."
+                    "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
+                        "rather than a normal prompt."
             },
             isWarning = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage,
         )
@@ -361,10 +364,9 @@ internal fun ContactsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     SettingsScaffold(title = "Contacts", onBack = onBack) {
         SettingsNote(
             if (hasContacts) {
-                "Granted. Matching contacts appear below the app results."
+                "Granted. ${AppPermission.CONTACTS.why}"
             } else {
-                "Optional. Without it the contacts section simply doesn't appear; nothing else " +
-                    "changes."
+                "Optional. ${AppPermission.CONTACTS.withoutIt}"
             },
         )
         Button(

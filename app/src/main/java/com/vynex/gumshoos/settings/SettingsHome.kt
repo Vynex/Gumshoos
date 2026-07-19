@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
+import com.vynex.gumshoos.AppPermission
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.SearchProviders
@@ -76,12 +77,23 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 SettingsNote(
                     "Search can't open without permission to draw over other apps. " +
-                        "Grant it under Launching Gumshoos.",
+                        "Grant it under Permissions.",
                     isWarning = true,
                 )
             }
             Spacer(Modifier.height(12.dp))
 
+            CategoryRow(
+                title = "Permissions",
+                summary = permissionsSummary(),
+                onClick = { onOpen(Screen.Setup) },
+            )
+
+            CategoryRow(
+                title = "Appearance",
+                summary = appearanceSummary(),
+                onClick = { onOpen(Screen.Appearance) },
+            )
             CategoryRow(
                 title = "Apps",
                 summary = appsSummary(hasUsage),
