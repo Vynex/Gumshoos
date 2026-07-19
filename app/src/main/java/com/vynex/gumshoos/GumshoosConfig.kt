@@ -48,6 +48,7 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_ACTION_ORDER = "widget_bar_action_order"
     private const val KEY_WIDGET_BAR_PAD_H = "widget_bar_padding_h"
     private const val KEY_WIDGET_BAR_PAD_V = "widget_bar_padding_v"
+    private const val KEY_LAUNCH_METHOD = "launch_method"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -432,6 +433,20 @@ object GumshoosConfig {
         prefs(context).edit().putStringSet(KEY_HIDDEN_CONTACTS, hiddenContacts).apply()
     }
 
+    /**
+     * How an app is opened from search.
+     *
+     * A diagnostic lever rather than a preference — see [LaunchMethod]. Standard is what the app
+     * has always done, so leaving it alone changes nothing.
+     */
+    var launchMethod by mutableStateOf(LaunchMethod.STANDARD)
+        private set
+
+    fun setLaunchMethod(context: Context, method: LaunchMethod) {
+        launchMethod = method
+        prefs(context).edit().putString(KEY_LAUNCH_METHOD, method.id).apply()
+    }
+
     /** Where the Frequent and Recent tabs take their ordering from. */
     var usageSource by mutableStateOf(DEFAULT_USAGE_SOURCE)
         private set
@@ -528,6 +543,9 @@ object GumshoosConfig {
             ?: AnimationMode.FOLLOW_SYSTEM
         AnswerProviders.enabledIds =
             p.getStringSet(KEY_ANSWER_PROVIDERS, null) ?: AnswerProviders.all.map { it.id }.toSet()
+
+        launchMethod = LaunchMethod.fromId(p.getString(KEY_LAUNCH_METHOD, null))
+            ?: LaunchMethod.STANDARD
 
         usageSource = p.getString(KEY_USAGE_SOURCE, null)
             ?.let { name -> UsageSource.entries.firstOrNull { it.name == name } }

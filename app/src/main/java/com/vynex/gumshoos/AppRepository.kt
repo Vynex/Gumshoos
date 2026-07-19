@@ -1,8 +1,11 @@
 package com.vynex.gumshoos
 
+import android.app.ActivityOptions
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
+import android.os.Process
 import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -262,17 +265,110 @@ object AppRepository {
         runCatching { context.startActivity(intent) }
     }
 
+    /**
+     * Opens an app, by whichever method is configured.
+     *
+     * The method is a setting because of a reproducible OxygenOS misbehaviour: launch an app, go
+     * Home immediately, tap the widget, and the app reopens instead of search. A trace taken on
+     * 2026-07-18 showed our launch firing exactly once and the second widget tap never reaching the
+     * service at all, which points at the system swallowing the tap mid-transition rather than at
+     * anything here. These alternatives exist to test that conclusion rather than to assume it —
+     * and [LaunchMethod.LAUNCHER_API] is the launcher-native path we were not using regardless.
+     *
+     * The outcome is recorded rather than swallowed, so the trace can tell a refused launch from a
+     * launch the system then undid.
+     */
     fun launch(context: Context, entry: AppEntry) {
-        EventLog.record("launch ${entry.packageName}")
+        val method = GumshoosConfig.launchMethod
         LaunchHistory.record(context, entry.packageName)
-        val intent = Intent(Intent.ACTION_MAIN).apply {
+        runCatching { startBy(context, entry, method) }
+            .onSuccess { EventLog.record("launch ${entry.packageName} via ${method.id}") }
+            .onFailure {
+                EventLog.record("launch FAILED ${entry.packageName} ${it.javaClass.simpleName}")
+                // Never leave a tap doing nothing because an experimental method was selected.
+                if (method != LaunchMethod.STANDARD) {
+                    runCatching { startBy(context, entry, LaunchMethod.STANDARD) }
+                        .onSuccess { EventLog.record("launch ${entry.packageName} via fallback") }
+                }
+            }
+    }
+
+    private fun startBy(context: Context, entry: AppEntry, method: LaunchMethod) {
+        when (method) {
+            LaunchMethod.LAUNCHER_API ->
+                // What a launcher is meant to use. Goes through the system's own launch path rather
+                // than a plain component start, and carries the user handle, so a work-profile app
+                // opens in its own profile instead of failing.
+                context.getSystemService(LauncherApps::class.java)
+                    .startMainActivity(entry.component, Process.myUserHandle(), null, null)
+
+            LaunchMethod.STANDARD ->
+                context.startActivity(mainIntent(entry, reset = true))
+
+            LaunchMethod.NO_TASK_RESET ->
+                context.startActivity(mainIntent(entry, reset = false))
+
+            LaunchMethod.NO_ANIMATION ->
+                context.startActivity(
+                    mainIntent(entry, reset = true),
+                    ActivityOptions.makeCustomAnimation(context, 0, 0).toBundle(),
+                )
+        }
+    }
+
+    /**
+     * [reset] adds FLAG_ACTIVITY_RESET_TASK_IF_NEEDED, which returns an existing task to its root
+     * rather than resuming it where it was left. It is on by default because that is what tapping a
+     * launcher icon does; turning it off is one of the levers on the relaunch problem.
+     */
+    private fun mainIntent(entry: AppEntry, reset: Boolean): Intent =
+        Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
             component = entry.component
             // NEW_TASK because we're starting from a service context. Background-activity-start
             // restrictions don't apply: an app with a visible overlay window is exempt.
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            flags = if (reset) {
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            } else {
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            }
         }
-        runCatching { context.startActivity(intent) }
+}
+
+/**
+ * How an app is started.
+ *
+ * Configurable purely as a diagnostic lever. The evidence says the widget-reopens-the-last-app
+ * problem is the system swallowing a tap during a Home transition, not our launch — but that
+ * conclusion was reached from one trace, and this makes it cheap to test rather than argue about.
+ */
+enum class LaunchMethod(val id: String, val label: String, val description: String) {
+    STANDARD(
+        id = "standard",
+        label = "Standard",
+        description = "A launcher-style intent. What Gumshoos has always used.",
+    ),
+    LAUNCHER_API(
+        id = "launcher_api",
+        label = "System launcher API",
+        description = "Hands off to the system's own launch path. Also the only one that opens a " +
+            "work-profile app correctly.",
+    ),
+    NO_TASK_RESET(
+        id = "no_task_reset",
+        label = "Resume where left off",
+        description = "Returns to the app's existing screen instead of its first one.",
+    ),
+    NO_ANIMATION(
+        id = "no_animation",
+        label = "No launch animation",
+        description = "Skips the opening transition. Worth trying if the problem tracks the " +
+            "animation rather than the gesture.",
+    ),
+    ;
+
+    companion object {
+        fun fromId(id: String?): LaunchMethod? = entries.firstOrNull { it.id == id }
     }
 }
 

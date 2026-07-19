@@ -37,6 +37,7 @@ import com.vynex.gumshoos.AppPermission
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.LaunchMethod
 import com.vynex.gumshoos.OverlayService
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
@@ -531,6 +532,23 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
                 GumshoosConfig.setHideOnFocusLoss(context, it)
             },
         )
+
+        SettingsDivider()
+        SettingsSection("How apps are opened")
+        SettingsNote(
+            "A diagnostic lever, not a preference. Some launchers reopen the app you just left " +
+                "when you tap the widget mid-transition — a trace showed that tap never reaching " +
+                "Gumshoos at all, so this most likely can't fix it, but it makes the alternatives " +
+                "cheap to rule out. Each launch records which method it used in the event trace.",
+        )
+        LaunchMethod.entries.forEach { method ->
+            SettingsRadioRow(
+                title = method.label,
+                description = method.description,
+                selected = GumshoosConfig.launchMethod == method,
+                onClick = { GumshoosConfig.setLaunchMethod(context, method) },
+            )
+        }
 
         SettingsDivider()
         SettingsSection("Notification")
