@@ -223,6 +223,18 @@
             </intent-filter>
         </receiver>
 
+        <!--
+          Re-pushes placed widgets after an upgrade. Not exported: MY_PACKAGE_REPLACED is delivered
+          to us by the system, and nothing else has any business triggering it.
+        -->
+        <receiver
+            android:name=".WidgetRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

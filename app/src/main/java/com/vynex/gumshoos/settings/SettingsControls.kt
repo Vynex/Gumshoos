@@ -51,6 +51,8 @@ import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchHistory
 import com.vynex.gumshoos.OverlayService
 import com.vynex.gumshoos.R
+import com.vynex.gumshoos.refreshAllWidgets
+import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.SearchWidgetSmallProvider
 import com.vynex.gumshoos.UsageRepository
@@ -60,6 +62,29 @@ import com.vynex.gumshoos.UsageSource
  * The individual settings controls, moved out of MainActivity unchanged when the screen was split
  * into categories. Grouping them was the work; the controls themselves already behaved.
  */
+internal fun WidgetRefresh() {
+    val context = LocalContext.current
+    var done by remember { mutableStateOf(false) }
+
+    SettingsSection("Refresh widgets")
+    SettingsNote(
+        if (done) {
+            "Pushed. If a widget was opening the wrong thing, try it now."
+        } else {
+            "Re-sends both widgets to the launcher. Worth doing if one stops responding, or " +
+                "opens this app instead of search — that means the launcher is holding a copy " +
+                "from before an upgrade."
+        },
+    )
+    OutlinedButton(
+        onClick = { refreshAllWidgets(context); done = true },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Refresh widgets")
+    }
+}
 
 @Composable
 internal fun EventTrace() {
