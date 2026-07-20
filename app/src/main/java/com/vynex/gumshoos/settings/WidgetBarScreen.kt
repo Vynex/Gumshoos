@@ -67,14 +67,6 @@ private val MaxPreviewHeight = 140.dp
 private const val PreviewMaxDensity = 2f
 
 /**
- * Wallpaper visible around the bar in the preview.
- *
- * Some is the point: a bar drawn edge to edge against the backdrop shows nothing about how it sits
- * on a home screen, which is what the margin and opacity settings are for.
- */
-private val PreviewPadding = 16.dp
-
-/**
  * Styling for the wide search bar.
  *
  * Every change writes config and immediately re-pushes the placed widgets, so the home screen and
@@ -215,7 +207,11 @@ private fun WidgetBarPreview(style: WidgetBarStyle) {
     // Drawn at the height of a bar you have actually placed, rather than a guess. Margins are in
     // dp, so their effect depends entirely on how tall the cell is — a fixed-height preview makes
     // an 8dp margin look generous here and thin on a tall launcher row.
-    val previewHeight = remember { placedBarHeight(context) ?: DefaultPreviewHeight }
+    val previewHeight = remember {
+        placedWidgetHeight(
+            context, SearchWidgetProvider::class.java, MinPreviewHeight, MaxPreviewHeight,
+        ) ?: DefaultPreviewHeight
+    }
     val density = LocalDensity.current.density
     val inset = dimensionResource(R.dimen.widget_bar_inset)
     val gap = dimensionResource(R.dimen.widget_bar_gap)
@@ -345,28 +341,6 @@ private fun OpacitySlider(onChanged: () -> Unit) {
         steps = 19,
         modifier = Modifier.fillMaxWidth(),
     )
-}
-
-/**
- * The height of a placed search bar, if there is one.
- *
- * Null when none is placed, or when the host hasn't reported a size yet — the same pre-layout zero
- * the renderer guards against.
- */
-private fun placedBarHeight(context: Context): Dp? {
-    val manager = AppWidgetManager.getInstance(context) ?: return null
-    val ids = runCatching {
-        manager.getAppWidgetIds(ComponentName(context, SearchWidgetProvider::class.java))
-    }.getOrNull()?.toList().orEmpty()
-
-    val heightDp = ids.firstNotNullOfOrNull { id ->
-        runCatching {
-            manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
-        }.getOrNull()?.takeIf { it > 0 }
-    } ?: return null
-
-    val measured: Dp = heightDp.toFloat().dp
-    return measured.coerceIn(MinPreviewHeight, MaxPreviewHeight)
 }
 
 /** Shared shape for the two margin sliders — one dp step per notch. */

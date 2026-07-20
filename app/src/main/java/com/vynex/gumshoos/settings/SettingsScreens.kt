@@ -685,9 +685,16 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             summary = widgetBarSummary(),
             onClick = { onOpen(Screen.WidgetBar) },
         )
-
-        SettingsDivider()
-        WidgetTuning()
+        CategoryRow(
+            title = "1x1 widget",
+            summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
+                if (GumshoosConfig.widgetIconOffsetDp == 0) {
+                    ""
+                } else {
+                    " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
+                },
+            onClick = { onOpen(Screen.WidgetIcon) },
+        )
     }
 }
 

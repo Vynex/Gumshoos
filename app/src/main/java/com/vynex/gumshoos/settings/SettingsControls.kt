@@ -442,57 +442,6 @@ internal fun SearchIconSettings() {
 }
 
 @Composable
-internal fun WidgetTuning() {
-    val context = LocalContext.current
-    var size by remember { mutableStateOf(GumshoosConfig.widgetIconSizeDp.toFloat()) }
-    var offset by remember { mutableStateOf(GumshoosConfig.widgetIconOffsetDp.toFloat()) }
-
-    SettingsSection("1x1 widget")
-    Text(
-        "Adjust, then press Home to see the result — placed widgets update immediately. Offset 0 " +
-            "centres the icon in its cell; positive moves it down.",
-        style = MaterialTheme.typography.bodySmall,
-    )
-
-    Text("Icon size: ${size.roundToInt()}dp", style = MaterialTheme.typography.bodyMedium)
-    Slider(
-        value = size,
-        onValueChange = { size = it },
-        onValueChangeFinished = {
-            GumshoosConfig.setWidgetIconSizeDp(context, size.roundToInt())
-            SearchWidgetSmallProvider.refreshAll(context)
-        },
-        valueRange = 32f..64f,
-        steps = 31,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    Text("Vertical offset: ${offset.roundToInt()}dp", style = MaterialTheme.typography.bodyMedium)
-    Slider(
-        value = offset,
-        onValueChange = { offset = it },
-        onValueChangeFinished = {
-            GumshoosConfig.setWidgetIconOffsetDp(context, offset.roundToInt())
-            SearchWidgetSmallProvider.refreshAll(context)
-        },
-        valueRange = -16f..16f,
-        steps = 31,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    OutlinedButton(
-        onClick = {
-            size = GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP.toFloat()
-            offset = GumshoosConfig.DEFAULT_WIDGET_ICON_OFFSET_DP.toFloat()
-            GumshoosConfig.setWidgetIconSizeDp(context, size.roundToInt())
-            GumshoosConfig.setWidgetIconOffsetDp(context, offset.roundToInt())
-            SearchWidgetSmallProvider.refreshAll(context)
-        },
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text("Reset to defaults") }
-}
-
-@Composable
 internal fun CrashReport() {
     val context = LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current

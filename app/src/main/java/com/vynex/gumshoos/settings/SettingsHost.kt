@@ -26,6 +26,7 @@ internal sealed interface Screen {
     data object Providers : Screen
     data object Setup : Screen
     data object WidgetBar : Screen
+    data object WidgetIcon : Screen
     data object CurrencyPicker : Screen
     data object ZonePicker : Screen
     data object Advanced : Screen
@@ -76,6 +77,7 @@ fun SettingsHost() {
         Screen.CustomNames -> CustomNamesScreen(onBack = ::pop)
         Screen.Providers -> ProvidersScreen(onBack = ::pop)
         Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
+        Screen.WidgetIcon -> WidgetIconScreen(onBack = ::pop)
         Screen.Setup -> SetupScreen(onDone = ::pop)
         Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
