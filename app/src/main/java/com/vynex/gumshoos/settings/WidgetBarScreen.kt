@@ -95,15 +95,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         onBack = onBack,
         header = { WidgetBarPreview(style) },
     ) {
-        SettingsSection("Fill")
-        SettingsSwitchRow(
-            title = "Outline only",
-            description = "Draws just the border, in the fill colour, with nothing behind it.",
-            checked = style.wireframe,
-            onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
-        )
-        OpacitySlider(onChanged = ::push)
-
+        SettingsSection("Style")
         ColorPickerAccordion(
             currentColor = WidgetBarRenderer.resolveFill(context, style.fill),
             selected = (style.fill as? WidgetBarFill.Solid)?.color,
@@ -119,36 +111,49 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 push()
             },
         )
-
-        SettingsDivider()
-        SettingsSection("Shape")
-        CornerSlider(onChanged = ::push)
-        PaddingSlider(
-            label = "Side margin",
-            value = GumshoosConfig.widgetBarPaddingH,
-            max = WidgetBarMetrics.MAX_PADDING_H_DP,
-            hint = "0 makes the bar span the whole cell.",
-            onValue = { GumshoosConfig.setWidgetBarPaddingH(context, it) },
-            onChanged = ::push,
-        )
-        PaddingSlider(
-            label = "Top and bottom margin",
-            value = GumshoosConfig.widgetBarPaddingV,
-            max = WidgetBarMetrics.MAX_PADDING_V_DP,
-            hint = "How thick the bar is within its row.",
-            onValue = { GumshoosConfig.setWidgetBarPaddingV(context, it) },
-            onChanged = ::push,
+        OpacitySlider(onChanged = ::push)
+        SettingsSwitchRow(
+            title = "Outline only",
+            description = "Draws just the border, in the fill colour, with nothing behind it.",
+            checked = style.wireframe,
+            onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
         )
         SettingsSwitchRow(
             title = "Shadow",
-            description = "A short drop shadow. Draws into the margins above, so it doesn't " +
-                "change the bar's size.",
+            description = "A short drop shadow. Draws into the margins, so it doesn't change the " +
+                "bar's size.",
             checked = style.shadow,
             onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
         )
 
         SettingsDivider()
-        SettingsSection("Contents")
+        SettingsSection("Shape")
+        CornerSlider(onChanged = ::push)
+
+        Spacer(Modifier.height(8.dp))
+        // Carded because the two only mean anything read against each other: they are the bar's
+        // size, expressed as what is left around it.
+        SettingsCard("Spacing") {
+            PaddingSlider(
+                label = "Side margin",
+                value = GumshoosConfig.widgetBarPaddingH,
+                max = WidgetBarMetrics.MAX_PADDING_H_DP,
+                hint = "0 makes the bar span the whole cell.",
+                onValue = { GumshoosConfig.setWidgetBarPaddingH(context, it) },
+                onChanged = ::push,
+            )
+            PaddingSlider(
+                label = "Top and bottom margin",
+                value = GumshoosConfig.widgetBarPaddingV,
+                max = WidgetBarMetrics.MAX_PADDING_V_DP,
+                hint = "How thick the bar is within its row.",
+                onValue = { GumshoosConfig.setWidgetBarPaddingV(context, it) },
+                onChanged = ::push,
+            )
+        }
+
+        SettingsDivider()
+        SettingsSection("Logo and text")
         SettingsSwitchRow(
             title = "Show \"Search\"",
             description = "The placeholder text next to the logo.",
@@ -172,7 +177,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         }
 
         SettingsDivider()
-        SettingsSection("Actions")
+        SettingsSection("Action icons")
         SettingsNote(
             "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
                 "rest of the bar still opens search.",

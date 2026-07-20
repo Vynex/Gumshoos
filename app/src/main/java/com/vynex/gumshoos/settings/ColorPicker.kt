@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -73,9 +72,6 @@ object ColorHex {
 private const val GridColumns = 6
 private val SwatchGap = 10.dp
 
-/** Matches the roundness Material gives its own containers, so the card doesn't look foreign. */
-private val CardShape = RoundedCornerShape(16.dp)
-
 /**
  * A collapsible colour picker.
  *
@@ -106,8 +102,8 @@ internal fun ColorPickerAccordion(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(CardShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            .clip(SettingsCardShape)
+            .background(settingsCardColour()),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

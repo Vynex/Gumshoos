@@ -2,9 +2,11 @@ package com.vynex.gumshoos.settings
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -34,6 +37,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -191,6 +196,42 @@ internal fun CategoryRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** Shared by every card so they read as one family rather than as separately-invented boxes. */
+internal val SettingsCardShape = RoundedCornerShape(16.dp)
+
+/**
+ * A step off the background rather than a fixed grey, so a card sits with whatever the wallpaper
+ * theme produced instead of fighting it.
+ */
+@Composable
+internal fun settingsCardColour(): Color =
+    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+
+/**
+ * A titled group raised onto its own surface.
+ *
+ * For controls that belong together tightly enough that a heading alone under-sells it — a pair of
+ * sliders that only make sense read against each other reads as two unrelated rows when left loose
+ * in the list.
+ */
+@Composable
+internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(SettingsCardShape)
+            .background(settingsCardColour())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        content()
     }
 }
 
