@@ -41,10 +41,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.OverlayCardTopMargin
 import com.vynex.gumshoos.OverlayContent
 import com.vynex.gumshoos.overlaySettledHeight
 import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
@@ -67,13 +69,14 @@ private const val CORNER_STEP_DP = 2
 private const val ICON_STEP_DP = 2
 
 /**
- * Wallpaper left visible above and below the window.
+ * Wallpaper left visible below the window, matching what it leaves above itself.
  *
- * Uneven on purpose: the window sits near the top of a real screen, so a little room above it and
- * less below reads the way it actually appears rather than as a card floating in a box.
+ * Nothing is added at the top: the card already carries its own margin there, and that margin is
+ * real — the window genuinely sits that far down a screen. Taking the figure from the card rather
+ * than restating it keeps the two sides equal if it ever changes.
  */
-private val PreviewTopSlack = 10.dp
-private val PreviewBottomSlack = 2.dp
+private val PreviewBottomSlack: Dp
+    @Composable get() = OverlayCardTopMargin
 
 private val NominalWidth = 380.dp
 private val NominalHeight = 330.dp
@@ -297,7 +300,7 @@ private fun SearchWindowPreview() {
         rows = GumshoosConfig.overlayGridRows,
         iconDp = GumshoosConfig.overlayIconSize,
         labelSp = GumshoosConfig.overlayLabelSize,
-    ) + PreviewTopSlack + PreviewBottomSlack
+    ) + PreviewBottomSlack
 
     WallpaperBackdrop(
         Modifier
@@ -308,7 +311,6 @@ private fun SearchWindowPreview() {
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(top = PreviewTopSlack)
                 // Swallows touches before the window sees them. `interactive = false` already stops
                 // the overlay reaching outside itself, but its own contents are still live — a tap
                 // would launch an app and a swipe would change tab, from a settings screen.

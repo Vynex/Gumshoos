@@ -138,6 +138,14 @@ private const val LabelLeadingSp = 2
 private val CellVerticalPadding = 4.dp
 private val IconLabelGap = 6.dp
 
+/**
+ * The gap the card leaves above itself on screen.
+ *
+ * Exposed so the settings preview can match it below the card. The window really does sit this far
+ * from the top, so the preview only needs to supply the matching gap underneath.
+ */
+val OverlayCardTopMargin: Dp get() = CardTopMargin
+
 /** Cell height for an explicit configuration, rather than for the current one. */
 fun overlayCellHeight(iconDp: Int, labelSp: Int): Dp =
     (CellVerticalPadding * 2) + iconDp.dp + IconLabelGap +
