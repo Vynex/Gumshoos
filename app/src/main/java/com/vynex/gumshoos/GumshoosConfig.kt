@@ -181,10 +181,21 @@ object GumshoosConfig {
      * Following the system is the default so anyone who has already turned animations off
      * phone-wide gets that here without having to find this setting too.
      */
-    fun animationsEnabled(context: Context): Boolean = when (animationMode) {
+    fun animationsEnabled(context: Context): Boolean =
+        animationsEnabled(systemAnimationScale(context))
+
+    /**
+     * As above, against an already-read system scale.
+     *
+     * [animationMode] is a snapshot value held in memory and free to read, while the scale is a
+     * ContentResolver query. Splitting them lets the overlay read the mode live — so a change to
+     * this app's own setting applies to the very next open — while keeping the query off the show
+     * path.
+     */
+    fun animationsEnabled(systemScale: Float): Boolean = when (animationMode) {
         AnimationMode.ALWAYS_OFF -> false
         AnimationMode.ALWAYS_ON -> true
-        AnimationMode.FOLLOW_SYSTEM -> systemAnimationScale(context) != 0f
+        AnimationMode.FOLLOW_SYSTEM -> systemScale != 0f
     }
 
     fun systemAnimationScale(context: Context): Float = runCatching {

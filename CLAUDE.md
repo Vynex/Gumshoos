@@ -61,6 +61,12 @@ window gets none of an Activity's plumbing for free: all four ViewTree owners ar
 State resets when the card is **fully hidden**, via a `resetToken` the service bumps after the exit
 animation. Resetting at either end of an animation is visible as a stutter.
 
+`resetToken` bumps *after* an exit, which makes it the wrong key for anything a setting feeds. A
+value remembered against it is the one read at the end of the previous close, so a setting changed
+while the window was shut did not apply until the open after next. Cache against it only what is
+genuinely expensive to read — the system animator scale, a ContentResolver query — and read
+`GumshoosConfig`'s own snapshot values live, which costs nothing and is always current.
+
 The card's geometry is no longer measured constants: rows, icon size and label size are settings, and
 cell/grid/card heights derive from them. `overlaySettledHeight(rows, icon, label)` is a pure function
 for that reason — the settings preview asks it how tall the tallest card would be without mutating
@@ -73,6 +79,17 @@ moves while it is on screen: changing the row count left the grid a frame at its
 header that was already correct. So when `animate` is false, read targets **directly** rather than
 through the `Transition` or `animateDpAsState` — see the `sectionHeight` helper. This matters in the
 real window too, for anyone who has animations off system-wide.
+
+**`LaunchedEffect` is a frame of lag for the same reason**, and it is the bigger source of it. The
+query lives in `OverlayContent`, and the tab row, grid, answer and contacts heights are all *derived*
+from it in that same composition. They used to live in `SearchPanel`, which reported each one back up
+through a `LaunchedEffect` — so the panel drew its new contents a frame before the card knew how tall
+to be. Two lags stacked (effect, then animation settle) and typing took three frames to land: apps
+filtered under a tab row still standing, then contacts arriving under it, then finally correct.
+Erasing took four. Animation hid all of it. **State that layout depends on must be derived, never
+reported upward from a child.** Anything seeded for an animation has the same problem — initialise it
+at its settled value when animations are off rather than snapping it in an effect, as the context
+menu's `appear` does.
 
 ## Matching
 

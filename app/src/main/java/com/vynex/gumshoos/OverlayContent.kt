@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -351,12 +352,20 @@ fun OverlayContent(
         val context = LocalContext.current
         // Re-read while hidden rather than per frame: the system setting can change under us, but
         // only between one opening and the next does it matter.
+        val systemAnimationScale = remember(resetToken) {
+            GumshoosConfig.systemAnimationScale(context)
+        }
+        // The mode itself is read live rather than remembered alongside the scale. `resetToken`
+        // bumps only *after* an exit, so a mode remembered against it was still the one read at the
+        // end of the previous close: toggling the setting while the window was shut left the next
+        // open running the old behaviour, and only the close after that picked the change up.
+        // Reading it live costs nothing — it is a snapshot value already in memory — and it cannot
+        // change while the card is on screen, since reaching the setting means dismissing the card.
+        //
         // Never in a preview. The card's height is an animation target, so every change to rows,
         // icon size or label size re-ran the entrance at the new height — which reads as the window
         // glitching rather than as a setting taking effect.
-        val animate = remember(resetToken, interactive) {
-            interactive && GumshoosConfig.animationsEnabled(context)
-        }
+        val animate = interactive && GumshoosConfig.animationsEnabled(systemAnimationScale)
 
         val transition = updateTransition(targetState = visible, label = "overlay")
 
@@ -479,13 +488,64 @@ fun OverlayContent(
             if (menuTarget != null) menuTarget = null else onDismiss()
         }
 
+        // The query lives here rather than in SearchPanel, and every section height below is
+        // derived from it in this same composition.
+        //
+        // It used to live in the panel, which reported each section's state back up through a
+        // LaunchedEffect — one for `searching`, one per section. A LaunchedEffect runs *after* the
+        // composition that triggered it, so the panel drew its new contents a whole frame before
+        // the card knew how tall to be. With animation on that frame hides inside the tween. With
+        // animation off it is simply a wrong frame: filtered apps under a tab row that should
+        // already have gone, then contacts arriving under it a frame after that.
+        //
+        // Deriving instead of reporting is what makes the whole card land on one frame. Nothing
+        // here is stored, so there is no second pass to wait for.
+        var query by remember { mutableStateOf("") }
+
+        val pagerState = rememberPagerState(
+            initialPage = SearchTab.FREQUENT.ordinal,
+            pageCount = { SearchTab.entries.size },
+        )
+        val tab = SearchTab.entries[pagerState.currentPage]
+
+        // Clearing the query reflows everything below it — results repopulate unfiltered, the tab
+        // row returns, the answer and contact sections collapse. Done as the card closes that shows
+        // through the exit; done as it opens, the entrance renders a frame of the previous state
+        // first. So it happens while the card is hidden and neither animation is running.
+        LaunchedEffect(resetToken) {
+            query = ""
+            pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
+        }
+
+        // Searched once here and passed down, rather than computed in both places: these are the
+        // same values the panel renders, and running each repository twice per keystroke to keep
+        // the two in step would be both wasteful and a way for them to disagree.
+        val appResults = if (query.isBlank()) emptyList() else AppRepository.search(query, tab)
+
+        // Locale defaults are read once: they decide metres-vs-feet and rupees-vs-dollars, and
+        // they don't change while the overlay is open.
+        // Keyed on the rate table so a conversion starts working the moment rates arrive, rather
+        // than waiting for the overlay to be rebuilt.
+        val answerContext = remember(CurrencyRates.table) {
+            AnswerContextFactory.forDevice(context, CurrencyRates.table)
+        }
+        val answer = remember(query, answerContext) {
+            if (query.isBlank()) null else AnswerProviders.answerFor(query, answerContext)
+        }
+
+        val matchedContacts = if (query.isBlank()) {
+            emptyList()
+        } else {
+            ContactsRepository.search(query, MaxContactRows)
+        }
+
         // Typing collapses the tabs away: while searching, results are ranked across every app
         // rather than scoped to a tab, so the tabs have nothing left to select.
-        var searching by remember { mutableStateOf(false) }
+        val searching = query.isNotBlank()
 
         // A single progress value so the tabs collapsing and the provider row expanding stay in
         // lockstep — driving them from two animations lets them drift and the card jitter.
-        val searchProgress by animateFloatAsState(
+        val animatedSearchProgress by animateFloatAsState(
             targetValue = if (searching) 1f else 0f,
             animationSpec = if (animate) {
                 tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
@@ -494,6 +554,12 @@ fun OverlayContent(
             },
             label = "searchProgress",
         )
+        // Read the target directly when not animating, for the reason in sectionHeight: even with
+        // snap(), animateFloatAsState settles a frame after its target moves. This one drives the
+        // tab row and the provider row, so that frame showed the tabs still standing over results
+        // that had already been filtered.
+        val searchProgress = if (animate) animatedSearchProgress else if (searching) 1f else 0f
+
         val tabHeight = TabRowHeight * (1f - searchProgress)
         // Collapses to nothing when every provider is switched off or uninstalled, rather than
         // sliding an empty "Search using" strip into view.
@@ -503,7 +569,9 @@ fun OverlayContent(
         // Collapses away when a query matches no apps at all, so the card goes straight from the
         // search bar to whatever did match. The divider belongs to this block rather than sitting
         // above it, or it would be left stranded when the grid disappears.
-        var hasAppResults by remember { mutableStateOf(true) }
+        // Browsing always shows the grid — an empty tab still has something to say, like
+        // NEW/UPDATED reporting nothing installed recently.
+        val hasAppResults = query.isBlank() || appResults.isNotEmpty()
         val gridSectionHeight = sectionHeight(
             target = if (hasAppResults) DividerHeight + GridContentHeight else 0.dp,
             animate = animate,
@@ -511,16 +579,15 @@ fun OverlayContent(
         )
         val gridCollapse = (DividerHeight + GridContentHeight) - gridSectionHeight
 
-        var hasAnswer by remember { mutableStateOf(false) }
         val answerHeight = sectionHeight(
-            target = if (hasAnswer) AnswerSectionHeight else 0.dp,
+            target = if (answer != null) AnswerSectionHeight else 0.dp,
             animate = animate,
             label = "answerHeight",
         )
 
         // Grows and shrinks with the number of matching contacts, so the card stays tight to its
         // content rather than reserving space for rows that aren't there.
-        var contactRows by remember { mutableStateOf(0) }
+        val contactRows = matchedContacts.size
         val contactsHeight = sectionHeight(
             target = if (contactRows == 0) {
                 0.dp
@@ -577,15 +644,21 @@ fun OverlayContent(
                     menuTarget = menuTarget,
                     onMenuTargetChange = { menuTarget = it },
                     resetToken = resetToken,
+                    query = query,
+                    // A changed query invalidates whatever the menu was anchored to, and clearing
+                    // it here rather than from an effect keeps it in the same frame as everything
+                    // else the keystroke moves.
+                    onQueryChange = { query = it; menuTarget = null },
+                    pagerState = pagerState,
+                    tab = tab,
+                    appResults = appResults,
+                    answer = answer,
+                    matchedContacts = matchedContacts,
                     tabHeight = tabHeight,
                     providerRowHeight = providerRowHeight,
                     contactsHeight = contactsHeight,
-                    onContactRowsChange = { contactRows = it },
                     answerHeight = answerHeight,
-                    onHasAnswerChange = { hasAnswer = it },
                     gridSectionHeight = gridSectionHeight,
-                    onHasAppResultsChange = { hasAppResults = it },
-                    onSearchingChange = { searching = it },
                 )
             }
         }
@@ -600,39 +673,28 @@ private fun SearchPanel(
     pinnedWidth: Dp,
     menuTarget: Pair<AppEntry, Int>?,
     onMenuTargetChange: (Pair<AppEntry, Int>?) -> Unit,
+    // Owned by OverlayContent, along with everything derived from it, so that the card's height and
+    // the panel's contents change on the same frame. See the note at its declaration.
+    query: String,
+    onQueryChange: (String) -> Unit,
+    pagerState: PagerState,
+    tab: SearchTab,
+    appResults: List<AppEntry>,
+    answer: Answer?,
+    matchedContacts: List<ContactEntry>,
     tabHeight: Dp,
     providerRowHeight: Dp,
     contactsHeight: Dp,
-    onContactRowsChange: (Int) -> Unit,
     answerHeight: Dp,
-    onHasAnswerChange: (Boolean) -> Unit,
     gridSectionHeight: Dp,
-    onHasAppResultsChange: (Boolean) -> Unit,
     resetToken: Int,
-    onSearchingChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
 
-    val pagerState = rememberPagerState(
-        initialPage = SearchTab.FREQUENT.ordinal,
-        pageCount = { SearchTab.entries.size },
-    )
-    val tab = SearchTab.entries[pagerState.currentPage]
-
     val focusManager = LocalFocusManager.current
-
-    // Clearing the query reflows everything below it — results repopulate unfiltered, the tab row
-    // returns, the answer and contact sections collapse. Done as the card closes that shows through
-    // the exit; done as it opens, the entrance renders a frame of the previous state first. So it
-    // happens while the card is hidden and neither animation is running.
-    LaunchedEffect(resetToken) {
-        query = ""
-        pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
-    }
 
     LaunchedEffect(visible, interactive) {
         if (visible && interactive) {
@@ -643,11 +705,6 @@ private fun SearchPanel(
             // connection on a hidden window is what made the IME replay a stale action.
             focusManager.clearFocus(force = true)
         }
-    }
-
-    LaunchedEffect(query) {
-        onMenuTargetChange(null)
-        onSearchingChange(query.isNotBlank())
     }
 
     val launch: (AppEntry) -> Unit = { entry ->
@@ -688,14 +745,14 @@ private fun SearchPanel(
     ) {
         SearchHeader(
             query = query,
-            onQueryChange = { query = it },
+            onQueryChange = onQueryChange,
             focusRequester = focusRequester,
             onSubmit = submit,
             onPlayStore = {
                 SearchProviders.openPlayStore(context)
                 onDismiss()
             },
-            onClear = { query = "" },
+            onClear = { onQueryChange("") },
         )
 
         // Pinned to the settled width so the width animation never re-measures the tab row or the
@@ -746,13 +803,6 @@ private fun SearchPanel(
 
         }
 
-        val appResults = if (query.isBlank()) emptyList() else AppRepository.search(query, tab)
-        // Browsing always shows the grid — an empty tab still has something to say, like NEW/UPDATED
-        // reporting nothing installed recently.
-        LaunchedEffect(query, appResults.size) {
-            onHasAppResultsChange(query.isBlank() || appResults.isNotEmpty())
-        }
-
         Box(
             Modifier
                 .height(gridSectionHeight)
@@ -796,18 +846,6 @@ private fun SearchPanel(
         }
         }
 
-        // Locale defaults are read once: they decide metres-vs-feet and rupees-vs-dollars, and
-        // they don't change while the overlay is open.
-        // Keyed on the rate table so a conversion starts working the moment rates arrive, rather
-        // than waiting for the overlay to be rebuilt.
-        val answerContext = remember(CurrencyRates.table) {
-            AnswerContextFactory.forDevice(context, CurrencyRates.table)
-        }
-        val answer = remember(query) {
-            if (query.isBlank()) null else AnswerProviders.answerFor(query, answerContext)
-        }
-        LaunchedEffect(answer != null) { onHasAnswerChange(answer != null) }
-
         Box(
             Modifier
                 .height(answerHeight)
@@ -815,13 +853,6 @@ private fun SearchPanel(
         ) {
             answer?.let { AnswerSection(it) }
         }
-
-        val matchedContacts = if (query.isBlank()) {
-            emptyList()
-        } else {
-            ContactsRepository.search(query, MaxContactRows)
-        }
-        LaunchedEffect(matchedContacts.size) { onContactRowsChange(matchedContacts.size) }
 
         Box(
             Modifier
@@ -930,14 +961,17 @@ private fun BoxScope.AppContextMenu(
 ) {
     // Composed only while open, so a fresh Animatable starting at 0 gives the open animation
     // without needing to keep the menu alive through a close transition.
-    val appear = remember { Animatable(0f) }
+    //
+    // With animation off it starts at 1 instead, rather than starting at 0 and being snapped up by
+    // the effect below: a LaunchedEffect runs after the composition that scheduled it, so seeding
+    // it at 0 drew one frame of a fully transparent menu at 0.88 scale before the snap landed.
     val menuContext = LocalContext.current
+    val menuAnimates = remember { GumshoosConfig.animationsEnabled(menuContext) }
+    val appear = remember { Animatable(if (menuAnimates) 0f else 1f) }
     LaunchedEffect(Unit) {
         // The one animation outside the transition, so it needs the setting applied by hand.
-        if (GumshoosConfig.animationsEnabled(menuContext)) {
+        if (menuAnimates) {
             appear.animateTo(1f, tween(140, easing = LinearOutSlowInEasing))
-        } else {
-            appear.snapTo(1f)
         }
     }
 
