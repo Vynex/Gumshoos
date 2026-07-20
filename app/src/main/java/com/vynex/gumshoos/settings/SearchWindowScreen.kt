@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,18 +41,16 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayContent
-import com.vynex.gumshoos.OverlaySettledHeight
+import com.vynex.gumshoos.overlaySettledHeight
 import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
 import com.vynex.gumshoos.SearchWindowStyle
 import com.vynex.gumshoos.searchWindowCorner
 import com.vynex.gumshoos.searchWindowSurface
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlin.math.roundToInt
-
-/** How much of the screen the preview takes. Bigger than a strip, since it is the point of it. */
-private val PreviewHeight = 310.dp
 
 /**
  * The size the overlay is laid out at before scaling.
@@ -108,16 +107,16 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(8.dp))
         SettingsSwitchRow(
-            title = "Opaque",
-            description = "Off lets a little of what's behind the window show through.",
-            checked = style.alphaPercent >= GumshoosConfig.WINDOW_ALPHA_OPAQUE,
-            onCheckedChange = { opaque ->
+            title = "Transparent",
+            description = "Let a little of what's behind the window show through",
+            checked = style.alphaPercent < GumshoosConfig.WINDOW_ALPHA_OPAQUE,
+            onCheckedChange = { transparent ->
                 GumshoosConfig.setSearchWindowAlpha(
                     context,
-                    if (opaque) {
-                        GumshoosConfig.WINDOW_ALPHA_OPAQUE
-                    } else {
+                    if (transparent) {
                         GumshoosConfig.WINDOW_ALPHA_TRANSPARENT
+                    } else {
+                        GumshoosConfig.WINDOW_ALPHA_OPAQUE
                     },
                 )
             },
@@ -254,54 +253,49 @@ private fun cornerLabel(dp: Int): String = when (dp) {
 }
 
 /**
- * The real search window, scaled to fit.
+ * The real search window, at real size.
  *
- * Not a mock-up of it. Every setting on this screen — and every one that follows, icon size and
- * label style included — changes the overlay's own composable, so the only preview that can be
- * trusted is the composable itself. A second hand-built copy would agree today and drift on the
- * first change nobody thought to mirror.
+ * Not a mock-up and not scaled. Every setting on this screen changes the overlay's own composable,
+ * so the only preview that can be trusted is the composable itself — and it is laid out at the
+ * width it will really occupy, so what is on screen here is what appears on the home screen.
  *
  * [OverlayContent] is given `interactive = false`, which suppresses the focus grab, the keyboard,
- * the back interception and dismissal — everything that reaches outside the composable and would be
- * nonsense inside a settings list. Nothing about how it *draws* is conditional on that flag.
+ * the back interception, dismissal, and all animation. Nothing about how it *draws* depends on that
+ * flag; a preview that animates its own entrance every time a slider moves reads as a fault.
  *
- * Laid out at a nominal phone width and scaled down, rather than letting it lay out in the strip:
- * the card's geometry is fixed dp measured against a real device, so squeezing it into 240dp would
- * render a layout that exists nowhere.
+ * The strip is sized for the tallest card the current row count allows, not for the current one, so
+ * dragging an icon or label slider resizes the card inside a frame that holds still rather than
+ * shoving the controls below it up and down.
  */
 @Composable
 private fun SearchWindowPreview() {
-    BoxWithConstraints(
+    val context = LocalContext.current
+
+    // Without an index the grid says "Loading apps…", which previews nothing. Settings runs in the
+    // same process as the service, so this is the very same index the window will use — real apps
+    // rather than stand-ins, and it costs a settings screen a few hundred milliseconds off the main
+    // thread when the process happens to be cold.
+    LaunchedEffect(Unit) {
+        if (!AppRepository.loaded) runCatching { AppRepository.load(context) }
+    }
+
+    val stripHeight = overlaySettledHeight(
+        rows = GumshoosConfig.overlayGridRows,
+        iconDp = GumshoosConfig.MAX_ICON_SIZE_DP,
+        labelSp = GumshoosConfig.MAX_LABEL_SIZE_SP,
+    ) + PreviewBottomSlack
+
+    WallpaperBackdrop(
         Modifier
             .fillMaxWidth()
-            .height(PreviewHeight)
+            .height(stripHeight)
             .clipToBounds(),
     ) {
-        // A little slack under the card so it reads as sitting on the wallpaper rather than
-        // butting against the edge of the strip.
-        val nominalHeight = OverlaySettledHeight + PreviewBottomSlack
-        // Never above 1: a short card would otherwise be blown up past life size, which is the
-        // one thing a preview must not do.
-        val scale = minOf(maxWidth / NominalWidth, PreviewHeight / nominalHeight)
-            .coerceAtMost(1f)
-        WallpaperBackdrop(Modifier.fillMaxSize()) {
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .requiredSize(NominalWidth, nominalHeight)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        transformOrigin = TransformOrigin(0.5f, 0f)
-                    },
-            ) {
-                OverlayContent(
-                    visible = true,
-                    resetToken = 0,
-                    onDismiss = {},
-                    interactive = false,
-                )
-            }
-        }
+        OverlayContent(
+            visible = true,
+            resetToken = 0,
+            onDismiss = {},
+            interactive = false,
+        )
     }
 }

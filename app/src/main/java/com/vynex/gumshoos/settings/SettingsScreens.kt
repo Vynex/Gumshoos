@@ -723,10 +723,10 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
 private fun searchWindowSummary(): String {
     val style = GumshoosConfig.searchWindowStyle
     val colour = if (style.adaptive) "Follows theme" else "Custom colour"
-    val opacity = if (style.alphaPercent >= GumshoosConfig.WINDOW_ALPHA_OPAQUE) {
-        "opaque"
-    } else {
+    val opacity = if (style.alphaPercent < GumshoosConfig.WINDOW_ALPHA_OPAQUE) {
         "transparent"
+    } else {
+        "opaque"
     }
     return "$colour · $opacity · ${style.cornerRadiusDp}dp corners"
 }

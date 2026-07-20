@@ -138,6 +138,24 @@ private const val LabelLeadingSp = 2
 private val CellVerticalPadding = 4.dp
 private val IconLabelGap = 6.dp
 
+/** Cell height for an explicit configuration, rather than for the current one. */
+fun overlayCellHeight(iconDp: Int, labelSp: Int): Dp =
+    (CellVerticalPadding * 2) + iconDp.dp + IconLabelGap +
+        ((labelSp + LabelLeadingSp) * LabelLines).dp
+
+/**
+ * What the settled card occupies for an explicit configuration, top margin included.
+ *
+ * A function of its inputs rather than a reader of config, so the settings preview can size itself
+ * for the tallest card a row count allows — which is how it holds still while an icon slider is
+ * dragged instead of resizing under the finger.
+ */
+fun overlaySettledHeight(rows: Int, iconDp: Int, labelSp: Int): Dp {
+    val grid = (GridVerticalPadding * 2) + (overlayCellHeight(iconDp, labelSp) * rows) +
+        (GridRowSpacing * (rows - 1))
+    return CardTopMargin + HeaderHeight + TabRowHeight + DividerHeight + grid
+}
+
 private val AppIconSize: Dp get() = GumshoosConfig.overlayIconSize.dp
 private val AppLabelSize get() = GumshoosConfig.overlayLabelSize.sp
 private val AppLabelLineHeight get() = (GumshoosConfig.overlayLabelSize + LabelLeadingSp).sp
@@ -198,14 +216,6 @@ private val GridContentHeight: Dp
 /** Derived rather than hardcoded so changing a row height can't desync the animation target. */
 private val CardExpandedHeight: Dp
     get() = HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight
-
-/**
- * What the settled card occupies, top margin included.
- *
- * Exposed so the settings preview can lay the window out at its true size rather than at a guess —
- * and so it follows automatically when the row count or icon size changes that size.
- */
-val OverlaySettledHeight: Dp get() = CardTopMargin + CardExpandedHeight
 
 /**
  * The panel is always measured at this height and revealed from the top, so it must cover the
@@ -311,7 +321,12 @@ fun OverlayContent(
         val context = LocalContext.current
         // Re-read while hidden rather than per frame: the system setting can change under us, but
         // only between one opening and the next does it matter.
-        val animate = remember(resetToken) { GumshoosConfig.animationsEnabled(context) }
+        // Never in a preview. The card's height is an animation target, so every change to rows,
+        // icon size or label size re-ran the entrance at the new height — which reads as the window
+        // glitching rather than as a setting taking effect.
+        val animate = remember(resetToken, interactive) {
+            interactive && GumshoosConfig.animationsEnabled(context)
+        }
 
         val transition = updateTransition(targetState = visible, label = "overlay")
 
