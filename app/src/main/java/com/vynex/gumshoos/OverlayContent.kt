@@ -368,7 +368,7 @@ fun OverlayContent(
             label = "alpha",
         ) { shown -> if (shown) 1f else 0f }
 
-        val cardHeight by transition.animateDp(
+        val animatedCardHeight by transition.animateDp(
             transitionSpec = {
                 when {
                     !animate -> snap()
@@ -385,6 +385,20 @@ fun OverlayContent(
             label = "height",
         ) { shown -> if (shown) CardExpandedHeight else CardExpandedHeight * ExitEndScale }
 
+        // With animation off, take the target directly instead of through the transition.
+        //
+        // A Transition notices a changed target one frame late, and this target moves whenever the
+        // grid geometry does. Growing the row count therefore left the card a frame shorter than
+        // the space already reserved for it and the wallpaper showed through — a flash on the way
+        // up only, since shrinking hides the same lag behind a card that is briefly too big.
+        //
+        // This also helps anyone who has turned animations off system-wide, for the same reason.
+        val cardHeight = if (animate) {
+            animatedCardHeight
+        } else {
+            if (visible) CardExpandedHeight else CardExpandedHeight * ExitEndScale
+        }
+
         // Stays a pill for the whole horizontal phase, then relaxes into the card's radius as it
         // grows. Morphing it earlier would blur the boundary between the two phases.
         // Read once per composition from config. Both are plain snapshot reads, so this costs the
@@ -393,7 +407,7 @@ fun OverlayContent(
         val settledCorner = searchWindowCorner(windowStyle)
         val cardColour = searchWindowSurface(windowStyle)
 
-        val cornerRadius by transition.animateDp(
+        val animatedCorner by transition.animateDp(
             transitionSpec = {
                 when {
                     !animate -> snap()
@@ -409,6 +423,11 @@ fun OverlayContent(
             },
             label = "corner",
         ) { shown -> if (shown) settledCorner else PillCornerRadius }
+
+        // Same one-frame lag as the height, and the corner moves with config too.
+        val cornerRadius = if (animate) animatedCorner else {
+            if (visible) settledCorner else PillCornerRadius
+        }
 
         // Only meaningful on exit: the collapse pivots inside the header, so the top edge falls.
         // Snapped to zero on enter, where the card is strictly top-anchored.

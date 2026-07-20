@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -64,7 +66,14 @@ private const val CORNER_STEP_DP = 2
 /** Icons move in twos: single dp is finer than the difference is visible at this size. */
 private const val ICON_STEP_DP = 2
 
-private val PreviewBottomSlack = 16.dp
+/**
+ * Wallpaper left visible above and below the window.
+ *
+ * Uneven on purpose: the window sits near the top of a real screen, so a little room above it and
+ * less below reads the way it actually appears rather than as a card floating in a box.
+ */
+private val PreviewTopSlack = 10.dp
+private val PreviewBottomSlack = 6.dp
 
 private val NominalWidth = 380.dp
 private val NominalHeight = 330.dp
@@ -283,7 +292,7 @@ private fun SearchWindowPreview() {
         rows = GumshoosConfig.overlayGridRows,
         iconDp = GumshoosConfig.MAX_ICON_SIZE_DP,
         labelSp = GumshoosConfig.MAX_LABEL_SIZE_SP,
-    ) + PreviewBottomSlack
+    ) + PreviewTopSlack + PreviewBottomSlack
 
     WallpaperBackdrop(
         Modifier
@@ -291,11 +300,28 @@ private fun SearchWindowPreview() {
             .height(stripHeight)
             .clipToBounds(),
     ) {
-        OverlayContent(
-            visible = true,
-            resetToken = 0,
-            onDismiss = {},
-            interactive = false,
-        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(top = PreviewTopSlack)
+                // Swallows touches before the window sees them. `interactive = false` already stops
+                // the overlay reaching outside itself, but its own contents are still live — a tap
+                // would launch an app and a swipe would change tab, from a settings screen.
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial).changes
+                                .forEach { it.consume() }
+                        }
+                    }
+                },
+        ) {
+            OverlayContent(
+                visible = true,
+                resetToken = 0,
+                onDismiss = {},
+                interactive = false,
+            )
+        }
     }
 }
