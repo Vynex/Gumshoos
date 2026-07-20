@@ -79,9 +79,13 @@ object GumshoosConfig {
     /** Full width, slightly inset vertically — the bar sits in its row rather than filling it. */
     /**
      * The search window's shipped look, matching what it was before any of it was configurable.
-     * 94% opacity lets a little of what's underneath through without making text hard to read.
+     *
+     * Kept as a percentage rather than a boolean even though only two values are offered, so which
+     * two stays a product decision rather than something baked into storage.
      */
-    const val DEFAULT_WINDOW_ALPHA = 94
+    const val WINDOW_ALPHA_TRANSPARENT = 94
+    const val WINDOW_ALPHA_OPAQUE = 100
+    const val DEFAULT_WINDOW_ALPHA = WINDOW_ALPHA_TRANSPARENT
     const val DEFAULT_WINDOW_CORNER_DP = 20
 
     /** Only used until something is picked; adaptive is the shipped default. */

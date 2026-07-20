@@ -723,7 +723,12 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
 private fun searchWindowSummary(): String {
     val style = GumshoosConfig.searchWindowStyle
     val colour = if (style.adaptive) "Follows theme" else "Custom colour"
-    return "$colour · ${style.alphaPercent}% · ${style.cornerRadiusDp}dp corners"
+    val opacity = if (style.alphaPercent >= GumshoosConfig.WINDOW_ALPHA_OPAQUE) {
+        "opaque"
+    } else {
+        "transparent"
+    }
+    return "$colour · $opacity · ${style.cornerRadiusDp}dp corners"
 }
 
 /** Leads with the shape, since that is what distinguishes one bar from another at a glance. */

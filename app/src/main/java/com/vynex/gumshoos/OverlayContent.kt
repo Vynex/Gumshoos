@@ -260,6 +260,16 @@ fun OverlayContent(
     /** Changes once the card is fully hidden; see the note in OverlayService. */
     resetToken: Int,
     onDismiss: () -> Unit,
+    /**
+     * False renders the window as a picture of itself: no focus grab, no keyboard, no back
+     * interception, no dismissal.
+     *
+     * The settings preview draws the real thing rather than a mock-up, which is the only way a
+     * setting for icon size or label style can be trusted to show what it will do. Everything that
+     * reaches outside the composable has to be suppressed for that, since none of it makes sense
+     * from inside a settings list.
+     */
+    interactive: Boolean = true,
 ) {
     GumshoosTheme(darkTheme = true, dynamicColor = true) {
         val context = LocalContext.current
@@ -365,7 +375,7 @@ fun OverlayContent(
         // vanishes mid-close nor reappears for a frame on the way back in.
         LaunchedEffect(resetToken) { menuTarget = null }
 
-        BackHandler(enabled = visible) {
+        BackHandler(enabled = visible && interactive) {
             if (menuTarget != null) menuTarget = null else onDismiss()
         }
 
@@ -473,6 +483,7 @@ fun OverlayContent(
                 // only because the expensive subtree below is pinned — see SearchPanel.
                 SearchPanel(
                     visible = visible,
+                    interactive = interactive,
                     onDismiss = onDismiss,
                     pinnedWidth = settledCardWidth,
                     menuTarget = menuTarget,
@@ -496,6 +507,7 @@ fun OverlayContent(
 @Composable
 private fun SearchPanel(
     visible: Boolean,
+    interactive: Boolean,
     onDismiss: () -> Unit,
     pinnedWidth: Dp,
     menuTarget: Pair<AppEntry, Int>?,
@@ -534,11 +546,11 @@ private fun SearchPanel(
         pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
     }
 
-    LaunchedEffect(visible) {
-        if (visible) {
+    LaunchedEffect(visible, interactive) {
+        if (visible && interactive) {
             focusRequester.requestFocus()
             keyboard?.show()
-        } else {
+        } else if (interactive) {
             // Focus is still released immediately. It changes no layout, and holding an input
             // connection on a hidden window is what made the IME replay a stale action.
             focusManager.clearFocus(force = true)

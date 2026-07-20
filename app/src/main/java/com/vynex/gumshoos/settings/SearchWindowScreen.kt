@@ -2,6 +2,9 @@ package com.vynex.gumshoos.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,12 +30,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.OverlayContent
 import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
 import com.vynex.gumshoos.SearchWindowStyle
 import com.vynex.gumshoos.searchWindowCorner
@@ -40,8 +47,20 @@ import com.vynex.gumshoos.searchWindowSurface
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlin.math.roundToInt
 
-/** Tall enough to show the card's corners and a row of content, without dominating the screen. */
-private val PreviewHeight = 170.dp
+/** Tall enough to show the card whole, without dominating the screen. */
+private val PreviewHeight = 240.dp
+
+/**
+ * The size the overlay is laid out at before scaling.
+ *
+ * A typical phone width, and enough height for the settled card plus its top margin. The card's
+ * geometry is fixed dp, so it has to be laid out at something realistic and then scaled.
+ */
+/** Notch size for the corner slider, in dp. */
+private const val CORNER_STEP_DP = 2
+
+private val NominalWidth = 380.dp
+private val NominalHeight = 330.dp
 
 /**
  * How the search window itself looks.
@@ -79,18 +98,21 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             onPick = { GumshoosConfig.setSearchWindowColor(context, it) },
         )
 
-        Spacer(Modifier.height(16.dp))
-        var alpha by remember(style.alphaPercent) { mutableStateOf(style.alphaPercent.toFloat()) }
-        SettingsNote("Opacity: ${alpha.roundToInt()}%")
-        Slider(
-            value = alpha,
-            onValueChange = {
-                alpha = it
-                GumshoosConfig.setSearchWindowAlpha(context, it.roundToInt())
+        Spacer(Modifier.height(8.dp))
+        SettingsSwitchRow(
+            title = "Opaque",
+            description = "Off lets a little of what's behind the window show through.",
+            checked = style.alphaPercent >= GumshoosConfig.WINDOW_ALPHA_OPAQUE,
+            onCheckedChange = { opaque ->
+                GumshoosConfig.setSearchWindowAlpha(
+                    context,
+                    if (opaque) {
+                        GumshoosConfig.WINDOW_ALPHA_OPAQUE
+                    } else {
+                        GumshoosConfig.WINDOW_ALPHA_TRANSPARENT
+                    },
+                )
             },
-            valueRange = 0f..100f,
-            steps = 19,
-            modifier = Modifier.fillMaxWidth(),
         )
 
         SettingsDivider()
@@ -106,7 +128,9 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
                 GumshoosConfig.setSearchWindowCorner(context, it.roundToInt())
             },
             valueRange = 0f..SEARCH_WINDOW_MAX_CORNER_DP.toFloat(),
-            steps = SEARCH_WINDOW_MAX_CORNER_DP - 1,
+            // 2dp notches. Single-dp steps gave forty positions to distinguish between, and a
+            // corner radius is not a measurement anyone reads off a slider — it is a look.
+            steps = SEARCH_WINDOW_MAX_CORNER_DP / CORNER_STEP_DP - 1,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -141,74 +165,50 @@ private fun cornerLabel(dp: Int): String = when (dp) {
 }
 
 /**
- * The window's card, over the wallpaper.
+ * The real search window, scaled to fit.
  *
- * Wrapped in [GumshoosTheme] with dark forced on, exactly as the overlay is — the card takes its
- * adaptive colour from the theme, so previewing it under the settings theme would show a colour the
- * real window never wears.
+ * Not a mock-up of it. Every setting on this screen — and every one that follows, icon size and
+ * label style included — changes the overlay's own composable, so the only preview that can be
+ * trusted is the composable itself. A second hand-built copy would agree today and drift on the
+ * first change nobody thought to mirror.
  *
- * Only the header row is drawn. Reproducing the grid would mean maintaining a second copy of the
- * overlay's layout for no gain: what these settings change is the card, and the header is enough to
- * judge the corner and how the contents read against the fill.
+ * [OverlayContent] is given `interactive = false`, which suppresses the focus grab, the keyboard,
+ * the back interception and dismissal — everything that reaches outside the composable and would be
+ * nonsense inside a settings list. Nothing about how it *draws* is conditional on that flag.
+ *
+ * Laid out at a nominal phone width and scaled down, rather than letting it lay out in the strip:
+ * the card's geometry is fixed dp measured against a real device, so squeezing it into 240dp would
+ * render a layout that exists nowhere.
  */
 @Composable
 private fun SearchWindowPreview() {
-    WallpaperBackdrop(
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .height(PreviewHeight),
+            .height(PreviewHeight)
+            .clipToBounds(),
     ) {
-        GumshoosTheme(darkTheme = true, dynamicColor = true) {
-            val style = GumshoosConfig.searchWindowStyle
+        val scale = minOf(
+            maxWidth / NominalWidth,
+            PreviewHeight / NominalHeight,
+        )
+        WallpaperBackdrop(Modifier.fillMaxSize()) {
             Box(
                 Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = PreviewPadding, vertical = PreviewPadding)
-                    .fillMaxWidth()
-                    .height(PreviewHeight - PreviewPadding * 2)
-                    .clip(RoundedCornerShape(searchWindowCorner(style)))
-                    .background(searchWindowSurface(style)),
+                    .align(Alignment.TopCenter)
+                    .requiredSize(NominalWidth, NominalHeight)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    },
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(45.dp)
-                        .padding(horizontal = 14.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "Search",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 16.sp,
-                    )
-                }
-                // Two faint bars standing in for the app grid, so the fill can be judged against
-                // content rather than against an empty panel.
-                Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 14.dp, bottom = 16.dp),
-                ) {
-                    repeat(2) {
-                        Box(
-                            Modifier
-                                .padding(vertical = 5.dp)
-                                .height(10.dp)
-                                .width(if (it == 0) 150.dp else 96.dp)
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-                                ),
-                        )
-                    }
-                }
+                OverlayContent(
+                    visible = true,
+                    resetToken = 0,
+                    onDismiss = {},
+                    interactive = false,
+                )
             }
         }
     }
