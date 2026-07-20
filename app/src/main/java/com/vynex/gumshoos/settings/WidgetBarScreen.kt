@@ -111,6 +111,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 push()
             },
         )
+        Spacer(Modifier.height(16.dp))
         OpacitySlider(onChanged = ::push)
         SettingsSwitchRow(
             title = "Outline only",
@@ -142,6 +143,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 onValue = { GumshoosConfig.setWidgetBarPaddingH(context, it) },
                 onChanged = ::push,
             )
+            Spacer(Modifier.height(16.dp))
             PaddingSlider(
                 label = "Top and bottom margin",
                 value = GumshoosConfig.widgetBarPaddingV,
@@ -173,11 +175,13 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 },
                 selected = style.logo == logo,
                 onClick = { GumshoosConfig.setWidgetBarLogo(context, logo); push() },
+                icon = logo.icon,
+                tintIcon = logo.tintable,
             )
         }
 
         SettingsDivider()
-        SettingsSection("Action icons")
+        SettingsSection("Actions")
         SettingsNote(
             "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
                 "rest of the bar still opens search.",

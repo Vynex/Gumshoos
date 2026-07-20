@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -365,8 +366,17 @@ internal fun SettingsRadioRow(
     description: String,
     selected: Boolean,
     onClick: () -> Unit,
+    /** Optional mark shown before the label, for choices that are themselves a picture. */
+    @DrawableRes icon: Int? = null,
+    /**
+     * Whether [icon] should take the text colour. False for brand marks, which a tint flattens —
+     * but true for a monochrome glyph, which is authored black and would otherwise vanish into a
+     * dark settings background.
+     */
+    tintIcon: Boolean = false,
 ) {
     Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fullBleedRow()
             .clickable(onClick = onClick)
@@ -375,6 +385,19 @@ internal fun SettingsRadioRow(
     ) {
         RadioButton(selected = selected, onClick = onClick)
         Spacer(Modifier.width(4.dp))
+        if (icon != null) {
+            Image(
+                painter = painterResource(icon),
+                contentDescription = null,
+                colorFilter = if (tintIcon) {
+                    ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
+                } else {
+                    null
+                },
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+        }
         Column {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             if (description.isNotEmpty()) {
