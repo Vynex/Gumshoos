@@ -73,6 +73,9 @@ object GumshoosConfig {
     const val DEFAULT_WIDGET_ICON_OFFSET_DP = 0
 
     /** Full width, slightly inset vertically — the bar sits in its row rather than filling it. */
+    /** Only used until something is picked; adaptive is the shipped default. */
+    const val DEFAULT_WIDGET_BAR_COLOR = 0xFFFFFFFF.toInt()
+
     const val DEFAULT_WIDGET_BAR_PAD_H = 0
     const val DEFAULT_WIDGET_BAR_PAD_V = 8
 
@@ -225,9 +228,28 @@ object GumshoosConfig {
     // Defaults reproduce the bar this widget is modelled on: a pill, filled with the wallpaper's
     // neutral surface, shadowed, Google mark on the left, no hint text, voice and lens on the right.
 
-    /** Where the bar's colour comes from. Adaptive follows the system theme — see WidgetBarFill. */
-    var widgetBarFill by mutableStateOf<WidgetBarFill>(WidgetBarFill.Adaptive)
+    /**
+     * Whether the bar follows the system theme, and the colour to use when it doesn't.
+     *
+     * Held as two independent values rather than as one sealed [WidgetBarFill]. The sealed form
+     * only carried a colour in its Solid case, so switching to Adaptive discarded the chosen one
+     * and switching back produced whatever Adaptive happened to resolve to — the pick was lost by
+     * a round trip through the toggle. Keeping them apart means the colour is simply not in play
+     * while Adaptive is on, rather than gone.
+     */
+    var widgetBarFillAdaptive by mutableStateOf(true)
         private set
+
+    var widgetBarSolidColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
+        private set
+
+    /** The pair as the renderer wants it. */
+    val widgetBarFill: WidgetBarFill
+        get() = if (widgetBarFillAdaptive) {
+            WidgetBarFill.Adaptive
+        } else {
+            WidgetBarFill.Solid(widgetBarSolidColor)
+        }
 
     /** 0..100, kept apart from the colour so changing one doesn't reset the other. */
     var widgetBarFillAlpha by mutableStateOf(100)
@@ -300,19 +322,21 @@ object GumshoosConfig {
         prefs(context).edit().putInt(KEY_WIDGET_BAR_PAD_V, widgetBarPaddingV).apply()
     }
 
-    fun setWidgetBarFill(context: Context, fill: WidgetBarFill) {
-        widgetBarFill = fill
-        prefs(context).edit().apply {
-            when (fill) {
-                WidgetBarFill.Adaptive -> putString(
-                    KEY_WIDGET_BAR_FILL_MODE, WidgetBarFill.ADAPTIVE_ID,
-                )
-                is WidgetBarFill.Solid -> {
-                    putString(KEY_WIDGET_BAR_FILL_MODE, WidgetBarFill.SOLID_ID)
-                    putInt(KEY_WIDGET_BAR_FILL_COLOR, fill.color)
-                }
-            }
-        }.apply()
+    fun setWidgetBarFillAdaptive(context: Context, adaptive: Boolean) {
+        widgetBarFillAdaptive = adaptive
+        val mode = if (adaptive) WidgetBarFill.ADAPTIVE_ID else WidgetBarFill.SOLID_ID
+        // The colour key is left alone, so turning this back off restores what was chosen before.
+        prefs(context).edit().putString(KEY_WIDGET_BAR_FILL_MODE, mode).apply()
+    }
+
+    /** Choosing a colour is itself a statement that the bar shouldn't follow the system. */
+    fun setWidgetBarSolidColor(context: Context, color: Int) {
+        widgetBarSolidColor = color
+        widgetBarFillAdaptive = false
+        prefs(context).edit()
+            .putInt(KEY_WIDGET_BAR_FILL_COLOR, color)
+            .putString(KEY_WIDGET_BAR_FILL_MODE, WidgetBarFill.SOLID_ID)
+            .apply()
     }
 
     fun setWidgetBarFillAlpha(context: Context, percent: Int) {
@@ -498,11 +522,9 @@ object GumshoosConfig {
             .toMap()
         setupComplete = p.getBoolean(KEY_SETUP_COMPLETE, false)
 
-        widgetBarFill = if (p.getString(KEY_WIDGET_BAR_FILL_MODE, null) == WidgetBarFill.SOLID_ID) {
-            WidgetBarFill.Solid(p.getInt(KEY_WIDGET_BAR_FILL_COLOR, 0xFFFFFFFF.toInt()))
-        } else {
-            WidgetBarFill.Adaptive
-        }
+        widgetBarFillAdaptive =
+            p.getString(KEY_WIDGET_BAR_FILL_MODE, null) != WidgetBarFill.SOLID_ID
+        widgetBarSolidColor = p.getInt(KEY_WIDGET_BAR_FILL_COLOR, DEFAULT_WIDGET_BAR_COLOR)
         widgetBarFillAlpha = p.getInt(KEY_WIDGET_BAR_FILL_ALPHA, 100).coerceIn(0, 100)
         widgetBarWireframe = p.getBoolean(KEY_WIDGET_BAR_WIREFRAME, false)
         widgetBarCorner = p.getInt(KEY_WIDGET_BAR_CORNER, 100).coerceIn(0, 100)

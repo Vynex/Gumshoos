@@ -29,6 +29,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,7 +85,12 @@ private val CardShape = RoundedCornerShape(16.dp)
  */
 @Composable
 internal fun ColorPickerAccordion(
+    /** What the bar is actually filled with right now, adaptive or not — shown in the header. */
+    currentColor: Int,
+    /** Null while adaptive, so no swatch claims to be the chosen one. */
     selected: Int?,
+    adaptive: Boolean,
+    onAdaptiveChange: (Boolean) -> Unit,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onPick: (Int) -> Unit,
@@ -123,7 +129,7 @@ internal fun ColorPickerAccordion(
             )
             Spacer(Modifier.width(12.dp))
             SwatchCircle(
-                color = Color(selected ?: 0xFF888888.toInt()),
+                color = Color(currentColor),
                 isSelected = false,
                 modifier = Modifier.size(28.dp),
                 onClick = { onExpandedChange(!expanded) },
@@ -139,8 +145,23 @@ internal fun ColorPickerAccordion(
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                Spacer(Modifier.height(12.dp))
 
+                // Inside the card rather than above it: it decides where the colour comes from, so
+                // it belongs with the colours. No description — the switch and the swatches beside
+                // it say what it does more directly than a sentence would.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Text(
+                        "Adaptive",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = adaptive, onCheckedChange = onAdaptiveChange)
+                }
+
+                Spacer(Modifier.height(4.dp))
                 PaletteLabel("System palette")
                 SwatchGrid(systemPalette(), selected, onPick)
 

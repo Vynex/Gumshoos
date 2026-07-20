@@ -104,43 +104,21 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         )
         OpacitySlider(onChanged = ::push)
 
-        SettingsSwitchRow(
-            title = "Follow system colours",
-            description = "Uses your wallpaper's surface tone, and flips with light and dark mode.",
-            checked = style.fill is WidgetBarFill.Adaptive,
-            onCheckedChange = { adaptive ->
-                GumshoosConfig.setWidgetBarFill(
-                    context,
-                    if (adaptive) {
-                        WidgetBarFill.Adaptive
-                    } else {
-                        // Seed from whatever adaptive currently resolves to, so switching to a
-                        // fixed colour starts from what's on screen rather than an arbitrary one.
-                        WidgetBarFill.Solid(WidgetBarRenderer.resolveFill(context, style.fill))
-                    },
-                )
-                paletteOpen = !adaptive
+        ColorPickerAccordion(
+            currentColor = WidgetBarRenderer.resolveFill(context, style.fill),
+            selected = (style.fill as? WidgetBarFill.Solid)?.color,
+            adaptive = GumshoosConfig.widgetBarFillAdaptive,
+            onAdaptiveChange = { adaptive ->
+                GumshoosConfig.setWidgetBarFillAdaptive(context, adaptive)
+                push()
+            },
+            expanded = paletteOpen,
+            onExpandedChange = { paletteOpen = it },
+            onPick = { picked ->
+                GumshoosConfig.setWidgetBarSolidColor(context, picked)
                 push()
             },
         )
-
-        AnimatedVisibility(
-            visible = style.fill is WidgetBarFill.Solid,
-            // Height only. The default enter also scales in from the top-left corner, which reads
-            // as the picker flying in from off-screen rather than the row opening up.
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
-            ColorPickerAccordion(
-                selected = (style.fill as? WidgetBarFill.Solid)?.color,
-                expanded = paletteOpen,
-                onExpandedChange = { paletteOpen = it },
-                onPick = { picked ->
-                    GumshoosConfig.setWidgetBarFill(context, WidgetBarFill.Solid(picked))
-                    push()
-                },
-            )
-        }
 
         SettingsDivider()
         SettingsSection("Shape")
