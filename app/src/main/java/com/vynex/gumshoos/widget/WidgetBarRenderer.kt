@@ -26,14 +26,29 @@ import androidx.core.content.ContextCompat
 object WidgetBarRenderer {
 
     /**
-     * Shadow geometry, in dp.
+     * Shadow, transcribed from a CSS box-shadow:
      *
-     * Tight blur and a short drop: a sharp edge reads as the bar sitting just above the wallpaper,
-     * where a wide soft blur reads as haze and muddies whatever is behind it.
+     *     rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px
+     *
+     * The offsets and alpha carry across directly — CSS px is read as dp, which is what the value
+     * means on a phone. The blur does not, and copying 2.6 straight into [Paint.setShadowLayer]
+     * would give a noticeably softer shadow than the one specified.
+     *
+     * CSS defines blur-radius as twice the Gaussian sigma. Android takes a BlurMaskFilter radius,
+     * which Skia converts as `sigma = 0.57735 * radius + 0.5`, in **pixels**. So the conversion has
+     * to happen after the density multiply, not before — see [blurRadiusPx]. At 3x, 2.6dp means
+     * sigma 3.9; passing 2.6dp through as a radius would land near sigma 5.0.
      */
-    private const val SHADOW_BLUR_DP = 2.5f
-    private const val SHADOW_DY_DP = 1.5f
-    private const val SHADOW_ALPHA = 0x3A
+    private const val SHADOW_CSS_BLUR_DP = 2.6f
+    private const val SHADOW_DX_DP = 1.95f
+    private const val SHADOW_DY_DP = 1.95f
+
+    /** 0.15 alpha, as eight-bit. */
+    private const val SHADOW_ALPHA = 0x26
+
+    /** Skia's radius-to-sigma constant, inverted. */
+    private const val SIGMA_PER_RADIUS = 0.57735f
+    private const val SIGMA_BASE = 0.5f
 
     /**
      * Border width, in dp.
@@ -69,6 +84,18 @@ object WidgetBarRenderer {
 
     private fun strokeWidthPx(style: WidgetBarStyle, density: Float): Float =
         (if (style.wireframe) OUTLINE_STROKE_DP else STROKE_DP) * density
+
+    /**
+     * The BlurMaskFilter radius that reproduces a CSS blur-radius of [cssBlurDp].
+     *
+     * Both conversions are in play: CSS blur is 2x sigma, and Skia's radius is sigma with its own
+     * affine mapping. Done in pixels because Skia's constant is a pixel quantity — the same dp
+     * value produces a different radius at a different density.
+     */
+    private fun blurRadiusPx(cssBlurDp: Float, density: Float): Float {
+        val sigma = (cssBlurDp * density) / 2f
+        return ((sigma - SIGMA_BASE) / SIGMA_PER_RADIUS).coerceAtLeast(0f)
+    }
 
     /**
      * Rasterises the background at [wPx] x [hPx].
@@ -115,7 +142,8 @@ object WidgetBarRenderer {
         height: Float,
         density: Float,
     ) {
-        val blur = SHADOW_BLUR_DP * density
+        val blur = blurRadiusPx(SHADOW_CSS_BLUR_DP, density)
+        val dx = SHADOW_DX_DP * density
         val dy = SHADOW_DY_DP * density
         val padH = style.paddingHDp * density
         val padV = style.paddingVDp * density
@@ -143,7 +171,7 @@ object WidgetBarRenderer {
         if (style.shadow) {
             paint.style = Paint.Style.FILL
             paint.color = WidgetBarMetrics.argb(0xFF, 0, 0, 0)
-            paint.setShadowLayer(blur, 0f, dy, WidgetBarMetrics.argb(SHADOW_ALPHA, 0, 0, 0))
+            paint.setShadowLayer(blur, dx, dy, WidgetBarMetrics.argb(SHADOW_ALPHA, 0, 0, 0))
             canvas.drawRoundRect(rect, radius, radius, paint)
             paint.clearShadowLayer()
 
