@@ -53,6 +53,9 @@ object GumshoosConfig {
     private const val KEY_WINDOW_COLOR = "search_window_color"
     private const val KEY_WINDOW_ALPHA = "search_window_alpha"
     private const val KEY_WINDOW_CORNER = "search_window_corner"
+    private const val KEY_GRID_ROWS = "overlay_grid_rows"
+    private const val KEY_ICON_SIZE = "overlay_icon_size"
+    private const val KEY_LABEL_SIZE = "overlay_label_size"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -87,6 +90,24 @@ object GumshoosConfig {
     const val WINDOW_ALPHA_OPAQUE = 100
     const val DEFAULT_WINDOW_ALPHA = WINDOW_ALPHA_TRANSPARENT
     const val DEFAULT_WINDOW_CORNER_DP = 20
+
+    /**
+     * Grid defaults, which are the measured ones the card's geometry was built around.
+     *
+     * The icon range is bounded by the five columns: at a card of roughly 360dp of usable width a
+     * cell is about 72dp, so anything past the mid-fifties starts crowding its neighbours.
+     */
+    const val DEFAULT_GRID_ROWS = 2
+    const val MIN_GRID_ROWS = 1
+    const val MAX_GRID_ROWS = 3
+
+    const val DEFAULT_ICON_SIZE_DP = 42
+    const val MIN_ICON_SIZE_DP = 30
+    const val MAX_ICON_SIZE_DP = 56
+
+    const val DEFAULT_LABEL_SIZE_SP = 12
+    const val MIN_LABEL_SIZE_SP = 9
+    const val MAX_LABEL_SIZE_SP = 16
 
     /** Only used until something is picked; adaptive is the shipped default. */
     const val DEFAULT_WIDGET_BAR_COLOR = 0xFFFFFFFF.toInt()
@@ -537,12 +558,41 @@ object GumshoosConfig {
         prefs(context).edit().putInt(KEY_WINDOW_CORNER, searchWindowCorner).apply()
     }
 
+    // --- the app grid inside the window ------------------------------------------------------------
+
+    var overlayGridRows by mutableStateOf(DEFAULT_GRID_ROWS)
+        private set
+
+    var overlayIconSize by mutableStateOf(DEFAULT_ICON_SIZE_DP)
+        private set
+
+    var overlayLabelSize by mutableStateOf(DEFAULT_LABEL_SIZE_SP)
+        private set
+
+    fun setOverlayGridRows(context: Context, rows: Int) {
+        overlayGridRows = rows.coerceIn(MIN_GRID_ROWS, MAX_GRID_ROWS)
+        prefs(context).edit().putInt(KEY_GRID_ROWS, overlayGridRows).apply()
+    }
+
+    fun setOverlayIconSize(context: Context, dp: Int) {
+        overlayIconSize = dp.coerceIn(MIN_ICON_SIZE_DP, MAX_ICON_SIZE_DP)
+        prefs(context).edit().putInt(KEY_ICON_SIZE, overlayIconSize).apply()
+    }
+
+    fun setOverlayLabelSize(context: Context, sp: Int) {
+        overlayLabelSize = sp.coerceIn(MIN_LABEL_SIZE_SP, MAX_LABEL_SIZE_SP)
+        prefs(context).edit().putInt(KEY_LABEL_SIZE, overlayLabelSize).apply()
+    }
+
     fun resetSearchWindow(context: Context) {
         prefs(context).edit().apply {
             remove(KEY_WINDOW_ADAPTIVE)
             remove(KEY_WINDOW_COLOR)
             remove(KEY_WINDOW_ALPHA)
             remove(KEY_WINDOW_CORNER)
+            remove(KEY_GRID_ROWS)
+            remove(KEY_ICON_SIZE)
+            remove(KEY_LABEL_SIZE)
         }.apply()
         load(context)
     }
@@ -647,6 +697,12 @@ object GumshoosConfig {
         searchWindowAlpha = p.getInt(KEY_WINDOW_ALPHA, DEFAULT_WINDOW_ALPHA).coerceIn(0, 100)
         searchWindowCorner = p.getInt(KEY_WINDOW_CORNER, DEFAULT_WINDOW_CORNER_DP)
             .coerceIn(0, SEARCH_WINDOW_MAX_CORNER_DP)
+        overlayGridRows = p.getInt(KEY_GRID_ROWS, DEFAULT_GRID_ROWS)
+            .coerceIn(MIN_GRID_ROWS, MAX_GRID_ROWS)
+        overlayIconSize = p.getInt(KEY_ICON_SIZE, DEFAULT_ICON_SIZE_DP)
+            .coerceIn(MIN_ICON_SIZE_DP, MAX_ICON_SIZE_DP)
+        overlayLabelSize = p.getInt(KEY_LABEL_SIZE, DEFAULT_LABEL_SIZE_SP)
+            .coerceIn(MIN_LABEL_SIZE_SP, MAX_LABEL_SIZE_SP)
 
         launchMethod = LaunchMethod.fromId(p.getString(KEY_LAUNCH_METHOD, null))
             ?: LaunchMethod.STANDARD

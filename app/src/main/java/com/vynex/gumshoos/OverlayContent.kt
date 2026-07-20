@@ -115,8 +115,27 @@ private val CardSideMargin = 8.dp
 private val CardTopMargin = 12.dp
 private val HeaderHeight = 45.dp
 private val TabRowHeight = 48.dp
-private val CellHeight = 84.dp
-private val AppIconSize = 42.dp
+/**
+ * Cell metrics, derived from config rather than measured, so a change to icon or label size carries
+ * through the card's height instead of overflowing the space the old numbers reserved.
+ *
+ * At the shipped defaults these reproduce the measured values exactly — 84dp a cell, 196dp a grid —
+ * which is the check that the derivation is right rather than merely plausible.
+ *
+ * Labels are laid out in sp and the card in dp, so the height assumes a font scale of one. That
+ * assumption predates this: the 84dp was hardcoded against a 14sp line height in the same way.
+ */
+private const val LabelLines = 2
+private const val LabelLineRatio = 1.17f
+private val CellVerticalPadding = 4.dp
+private val IconLabelGap = 6.dp
+
+private val AppIconSize: Dp get() = GumshoosConfig.overlayIconSize.dp
+private val AppLabelSize get() = GumshoosConfig.overlayLabelSize.sp
+private val AppLabelLineHeight get() = (GumshoosConfig.overlayLabelSize * LabelLineRatio).sp
+private val CellHeight: Dp
+    get() = (CellVerticalPadding * 2) + AppIconSize + IconLabelGap +
+        (GumshoosConfig.overlayLabelSize * LabelLineRatio * LabelLines).dp
 private val GridVerticalPadding = 10.dp
 private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
@@ -160,24 +179,33 @@ private val SearchUsingHeight =
         ProviderLabelGap + ProviderIconSize + ProviderRowBottomSpacing
 
 private const val GridColumns = 5
-private const val GridRows = 2
-const val MaxGridEntries = GridColumns * GridRows
+private val GridRows: Int get() = GumshoosConfig.overlayGridRows
+val MaxGridEntries: Int get() = GridColumns * GridRows
 
 /** Always this tall, however few results there are — see the note on [AppGrid]. */
-private val GridContentHeight =
-    (GridVerticalPadding * 2) + (CellHeight * GridRows) + GridRowSpacing
+private val GridContentHeight: Dp
+    get() = (GridVerticalPadding * 2) + (CellHeight * GridRows) +
+        (GridRowSpacing * (GridRows - 1))
 
 /** Derived rather than hardcoded so changing a row height can't desync the animation target. */
-private val CardExpandedHeight =
-    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight
+private val CardExpandedHeight: Dp
+    get() = HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight
+
+/**
+ * What the settled card occupies, top margin included.
+ *
+ * Exposed so the settings preview can lay the window out at its true size rather than at a guess —
+ * and so it follows automatically when the row count or icon size changes that size.
+ */
+val OverlaySettledHeight: Dp get() = CardTopMargin + CardExpandedHeight
 
 /**
  * The panel is always measured at this height and revealed from the top, so it must cover the
  * tallest arrangement: browsing (tabs, no provider row) and searching (provider row, no tabs) each
  * use a subset. The slack is clipped by whatever height the card currently animates to.
  */
-private val PanelMaxHeight =
-    HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight +
+private val PanelMaxHeight: Dp
+    get() = HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight +
         AnswerSectionHeight + ContactsSectionMaxHeight + SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
@@ -647,7 +675,6 @@ private fun SearchPanel(
                             text = entry.label,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
-                            letterSpacing = 0.6.sp,
                             maxLines = 1,
                         )
                     },
@@ -1419,11 +1446,11 @@ private fun AppCell(
         }
         Text(
             text = label,
-            fontSize = 12.sp,
-            lineHeight = 14.sp,
+            fontSize = AppLabelSize,
+            lineHeight = AppLabelLineHeight,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = LabelLines,
             overflow = TextOverflow.Ellipsis,
         )
     }

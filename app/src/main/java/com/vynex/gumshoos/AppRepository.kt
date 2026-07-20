@@ -375,5 +375,5 @@ enum class LaunchMethod(val id: String, val label: String, val description: Stri
 enum class SearchTab(val label: String) {
     FREQUENT("FREQUENT"),
     RECENT("RECENT"),
-    NEW_UPDATED("NEW/UPDATED"),
+    NEW_UPDATED("NEW"),
 }

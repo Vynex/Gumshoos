@@ -1,6 +1,7 @@
 package com.vynex.gumshoos.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayContent
+import com.vynex.gumshoos.OverlaySettledHeight
 import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
 import com.vynex.gumshoos.SearchWindowStyle
 import com.vynex.gumshoos.searchWindowCorner
@@ -47,8 +50,8 @@ import com.vynex.gumshoos.searchWindowSurface
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlin.math.roundToInt
 
-/** Tall enough to show the card whole, without dominating the screen. */
-private val PreviewHeight = 240.dp
+/** How much of the screen the preview takes. Bigger than a strip, since it is the point of it. */
+private val PreviewHeight = 310.dp
 
 /**
  * The size the overlay is laid out at before scaling.
@@ -58,6 +61,11 @@ private val PreviewHeight = 240.dp
  */
 /** Notch size for the corner slider, in dp. */
 private const val CORNER_STEP_DP = 2
+
+/** Icons move in twos: single dp is finer than the difference is visible at this size. */
+private const val ICON_STEP_DP = 2
+
+private val PreviewBottomSlack = 16.dp
 
 private val NominalWidth = 380.dp
 private val NominalHeight = 330.dp
@@ -84,7 +92,7 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
                 "opacity decides how much of that shows through.",
         )
 
-        SettingsSection("Style")
+        SettingsSection("Window")
         ColorPickerAccordion(
             // The overlay is hard-coded to the dark theme, so adaptive has to be resolved under it
             // rather than under the settings theme — otherwise the swatch shown here is a colour
@@ -115,8 +123,8 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             },
         )
 
-        SettingsDivider()
-        SettingsSection("Shape")
+
+        Spacer(Modifier.height(8.dp))
         var corner by remember(style.cornerRadiusDp) {
             mutableStateOf(style.cornerRadiusDp.toFloat())
         }
@@ -132,6 +140,57 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             // corner radius is not a measurement anyone reads off a slider — it is a look.
             steps = SEARCH_WINDOW_MAX_CORNER_DP / CORNER_STEP_DP - 1,
             modifier = Modifier.fillMaxWidth(),
+        )
+
+        SettingsDivider()
+        SettingsSection("Apps")
+        SettingsNote(
+            "The grid of results. Five to a row, so a larger icon leaves less room for its label.",
+        )
+
+        Spacer(Modifier.height(4.dp))
+        Text("Rows", style = MaterialTheme.typography.bodyMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        ) {
+            (GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS).forEach { rows ->
+                val chosen = GumshoosConfig.overlayGridRows == rows
+                OutlinedButton(
+                    onClick = { GumshoosConfig.setOverlayGridRows(context, rows) },
+                    colors = if (chosen) {
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    } else {
+                        ButtonDefaults.outlinedButtonColors()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("$rows") }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        StepSlider(
+            label = "Icon size",
+            value = GumshoosConfig.overlayIconSize,
+            min = GumshoosConfig.MIN_ICON_SIZE_DP,
+            max = GumshoosConfig.MAX_ICON_SIZE_DP,
+            step = ICON_STEP_DP,
+            unit = "dp",
+            onValue = { GumshoosConfig.setOverlayIconSize(context, it) },
+        )
+
+        Spacer(Modifier.height(8.dp))
+        StepSlider(
+            label = "Label size",
+            value = GumshoosConfig.overlayLabelSize,
+            min = GumshoosConfig.MIN_LABEL_SIZE_SP,
+            max = GumshoosConfig.MAX_LABEL_SIZE_SP,
+            step = 1,
+            unit = "sp",
+            onValue = { GumshoosConfig.setOverlayLabelSize(context, it) },
         )
 
         SettingsDivider()
@@ -157,6 +216,36 @@ private fun windowSwatch(style: SearchWindowStyle): Int {
     } else {
         style.color
     }
+}
+
+/**
+ * A slider over whole units, reporting its value in the label.
+ *
+ * Local state so the label tracks the drag; config is written on every change because the preview
+ * above is the point of the screen, and it is reading config rather than the slider.
+ */
+@Composable
+private fun StepSlider(
+    label: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    step: Int,
+    unit: String,
+    onValue: (Int) -> Unit,
+) {
+    var current by remember(value) { mutableStateOf(value.toFloat()) }
+    SettingsNote("$label: ${current.roundToInt()}$unit")
+    Slider(
+        value = current,
+        onValueChange = {
+            current = it
+            onValue(it.roundToInt())
+        },
+        valueRange = min.toFloat()..max.toFloat(),
+        steps = ((max - min) / step) - 1,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 private fun cornerLabel(dp: Int): String = when (dp) {
@@ -188,15 +277,18 @@ private fun SearchWindowPreview() {
             .height(PreviewHeight)
             .clipToBounds(),
     ) {
-        val scale = minOf(
-            maxWidth / NominalWidth,
-            PreviewHeight / NominalHeight,
-        )
+        // A little slack under the card so it reads as sitting on the wallpaper rather than
+        // butting against the edge of the strip.
+        val nominalHeight = OverlaySettledHeight + PreviewBottomSlack
+        // Never above 1: a short card would otherwise be blown up past life size, which is the
+        // one thing a preview must not do.
+        val scale = minOf(maxWidth / NominalWidth, PreviewHeight / nominalHeight)
+            .coerceAtMost(1f)
         WallpaperBackdrop(Modifier.fillMaxSize()) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .requiredSize(NominalWidth, NominalHeight)
+                    .requiredSize(NominalWidth, nominalHeight)
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
