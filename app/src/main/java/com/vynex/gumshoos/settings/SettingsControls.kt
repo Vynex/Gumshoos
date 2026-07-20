@@ -47,6 +47,7 @@ import com.vynex.gumshoos.answers.CurrencyRates
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.vynex.gumshoos.AppRepository
+import com.vynex.gumshoos.AssistIntegration
 import com.vynex.gumshoos.ContactAction
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.CrashLog
@@ -439,6 +440,73 @@ internal fun SearchIconSettings() {
         enabled = SearchShortcuts.canPin(context),
         modifier = Modifier.fillMaxWidth(),
     ) { Text("Pin a search icon to the home screen") }
+}
+
+/**
+ * The assistant option.
+ *
+ * Deliberately two steps rather than one switch, because that is what the platform allows: the
+ * switch only puts Gumshoos in the system's list, and the assistant itself can only be chosen in
+ * system settings. Presenting it as a single toggle would leave the gesture doing nothing with the
+ * setting reading "on", which is the failure this app keeps trying not to ship.
+ */
+@Composable
+internal fun AssistSettings() {
+    val context = LocalContext.current
+    var offered by remember { mutableStateOf(AssistIntegration.isEntryEnabled(context)) }
+    // Chosen in a system screen we get no result back from, so it is re-read on resume.
+    val isAssistant = rememberOnResume { AssistIntegration.isCurrentAssistant(context) }
+    var pickerMissing by remember { mutableStateOf(false) }
+
+    SettingsSection("Assistant")
+    SettingsNote(
+        "Opens the same search window the widget does, from whatever gesture your phone uses for " +
+            "the assistant — long-pressing the power button, or the corner swipe. It arrives as " +
+            "an activity, so it takes the same trampoline the shortcut does and reads a little " +
+            "slower than the widget; the readout tags it \"assist\".",
+    )
+
+    SettingsSwitchRow(
+        title = "Offer Gumshoos as an assistant",
+        description = "Adds Gumshoos to the phone's list of assistant apps. It doesn't select it " +
+            "— no app is allowed to give itself that role.",
+        checked = offered,
+        onCheckedChange = {
+            offered = it
+            AssistIntegration.setEntryEnabled(context, it)
+        },
+    )
+
+    SettingsNote(
+        when {
+            isAssistant == true && !offered ->
+                "Gumshoos is still the selected assistant, but is no longer being offered. Pick " +
+                    "another one in system settings, or the gesture will stop doing anything."
+            isAssistant == true -> "Selected. The assistant gesture opens Gumshoos."
+            isAssistant == false && offered ->
+                "Listed but not selected — choose Gumshoos in system settings to finish. Some " +
+                    "phones only offer their own assistant here, in which case this can't be set."
+            isAssistant == false -> "Not selected."
+            // Null is "couldn't tell", not "no". Saying "not selected" on a device where the check
+            // is unavailable would be a confident wrong answer to the one question this row asks.
+            else -> "Couldn't read the current assistant on this device. The button below still " +
+                "opens the picker."
+        },
+        isWarning = isAssistant == true && !offered,
+    )
+
+    OutlinedButton(
+        onClick = { pickerMissing = !AssistIntegration.openPicker(context) },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Open assistant settings") }
+
+    if (pickerMissing) {
+        SettingsNote(
+            "This phone didn't answer to any of the assistant settings screens. Look under " +
+                "Settings → Apps → Default apps.",
+            isWarning = true,
+        )
+    }
 }
 
 @Composable

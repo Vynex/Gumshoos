@@ -179,6 +179,29 @@
             </intent-filter>
         </activity-alias>
 
+        <!--
+          What makes Gumshoos eligible to be the phone's assistant: an app appears in the system's
+          assistant picker by declaring an activity that handles ASSIST. Disabled by default and
+          switched on from Settings, like the drawer icon alias above — a filter declared
+          unconditionally would sit in the picker whether or not the option was ever wanted.
+
+          Aimed at LaunchSearchActivity because assist arrives as an activity launch and so needs
+          the same trampoline a shortcut does; the activity tags the show "assist" by the incoming
+          action, so the latency readout keeps this path separate from the icon's.
+        -->
+        <activity-alias
+            android:name=".AssistTrigger"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_widget_search_app"
+            android:label="@string/assist_trigger_label"
+            android:targetActivity=".LaunchSearchActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".NoOpActivity"
             android:exported="false"

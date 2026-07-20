@@ -1,6 +1,7 @@
 package com.vynex.gumshoos
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 
@@ -15,14 +16,22 @@ import android.os.Bundle
  *
  * It is still slower than the widget, which reaches the service directly. The overlay's latency
  * readout tags this path "icon" so the two can be compared rather than assumed.
+ *
+ * Assist lands here as well, via the `AssistTrigger` alias, for the same reason: the system
+ * delivers `ACTION_ASSIST` to an activity. See [AssistIntegration].
  */
 class LaunchSearchActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Assist arrives here too, through the AssistTrigger alias, and is tagged apart from the
+        // icon: it is a different invoke path with its own system-side cost before we are reached,
+        // and a readout that lumped them together couldn't show that.
+        val source = if (intent?.action == Intent.ACTION_ASSIST) "assist" else "icon"
+
         startForegroundService(
-            OverlayService.intent(this, OverlayService.ACTION_SHOW, source = "icon")
+            OverlayService.intent(this, OverlayService.ACTION_SHOW, source = source)
         )
 
         // Finish immediately: the overlay is a separate window and doesn't need us alive.

@@ -49,6 +49,10 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_PAD_H = "widget_bar_padding_h"
     private const val KEY_WIDGET_BAR_PAD_V = "widget_bar_padding_v"
     private const val KEY_LAUNCH_METHOD = "launch_method"
+    private const val KEY_WINDOW_ADAPTIVE = "search_window_adaptive"
+    private const val KEY_WINDOW_COLOR = "search_window_color"
+    private const val KEY_WINDOW_ALPHA = "search_window_alpha"
+    private const val KEY_WINDOW_CORNER = "search_window_corner"
 
     const val DEFAULT_NEW_UPDATED_WINDOW_HOURS = 12L
 
@@ -73,6 +77,13 @@ object GumshoosConfig {
     const val DEFAULT_WIDGET_ICON_OFFSET_DP = 0
 
     /** Full width, slightly inset vertically — the bar sits in its row rather than filling it. */
+    /**
+     * The search window's shipped look, matching what it was before any of it was configurable.
+     * 94% opacity lets a little of what's underneath through without making text hard to read.
+     */
+    const val DEFAULT_WINDOW_ALPHA = 94
+    const val DEFAULT_WINDOW_CORNER_DP = 20
+
     /** Only used until something is picked; adaptive is the shipped default. */
     const val DEFAULT_WIDGET_BAR_COLOR = 0xFFFFFFFF.toInt()
 
@@ -471,6 +482,67 @@ object GumshoosConfig {
         prefs(context).edit().putString(KEY_LAUNCH_METHOD, method.id).apply()
     }
 
+    // --- the search window itself -----------------------------------------------------------------
+    //
+    // Adaptive and the chosen colour are kept apart for the same reason as the widget bar's: folding
+    // them into one value loses the pick the moment adaptive is switched on.
+
+    var searchWindowAdaptive by mutableStateOf(true)
+        private set
+
+    var searchWindowColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
+        private set
+
+    var searchWindowAlpha by mutableStateOf(DEFAULT_WINDOW_ALPHA)
+        private set
+
+    var searchWindowCorner by mutableStateOf(DEFAULT_WINDOW_CORNER_DP)
+        private set
+
+    val searchWindowStyle: SearchWindowStyle
+        get() = SearchWindowStyle(
+            adaptive = searchWindowAdaptive,
+            color = searchWindowColor,
+            alphaPercent = searchWindowAlpha,
+            cornerRadiusDp = searchWindowCorner,
+        )
+
+    fun setSearchWindowAdaptive(context: Context, adaptive: Boolean) {
+        searchWindowAdaptive = adaptive
+        // The colour key is left alone, so turning this back off restores what was chosen before.
+        prefs(context).edit().putBoolean(KEY_WINDOW_ADAPTIVE, adaptive).apply()
+    }
+
+    /** Choosing a colour is itself a statement that the window shouldn't follow the theme. */
+    fun setSearchWindowColor(context: Context, color: Int) {
+        searchWindowColor = color
+        searchWindowAdaptive = false
+        prefs(context).edit()
+            .putInt(KEY_WINDOW_COLOR, color)
+            .putBoolean(KEY_WINDOW_ADAPTIVE, false)
+            .apply()
+    }
+
+    fun setSearchWindowAlpha(context: Context, percent: Int) {
+        searchWindowAlpha = percent.coerceIn(0, 100)
+        prefs(context).edit().putInt(KEY_WINDOW_ALPHA, searchWindowAlpha).apply()
+    }
+
+    fun setSearchWindowCorner(context: Context, dp: Int) {
+        searchWindowCorner = dp.coerceIn(0, SEARCH_WINDOW_MAX_CORNER_DP)
+        prefs(context).edit().putInt(KEY_WINDOW_CORNER, searchWindowCorner).apply()
+    }
+
+    fun resetSearchWindow(context: Context) {
+        prefs(context).edit().apply {
+            remove(KEY_WINDOW_ADAPTIVE)
+            remove(KEY_WINDOW_COLOR)
+            remove(KEY_WINDOW_ALPHA)
+            remove(KEY_WINDOW_CORNER)
+        }.apply()
+        load(context)
+    }
+
     /** Where the Frequent and Recent tabs take their ordering from. */
     var usageSource by mutableStateOf(DEFAULT_USAGE_SOURCE)
         private set
@@ -565,6 +637,12 @@ object GumshoosConfig {
             ?: AnimationMode.FOLLOW_SYSTEM
         AnswerProviders.enabledIds =
             p.getStringSet(KEY_ANSWER_PROVIDERS, null) ?: AnswerProviders.all.map { it.id }.toSet()
+
+        searchWindowAdaptive = p.getBoolean(KEY_WINDOW_ADAPTIVE, true)
+        searchWindowColor = p.getInt(KEY_WINDOW_COLOR, DEFAULT_WIDGET_BAR_COLOR)
+        searchWindowAlpha = p.getInt(KEY_WINDOW_ALPHA, DEFAULT_WINDOW_ALPHA).coerceIn(0, 100)
+        searchWindowCorner = p.getInt(KEY_WINDOW_CORNER, DEFAULT_WINDOW_CORNER_DP)
+            .coerceIn(0, SEARCH_WINDOW_MAX_CORNER_DP)
 
         launchMethod = LaunchMethod.fromId(p.getString(KEY_LAUNCH_METHOD, null))
             ?: LaunchMethod.STANDARD

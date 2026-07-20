@@ -109,7 +109,8 @@ import kotlin.math.roundToInt
 // Measured frame-by-frame from a slowed capture of Nova, converted at density 2.75
 // (1080px wide -> 393dp). Reference: card 1037x813px, side margin 21px, top 141px, header 125px.
 
-private val CardCornerRadius = 20.dp
+// The card's settled corner radius and opacity are configurable and live in GumshoosConfig; the
+// shipped values there are the measured ones this section otherwise records.
 private val CardSideMargin = 8.dp
 private val CardTopMargin = 12.dp
 private val HeaderHeight = 45.dp
@@ -191,8 +192,6 @@ private val PillCornerRadius = HeaderHeight / 2
  * rather than the value itself. Narrower here, which also makes the horizontal phase read clearly.
  */
 private const val CollapsedWidthFraction = 0.55f
-
-private const val CardSurfaceAlpha = 0.94f
 
 private val ContextMenuWidth = 190.dp
 
@@ -327,6 +326,12 @@ fun OverlayContent(
 
         // Stays a pill for the whole horizontal phase, then relaxes into the card's radius as it
         // grows. Morphing it earlier would blur the boundary between the two phases.
+        // Read once per composition from config. Both are plain snapshot reads, so this costs the
+        // show path nothing — the values are already in memory from GumshoosApp.onCreate.
+        val windowStyle = GumshoosConfig.searchWindowStyle
+        val settledCorner = searchWindowCorner(windowStyle)
+        val cardColour = searchWindowSurface(windowStyle)
+
         val cornerRadius by transition.animateDp(
             transitionSpec = {
                 when {
@@ -336,13 +341,13 @@ fun OverlayContent(
                             delayOf(HeightStartPct) + durationOf(HeightStartPct, HeightEndPct)
                         PillCornerRadius at 0 using SmoothStepEasing
                         PillCornerRadius at delayOf(HeightStartPct) using SmoothStepEasing
-                        CardCornerRadius at durationMillis
+                        settledCorner at durationMillis
                     }
                     else -> tween(ExitMillis, easing = ExitEasing)
                 }
             },
             label = "corner",
-        ) { shown -> if (shown) CardCornerRadius else PillCornerRadius }
+        ) { shown -> if (shown) settledCorner else PillCornerRadius }
 
         // Only meaningful on exit: the collapse pivots inside the header, so the top edge falls.
         // Snapped to zero on enter, where the card is strictly top-anchored.
@@ -447,7 +452,7 @@ fun OverlayContent(
 
             Surface(
                 shape = RoundedCornerShape(cornerRadius),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = CardSurfaceAlpha),
+                color = cardColour,
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)

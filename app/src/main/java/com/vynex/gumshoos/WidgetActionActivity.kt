@@ -65,6 +65,15 @@ class WidgetActionActivity : Activity() {
             val info = target.activityInfo
             val name = "${info?.packageName}/${info?.name}"
 
+            // The assistant chain ends in ACTION_ASSIST, which resolves back to us once Gumshoos
+            // holds the assistant role — the icon would reopen the search window it was tapped
+            // from. Skipping ourselves keeps the icon meaning "the other assistant" rather than
+            // becoming a no-op that looks like one.
+            if (info?.packageName == packageName) {
+                EventLog.record("widget-action ${action.id} rung${index + 1} $name is self, skipped")
+                return@forEachIndexed
+            }
+
             val started = runCatching {
                 startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }.isSuccess

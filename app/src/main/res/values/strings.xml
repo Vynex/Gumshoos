@@ -9,4 +9,6 @@
     <string name="widget_small_description">Single-cell button that opens instant search</string>
 
     <string name="search_shortcut_label">Gumshoos Search</string>
+    <!-- Shown as the entry's name in the system's assistant picker. -->
+    <string name="assist_trigger_label">Gumshoos</string>
 </resources>

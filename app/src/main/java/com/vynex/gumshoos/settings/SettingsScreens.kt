@@ -35,6 +35,7 @@ import com.vynex.gumshoos.AppEntry
 import com.vynex.gumshoos.AppMatcher
 import com.vynex.gumshoos.AppPermission
 import com.vynex.gumshoos.AppRepository
+import com.vynex.gumshoos.AssistIntegration
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchMethod
@@ -51,20 +52,27 @@ import java.time.ZoneId
 import java.util.Currency
 import kotlin.math.roundToInt
 
-/** Re-reads a permission whenever the screen comes back to the front, since it's granted elsewhere. */
+/**
+ * Re-reads something whenever the screen comes back to the front, because it is changed elsewhere
+ * — in a system settings screen we sent the user to, and can't get a result back from.
+ */
 @Composable
-private fun rememberPermission(check: () -> Boolean): Boolean {
-    var granted by remember { mutableStateOf(check()) }
+internal fun <T> rememberOnResume(read: () -> T): T {
+    var value by remember { mutableStateOf(read()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) granted = check()
+            if (event == Lifecycle.Event.ON_RESUME) value = read()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    return granted
+    return value
 }
+
+/** Re-reads a permission whenever the screen comes back to the front, since it's granted elsewhere. */
+@Composable
+private fun rememberPermission(check: () -> Boolean): Boolean = rememberOnResume(check)
 
 @Composable
 internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
@@ -512,6 +520,9 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
 
         SettingsDivider()
         SearchIconSettings()
+
+        SettingsDivider()
+        AssistSettings()
     }
 }
 
@@ -581,6 +592,8 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             title = "Launching Gumshoos",
             summary = when {
                 !hasOverlay -> "Overlay permission needed"
+                AssistIntegration.isCurrentAssistant(context) == true ->
+                    "Widget · assistant gesture on"
                 SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
                 else -> "Widget, quick tile and shortcuts"
             },
@@ -645,6 +658,32 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val systemDisabled = GumshoosConfig.systemAnimationScale(context) == 0f
 
     SettingsScaffold(title = "Appearance", onBack = onBack) {
+        SettingsSection("Widgets")
+        CategoryRow(
+            title = "Search bar widget",
+            summary = widgetBarSummary(),
+            onClick = { onOpen(Screen.WidgetBar) },
+        )
+        CategoryRow(
+            title = "1x1 widget",
+            summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
+                if (GumshoosConfig.widgetIconOffsetDp == 0) {
+                    ""
+                } else {
+                    " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
+                },
+            onClick = { onOpen(Screen.WidgetIcon) },
+        )
+
+        SettingsDivider()
+        SettingsSection("Search")
+        CategoryRow(
+            title = "Search window",
+            summary = searchWindowSummary(),
+            onClick = { onOpen(Screen.SearchWindow) },
+        )
+
+        SettingsDivider()
         SettingsSection("Animations")
         SettingsNote(
             "The search window opens in about 20ms; the animation is what makes that legible " +
@@ -678,24 +717,13 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             )
         }
 
-        SettingsDivider()
-        SettingsSection("Widgets")
-        CategoryRow(
-            title = "Search bar widget",
-            summary = widgetBarSummary(),
-            onClick = { onOpen(Screen.WidgetBar) },
-        )
-        CategoryRow(
-            title = "1x1 widget",
-            summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
-                if (GumshoosConfig.widgetIconOffsetDp == 0) {
-                    ""
-                } else {
-                    " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
-                },
-            onClick = { onOpen(Screen.WidgetIcon) },
-        )
     }
+}
+
+private fun searchWindowSummary(): String {
+    val style = GumshoosConfig.searchWindowStyle
+    val colour = if (style.adaptive) "Follows theme" else "Custom colour"
+    return "$colour · ${style.alphaPercent}% · ${style.cornerRadiusDp}dp corners"
 }
 
 /** Leads with the shape, since that is what distinguishes one bar from another at a glance. */
