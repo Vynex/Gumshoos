@@ -141,6 +141,19 @@ class WidgetBarStyleTest {
     }
 
     @Test
+    fun `a fully transparent bar still has a shape to cast a shadow from`() {
+        // At 0% opacity nothing is painted, and Skia derives a shadow from the alpha actually
+        // drawn — so the shadow used to disappear with the fill. The renderer now draws the shape
+        // opaque and clears it back out, which is only correct if the geometry survives; guard the
+        // inputs that would make it degenerate.
+        val invisible = style(alpha = 0, shadow = true, padV = 8)
+        assertEquals(0, WidgetBarMetrics.alphaOf(WidgetBarMetrics.fillColor(white, invisible)))
+        assertEquals(0, WidgetBarMetrics.alphaOf(WidgetBarMetrics.strokeColor(white, invisible)))
+        assertTrue("shadow must not depend on anything being painted", invisible.shadow)
+        assertTrue(WidgetBarMetrics.cornerRadiusPx(invisible.cornerPercent, 60f) > 0f)
+    }
+
+    @Test
     fun `padding defaults keep the bar full width`() {
         // The point of a zero side margin: the bar spans the cell rather than floating inside it.
         assertEquals(0, style().paddingHDp)

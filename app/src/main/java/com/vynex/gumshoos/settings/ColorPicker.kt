@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -71,6 +72,9 @@ object ColorHex {
 private const val GridColumns = 6
 private val SwatchGap = 10.dp
 
+/** Matches the roundness Material gives its own containers, so the card doesn't look foreign. */
+private val CardShape = RoundedCornerShape(16.dp)
+
 /**
  * A collapsible colour picker.
  *
@@ -87,14 +91,24 @@ internal fun ColorPickerAccordion(
 ) {
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
 
-    Column(Modifier.fillMaxWidth()) {
+    // Raised onto its own surface so the palette reads as one object rather than as loose rows in
+    // the list. surfaceVariant rather than a fixed grey, so it sits a step off whatever background
+    // the wallpaper theme has produced instead of fighting it.
+    //
+    // Deliberately not fullBleedRow, unlike every other settings row: the ripple belongs inside the
+    // card's rounded bounds, and a row that draws past them would break the shape it sits in.
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .fullBleedRow()
                 .clickable { onExpandedChange(!expanded) }
                 .fillMaxWidth()
-                .padding(horizontal = SettingsInset, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Text(
                 "Colour",
@@ -123,7 +137,7 @@ internal fun ColorPickerAccordion(
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                 Spacer(Modifier.height(12.dp))
 
