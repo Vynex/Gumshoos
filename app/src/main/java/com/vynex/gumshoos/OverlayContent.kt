@@ -126,16 +126,24 @@ private val TabRowHeight = 48.dp
  * assumption predates this: the 84dp was hardcoded against a 14sp line height in the same way.
  */
 private const val LabelLines = 2
-private const val LabelLineRatio = 1.17f
+
+/**
+ * Leading added to the label's own size, in sp.
+ *
+ * Additive rather than a ratio so the shipped size reproduces the measured 12sp/14sp exactly. A
+ * 1.17 multiplier gave 14.04, which is invisible but means the card's height no longer lands on the
+ * number the geometry was measured at.
+ */
+private const val LabelLeadingSp = 2
 private val CellVerticalPadding = 4.dp
 private val IconLabelGap = 6.dp
 
 private val AppIconSize: Dp get() = GumshoosConfig.overlayIconSize.dp
 private val AppLabelSize get() = GumshoosConfig.overlayLabelSize.sp
-private val AppLabelLineHeight get() = (GumshoosConfig.overlayLabelSize * LabelLineRatio).sp
+private val AppLabelLineHeight get() = (GumshoosConfig.overlayLabelSize + LabelLeadingSp).sp
 private val CellHeight: Dp
     get() = (CellVerticalPadding * 2) + AppIconSize + IconLabelGap +
-        (GumshoosConfig.overlayLabelSize * LabelLineRatio * LabelLines).dp
+        ((GumshoosConfig.overlayLabelSize + LabelLeadingSp) * LabelLines).dp
 private val GridVerticalPadding = 10.dp
 private val GridHorizontalPadding = 8.dp
 private val GridRowSpacing = 8.dp
