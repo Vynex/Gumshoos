@@ -213,7 +213,9 @@ private val SearchUsingHeight =
     DividerHeight + ProviderRowTopSpacing + ProviderLabelHeight +
         ProviderLabelGap + ProviderIconSize + ProviderRowBottomSpacing
 
-private const val GridColumns = 5
+// Columns change the cell's width only. Every height above derives from the row count alone, which
+// is why adding this touched no geometry and left overlaySettledHeight's signature as it was.
+private val GridColumns: Int get() = GumshoosConfig.overlayGridColumns
 private val GridRows: Int get() = GumshoosConfig.overlayGridRows
 val MaxGridEntries: Int get() = GridColumns * GridRows
 

@@ -54,6 +54,7 @@ object GumshoosConfig {
     private const val KEY_WINDOW_ALPHA = "search_window_alpha"
     private const val KEY_WINDOW_CORNER = "search_window_corner"
     private const val KEY_GRID_ROWS = "overlay_grid_rows"
+    private const val KEY_GRID_COLUMNS = "overlay_grid_columns"
     private const val KEY_ICON_SIZE = "overlay_icon_size"
     private const val KEY_LABEL_SIZE = "overlay_label_size"
 
@@ -94,12 +95,20 @@ object GumshoosConfig {
     /**
      * Grid defaults, which are the measured ones the card's geometry was built around.
      *
-     * The icon range is bounded by the five columns: at a card of roughly 360dp of usable width a
-     * cell is about 72dp, so anything past the mid-fifties starts crowding its neighbours.
+     * The icon range was bounded by the column count: at a card of roughly 360dp of usable width
+     * five columns give a cell of about 69dp, so anything past the mid-fifties starts crowding its
+     * neighbours. Six columns narrow that cell to about 57dp, which the top of the icon range no
+     * longer clears — the two settings can be driven into each other and the preview is what shows
+     * it. Rows are the axis that costs height; columns cost none, so the card's geometry and
+     * [overlaySettledHeight] are indifferent to them.
      */
     const val DEFAULT_GRID_ROWS = 2
     const val MIN_GRID_ROWS = 1
     const val MAX_GRID_ROWS = 3
+
+    const val DEFAULT_GRID_COLUMNS = 5
+    const val MIN_GRID_COLUMNS = 4
+    const val MAX_GRID_COLUMNS = 6
 
     const val DEFAULT_ICON_SIZE_DP = 42
     const val MIN_ICON_SIZE_DP = 30
@@ -574,6 +583,9 @@ object GumshoosConfig {
     var overlayGridRows by mutableStateOf(DEFAULT_GRID_ROWS)
         private set
 
+    var overlayGridColumns by mutableStateOf(DEFAULT_GRID_COLUMNS)
+        private set
+
     var overlayIconSize by mutableStateOf(DEFAULT_ICON_SIZE_DP)
         private set
 
@@ -583,6 +595,11 @@ object GumshoosConfig {
     fun setOverlayGridRows(context: Context, rows: Int) {
         overlayGridRows = rows.coerceIn(MIN_GRID_ROWS, MAX_GRID_ROWS)
         prefs(context).edit().putInt(KEY_GRID_ROWS, overlayGridRows).apply()
+    }
+
+    fun setOverlayGridColumns(context: Context, columns: Int) {
+        overlayGridColumns = columns.coerceIn(MIN_GRID_COLUMNS, MAX_GRID_COLUMNS)
+        prefs(context).edit().putInt(KEY_GRID_COLUMNS, overlayGridColumns).apply()
     }
 
     fun setOverlayIconSize(context: Context, dp: Int) {
@@ -602,6 +619,7 @@ object GumshoosConfig {
             remove(KEY_WINDOW_ALPHA)
             remove(KEY_WINDOW_CORNER)
             remove(KEY_GRID_ROWS)
+            remove(KEY_GRID_COLUMNS)
             remove(KEY_ICON_SIZE)
             remove(KEY_LABEL_SIZE)
         }.apply()
@@ -710,6 +728,8 @@ object GumshoosConfig {
             .coerceIn(0, SEARCH_WINDOW_MAX_CORNER_DP)
         overlayGridRows = p.getInt(KEY_GRID_ROWS, DEFAULT_GRID_ROWS)
             .coerceIn(MIN_GRID_ROWS, MAX_GRID_ROWS)
+        overlayGridColumns = p.getInt(KEY_GRID_COLUMNS, DEFAULT_GRID_COLUMNS)
+            .coerceIn(MIN_GRID_COLUMNS, MAX_GRID_COLUMNS)
         overlayIconSize = p.getInt(KEY_ICON_SIZE, DEFAULT_ICON_SIZE_DP)
             .coerceIn(MIN_ICON_SIZE_DP, MAX_ICON_SIZE_DP)
         overlayLabelSize = p.getInt(KEY_LABEL_SIZE, DEFAULT_LABEL_SIZE_SP)

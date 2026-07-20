@@ -74,6 +74,24 @@ class OverlayGeometryTest {
     }
 
     @Test
+    fun `the offered counts contain their own defaults`() {
+        assertTrue(GumshoosConfig.DEFAULT_GRID_ROWS in
+            GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS)
+        assertTrue(GumshoosConfig.DEFAULT_GRID_COLUMNS in
+            GumshoosConfig.MIN_GRID_COLUMNS..GumshoosConfig.MAX_GRID_COLUMNS)
+    }
+
+    @Test
+    fun `the column count is not an input to the card's height`() {
+        // Columns divide the cell's width and nothing else, which is why overlaySettledHeight does
+        // not take them and the preview can size its frame from the row count alone. If a future
+        // change makes the cell's height depend on the column count — shrinking icons to fit six,
+        // say — this signature has to grow and the preview's reservation has to follow it.
+        val (rows, icon, label) = defaults
+        assertEquals(302f, overlaySettledHeight(rows, icon, label).value, 0.01f)
+    }
+
+    @Test
     fun `the largest configuration is what the preview reserves`() {
         val max = overlaySettledHeight(
             GumshoosConfig.MAX_GRID_ROWS,

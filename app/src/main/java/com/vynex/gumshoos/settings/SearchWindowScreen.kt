@@ -156,31 +156,24 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
         SettingsDivider()
         SettingsSection("Apps")
         SettingsNote(
-            "The grid of results. Five to a row, so a larger icon leaves less room for its label.",
+            "The grid of results. More columns means a narrower cell, so a large icon and six " +
+                "columns leave little room for the label.",
         )
 
         Spacer(Modifier.height(4.dp))
-        Text("Rows", style = MaterialTheme.typography.bodyMedium)
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        ) {
-            (GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS).forEach { rows ->
-                val chosen = GumshoosConfig.overlayGridRows == rows
-                OutlinedButton(
-                    onClick = { GumshoosConfig.setOverlayGridRows(context, rows) },
-                    colors = if (chosen) {
-                        ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    } else {
-                        ButtonDefaults.outlinedButtonColors()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text("$rows") }
-            }
-        }
+        CountSelector(
+            label = "Rows",
+            range = GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS,
+            selected = GumshoosConfig.overlayGridRows,
+            onSelect = { GumshoosConfig.setOverlayGridRows(context, it) },
+        )
+
+        CountSelector(
+            label = "Columns",
+            range = GumshoosConfig.MIN_GRID_COLUMNS..GumshoosConfig.MAX_GRID_COLUMNS,
+            selected = GumshoosConfig.overlayGridColumns,
+            onSelect = { GumshoosConfig.setOverlayGridColumns(context, it) },
+        )
 
         Spacer(Modifier.height(8.dp))
         StepSlider(
@@ -209,6 +202,42 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             onClick = { GumshoosConfig.resetSearchWindow(context) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Reset to defaults") }
+    }
+}
+
+/**
+ * A labelled row of exclusive count buttons, as rows and columns both want.
+ *
+ * The ranges are small enough that buttons beat a slider: every option is visible and one tap away,
+ * and the preview above updates as each is pressed.
+ */
+@Composable
+private fun CountSelector(
+    label: String,
+    range: IntRange,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Text(label, style = MaterialTheme.typography.bodyMedium)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    ) {
+        range.forEach { count ->
+            val chosen = selected == count
+            OutlinedButton(
+                onClick = { onSelect(count) },
+                colors = if (chosen) {
+                    ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                } else {
+                    ButtonDefaults.outlinedButtonColors()
+                },
+                modifier = Modifier.weight(1f),
+            ) { Text("$count") }
+        }
     }
 }
 
