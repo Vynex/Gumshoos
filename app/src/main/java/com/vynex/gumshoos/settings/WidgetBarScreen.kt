@@ -88,11 +88,61 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
 
     fun push() = SearchWidgetProvider.refreshAll(context)
 
+    var paletteOpen by remember { mutableStateOf(false) }
+
     SettingsScaffoldWithHeader(
         title = "Search bar widget",
         onBack = onBack,
         header = { WidgetBarPreview(style) },
     ) {
+        SettingsSection("Fill")
+        SettingsSwitchRow(
+            title = "Outline only",
+            description = "Draws just the border, in the fill colour, with nothing behind it.",
+            checked = style.wireframe,
+            onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
+        )
+        OpacitySlider(onChanged = ::push)
+
+        SettingsSwitchRow(
+            title = "Follow system colours",
+            description = "Uses your wallpaper's surface tone, and flips with light and dark mode.",
+            checked = style.fill is WidgetBarFill.Adaptive,
+            onCheckedChange = { adaptive ->
+                GumshoosConfig.setWidgetBarFill(
+                    context,
+                    if (adaptive) {
+                        WidgetBarFill.Adaptive
+                    } else {
+                        // Seed from whatever adaptive currently resolves to, so switching to a
+                        // fixed colour starts from what's on screen rather than an arbitrary one.
+                        WidgetBarFill.Solid(WidgetBarRenderer.resolveFill(context, style.fill))
+                    },
+                )
+                paletteOpen = !adaptive
+                push()
+            },
+        )
+
+        AnimatedVisibility(
+            visible = style.fill is WidgetBarFill.Solid,
+            // Height only. The default enter also scales in from the top-left corner, which reads
+            // as the picker flying in from off-screen rather than the row opening up.
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            ColorPickerAccordion(
+                selected = (style.fill as? WidgetBarFill.Solid)?.color,
+                expanded = paletteOpen,
+                onExpandedChange = { paletteOpen = it },
+                onPick = { picked ->
+                    GumshoosConfig.setWidgetBarFill(context, WidgetBarFill.Solid(picked))
+                    push()
+                },
+            )
+        }
+
+        SettingsDivider()
         SettingsSection("Shape")
         CornerSlider(onChanged = ::push)
         PaddingSlider(
@@ -118,53 +168,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
             checked = style.shadow,
             onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
         )
-
-        SettingsDivider()
-        SettingsSection("Fill")
-        SettingsSwitchRow(
-            title = "Outline only",
-            description = "Draws just the border, in the fill colour, with nothing behind it.",
-            checked = style.wireframe,
-            onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
-        )
-        OpacitySlider(onChanged = ::push)
-
-        SettingsSwitchRow(
-            title = "Follow system colours",
-            description = "Uses your wallpaper's surface tone, and flips with light and dark mode.",
-            checked = style.fill is WidgetBarFill.Adaptive,
-            onCheckedChange = { adaptive ->
-                GumshoosConfig.setWidgetBarFill(
-                    context,
-                    if (adaptive) {
-                        WidgetBarFill.Adaptive
-                    } else {
-                        // Seed from whatever adaptive currently resolves to, so switching to a
-                        // fixed colour starts from what's on screen rather than an arbitrary one.
-                        WidgetBarFill.Solid(WidgetBarRenderer.resolveFill(context, style.fill))
-                    },
-                )
-                push()
-            },
-        )
-
-        AnimatedVisibility(
-            visible = style.fill is WidgetBarFill.Solid,
-            // Height only. The default enter also scales in from the top-left corner, which reads
-            // as the picker flying in from off-screen rather than the row opening up.
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
-            Column {
-                ColorPickerSections(
-                    selected = (style.fill as? WidgetBarFill.Solid)?.color,
-                    onPick = {
-                        GumshoosConfig.setWidgetBarFill(context, WidgetBarFill.Solid(it))
-                        push()
-                    },
-                )
-            }
-        }
 
         SettingsDivider()
         SettingsSection("Contents")
