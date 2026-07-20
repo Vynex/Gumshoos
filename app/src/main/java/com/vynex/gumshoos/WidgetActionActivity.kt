@@ -107,18 +107,23 @@ class WidgetActionActivity : Activity() {
             Intent(RecognizerIntent.ACTION_WEB_SEARCH),
         )
 
-        // The deeplink leads because it is the only entry point built to be invoked from outside:
-        // it resolves to an exported com.google.android.apps.search.lens.deeplink.LensDeeplink.
+        // Ordered by what *cannot* fail silently, rather than by what looks purpose-built.
         //
-        // LensExportedActivity is last on purpose, and is why this failed the first time. It is
-        // exported and it does start — so startActivity reports success — but nothing appears. At
-        // the head of the chain it swallowed every better rung behind it, exactly as WEB_SEARCH did
-        // for voice. There is no web fallback: lens.google.com resolves to a browser, and a browser
-        // is not what the icon promises.
+        // Twice now the chain has been led by something that resolves, starts, reports success and
+        // shows nothing — LensExportedActivity, then the deeplink — each hiding every rung behind
+        // it. Nothing in the API distinguishes that from a real launch, so the order can't be
+        // reasoned out from names or from what resolves.
+        //
+        // A launcher intent can't fail that way. It is the app's own MAIN/LAUNCHER activity, the
+        // thing tapping the icon runs, and Lens is installed here as a standalone package. So it
+        // leads, and the entry points that can start-and-vanish come after it.
+        //
+        // No web fallback: lens.google.com resolves to a browser, and a browser is not what the
+        // icon promises.
         WidgetAction.LENS -> listOfNotNull(
+            launcherIntentFor(this, LENS_PACKAGE),
             Intent(Intent.ACTION_VIEW, "googleapp://lens".toUri()).setPackage(GSA_PACKAGE),
             Intent(Intent.ACTION_VIEW, "google://lens".toUri()).setPackage(GSA_PACKAGE),
-            launcherIntentFor(this, LENS_PACKAGE),
             Intent(Intent.ACTION_VIEW).setClassName(GSA_PACKAGE, LENS_EXPORTED_ACTIVITY),
         )
     }
