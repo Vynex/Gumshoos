@@ -99,6 +99,19 @@
         </intent>
         <package android:name="com.google.android.googlequicksearchbox" />
         <package android:name="com.google.android.apps.bard" />
+
+        <!--
+          Inspected by the Lens probe in Advanced. Declared by name because package visibility
+          filtering makes an invisible app indistinguishable from an absent one — the probe would
+          report "not installed" for something sitting right there, which is the wrong answer to
+          the exact question it is being asked.
+        -->
+        <package android:name="com.google.ar.lens" />
+        <package android:name="com.google.android.apps.photos" />
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="image/*" />
+        </intent>
     </queries>
 
     <application

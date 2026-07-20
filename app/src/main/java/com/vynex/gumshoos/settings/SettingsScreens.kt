@@ -604,17 +604,22 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
         EventTrace()
 
         SettingsDivider()
-        SettingsSection("Voice search targets")
+        SettingsSection("Google entry points")
         SettingsNote(
-            "Lists what the Google app exposes for voice search on this device, into the trace " +
-                "above. The intent that ought to be right lands on a hands-free activity that " +
-                "hands off to the assistant, so the working entry point has to be read off the " +
-                "device rather than reasoned about.",
+            "Lists what the Google apps expose for voice search and Lens on this device, into the " +
+                "trace above. Neither has a published intent, and the ones that look right don't " +
+                "behave as their names suggest — voice search turned out to funnel five different " +
+                "actions into the same assistant hand-off. These read the answer off the device " +
+                "instead of guessing at component names.",
         )
         OutlinedButton(
             onClick = { WidgetActionActivity.probeVoiceTargets(context) },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Probe voice search targets") }
+        OutlinedButton(
+            onClick = { WidgetActionActivity.probeLensTargets(context) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Probe Lens targets") }
 
         SettingsDivider()
         SettingsSection("Compare launch paths")
