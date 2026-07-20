@@ -186,8 +186,22 @@ sealed interface, the `when`, and a `CategoryRow`). Shared pieces live in `Setti
 `interactive = false`; the widget bar preview calls the same `WidgetBarRenderer.toBitmap` the widget
 does. A hand-built imitation agrees on the day it is written and drifts on the first change nobody
 thinks to mirror — which is exactly what happened before the search window preview was replaced.
-`interactive = false` suppresses focus, keyboard, back interception, dismissal and animation; nothing
-about how the overlay *draws* depends on it, which is what makes the preview trustworthy.
+`interactive = false` suppresses focus, keyboard, back interception, dismissal and animation; almost
+nothing about how the overlay *draws* depends on it, which is what makes the preview trustworthy.
+
+The single exception is the IME corner swap, and it earns it. The overlay window does not resize
+under the keyboard — it is `MATCH_PARENT` with no `softInputMode`, so the IME is just another window
+on top — and a tall card runs on behind it. That is intended: the card reads as a sheet tucked under
+the keyboard and its content returns whole when the keyboard goes down. The corners are the part
+that doesn't survive, clipped part-way through their arc, which reads as damage rather than as
+continuation. So the bottom corners square off while `cardTop + height` exceeds `maxHeight -
+imeHeight`, and the card meets the keyboard on a straight edge.
+
+That comparison is only valid where the composable *is* the window. In the preview it is a ~302dp
+strip in a scrolling list, on a screen whose colour picker has a hex field: raising that keyboard
+would convince the preview its card runs past the bottom and square off corners nothing is covering.
+Mixing a window-level inset with a local constraint is the trap; anything else needing a window
+property needs the same guard.
 
 Adaptive-versus-chosen colour is stored as **two independent values**, never as one sealed type whose
 colour lives only in its `Solid` case. That form discards the pick the moment adaptive is switched

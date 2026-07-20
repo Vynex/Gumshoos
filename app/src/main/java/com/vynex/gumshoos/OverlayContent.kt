@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
@@ -80,6 +82,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -617,18 +620,54 @@ fun OverlayContent(
         ) {
             val settledCardWidth = maxWidth - (CardSideMargin * 2)
 
+            // The keyboard is its own window drawn over this one — nothing here resizes underneath
+            // it, and no softInputMode is set — so a card taller than the space above it carries on
+            // behind it, bottom corners included. The card is left at full height on purpose: it is
+            // meant to read as a sheet tucked under the keyboard, and the content below returns
+            // whole the moment the keyboard goes down.
+            //
+            // What does not survive that is the corners. The card's bottom edge lands just below the
+            // IME's top edge, so each corner gets clipped part-way through its arc, and a partial
+            // curve reads as damage rather than as something continuing underneath. Squaring them
+            // while the card overruns gives a clean straight edge meeting the keyboard instead.
+            //
+            // The guard on `interactive` is the one thing about how the overlay draws that depends
+            // on it, and it has to. The IME inset is a property of the *window*, while maxHeight is
+            // whatever box this composable was handed: in the overlay they are the same, but the
+            // preview is a ~302dp strip inside the settings list. That screen hosts the colour
+            // picker's hex field, so opening it raises a keyboard that would convince the preview
+            // its card runs past the bottom and square off corners nothing is covering.
+            val requestedHeight = (cardHeight + heightDelta).coerceAtLeast(0.dp)
+            val cardTop = CardTopMargin + topDrift
+            val runsPastBottom = if (!interactive) {
+                false
+            } else {
+                val imeHeight =
+                    with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
+                cardTop + requestedHeight > maxHeight - imeHeight
+            }
+
             Surface(
-                shape = RoundedCornerShape(cornerRadius),
+                shape = if (runsPastBottom) {
+                    RoundedCornerShape(
+                        topStart = cornerRadius,
+                        topEnd = cornerRadius,
+                        bottomEnd = 0.dp,
+                        bottomStart = 0.dp,
+                    )
+                } else {
+                    RoundedCornerShape(cornerRadius)
+                },
                 color = cardColour,
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = CardTopMargin + topDrift)
+                    .padding(top = cardTop)
                     .width(settledCardWidth * widthFraction)
                     // Subtracting the collapse keeps the card tight to its content while searching;
                     // the tab row's own height animates in step, so the grid slides up rather than
                     // the card growing a gap at the bottom.
-                    .height((cardHeight + heightDelta).coerceAtLeast(0.dp))
+                    .height(requestedHeight)
                     .alpha(cardAlpha)
                     .clickable(
                         indication = null,
