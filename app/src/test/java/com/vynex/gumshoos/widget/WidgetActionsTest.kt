@@ -45,8 +45,8 @@ class WidgetActionsTest {
 
     @Test
     fun `brand marks are never tinted`() {
-        // Tinting a multicolour mark flattens it to one tone. Both shipped icons are Google brand
-        // artwork — the voice one is the four-colour mic, not a plain microphone glyph.
+        // Tinting a multicolour mark flattens it to one tone. All three shipped icons are Google
+        // brand artwork — the voice one is the four-colour mic, not a plain microphone glyph.
         WidgetAction.entries.forEach { action ->
             assertTrue("${action.id} would be flattened by a tint", !action.tintable)
         }
@@ -97,26 +97,24 @@ class WidgetActionsTest {
 
     @Test
     fun `a configured order is applied`() {
-        assertEquals(listOf("voice", "assistant"), ordered(listOf("voice", "assistant")))
+        assertEquals(listOf("lens", "voice", "assistant"), ordered(listOf("lens", "voice", "assistant")))
     }
 
     @Test
     fun `an action missing from the order sorts to the end`() {
         // Same rule as the search providers: an action added in a later version lands at the end of
         // an order saved before it existed, rather than being dropped for not being listed.
-        assertEquals(listOf("voice", "assistant"), ordered(listOf("voice")))
+        assertEquals(listOf("voice", "assistant", "lens"), ordered(listOf("voice", "assistant")))
     }
 
     @Test
-    fun `an order naming a retired action is ignored`() {
-        // "lens" was shipped and then removed. A saved order still names it, and must not disturb
-        // the actions that remain.
-        assertEquals(listOf("voice", "assistant"), ordered(listOf("lens", "voice", "assistant")))
-    }
-
-    @Test
-    fun `a retired id resolves to nothing`() {
-        assertNull(WidgetAction.fromId("lens"))
+    fun `an order naming an action that no longer exists is ignored`() {
+        // Ids come out of saved preferences, so the list can name something a later build dropped.
+        // It must not disturb the actions that remain.
+        assertEquals(
+            WidgetAction.entries.map { it.id },
+            ordered(listOf("gone") + WidgetAction.entries.map { it.id }),
+        )
     }
 
     @Test

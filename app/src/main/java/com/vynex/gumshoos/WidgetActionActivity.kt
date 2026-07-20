@@ -81,9 +81,9 @@ class WidgetActionActivity : Activity() {
     /**
      * Ordered fallbacks per action, strongest first.
      *
-     * Lens used to be here and was removed: Google publishes no intent for it, and every component
-     * name launchers are known to use either failed to resolve or started something that closed
-     * itself immediately. A tap that silently does nothing is worse than no icon.
+     * Every order here came from probing a real device, not from what the component names suggest.
+     * Both Lens and voice search were wrong twice over precisely because a plausible-looking rung
+     * reported success while doing nothing useful, hiding the working one behind it.
      */
     private fun chainFor(action: WidgetAction): List<Intent> = when (action) {
         WidgetAction.ASSISTANT -> listOfNotNull(
@@ -106,6 +106,21 @@ class WidgetActionActivity : Activity() {
             Intent(RecognizerIntent.ACTION_WEB_SEARCH).setPackage(GSA_PACKAGE),
             Intent(RecognizerIntent.ACTION_WEB_SEARCH),
         )
+
+        // The deeplink leads because it is the only entry point built to be invoked from outside:
+        // it resolves to an exported com.google.android.apps.search.lens.deeplink.LensDeeplink.
+        //
+        // LensExportedActivity is last on purpose, and is why this failed the first time. It is
+        // exported and it does start — so startActivity reports success — but nothing appears. At
+        // the head of the chain it swallowed every better rung behind it, exactly as WEB_SEARCH did
+        // for voice. There is no web fallback: lens.google.com resolves to a browser, and a browser
+        // is not what the icon promises.
+        WidgetAction.LENS -> listOfNotNull(
+            Intent(Intent.ACTION_VIEW, "googleapp://lens".toUri()).setPackage(GSA_PACKAGE),
+            Intent(Intent.ACTION_VIEW, "google://lens".toUri()).setPackage(GSA_PACKAGE),
+            launcherIntentFor(this, LENS_PACKAGE),
+            Intent(Intent.ACTION_VIEW).setClassName(GSA_PACKAGE, LENS_EXPORTED_ACTIVITY),
+        )
     }
 
     private fun launcherIntentFor(context: Context, packageName: String): Intent? =
@@ -118,6 +133,8 @@ class WidgetActionActivity : Activity() {
 
         /** Lens has had a standalone app, and Photos hosts an entry point of its own. */
         private const val LENS_PACKAGE = "com.google.ar.lens"
+        private const val LENS_EXPORTED_ACTIVITY =
+            "com.google.android.apps.search.lens.LensExportedActivity"
         private const val PHOTOS_PACKAGE = "com.google.android.apps.photos"
 
         /**

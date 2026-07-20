@@ -39,12 +39,15 @@ enum class WidgetAction(
         tintable = false,
         description = "Speak a query, get Google results",
     ),
+    LENS(
+        id = "lens",
+        label = "Lens",
+        icon = R.drawable.ic_provider_lens,
+        requestCode = 112,
+        tintable = false,
+        description = "Google Lens camera search",
+    ),
     ;
-
-    // Lens is deliberately absent. Google publishes no intent for it, and every component name
-    // launchers are known to use either failed to resolve or started something that closed itself
-    // immediately. Request code 112 stays reserved rather than reused, so a stale PendingIntent
-    // from a build that had Lens can't be handed to whatever takes that slot next.
 
     companion object {
         /**
