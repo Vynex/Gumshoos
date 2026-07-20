@@ -73,7 +73,7 @@ private const val ICON_STEP_DP = 2
  * less below reads the way it actually appears rather than as a card floating in a box.
  */
 private val PreviewTopSlack = 10.dp
-private val PreviewBottomSlack = 6.dp
+private val PreviewBottomSlack = 2.dp
 
 private val NominalWidth = 380.dp
 private val NominalHeight = 330.dp

@@ -300,6 +300,28 @@ private val WidthEnterEasing = LinearEasing
 /** The collapse decelerates; 1-(1-t)^2 fitted at rmse 0.027. */
 private val ExitEasing = LinearOutSlowInEasing
 
+/**
+ * [animateDpAsState], but immediate when animation is off.
+ *
+ * Even with `snap()`, animateDpAsState settles a frame after its target changes. That is invisible
+ * for a value that only moves as the window opens, and very visible for one that moves while it is
+ * on screen: the grid's height changes with the row count, and a single frame at the old height
+ * offsets every icon under a header that is already correct.
+ */
+@Composable
+private fun sectionHeight(target: Dp, animate: Boolean, label: String): Dp {
+    val animated by animateDpAsState(
+        targetValue = target,
+        animationSpec = if (animate) {
+            tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
+        } else {
+            snap()
+        },
+        label = label,
+    )
+    return if (animate) animated else target
+}
+
 @Composable
 fun OverlayContent(
     visible: Boolean,
@@ -474,42 +496,30 @@ fun OverlayContent(
         // search bar to whatever did match. The divider belongs to this block rather than sitting
         // above it, or it would be left stranded when the grid disappears.
         var hasAppResults by remember { mutableStateOf(true) }
-        val gridSectionHeight by animateDpAsState(
-            targetValue = if (hasAppResults) DividerHeight + GridContentHeight else 0.dp,
-            animationSpec = if (animate) {
-                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
-            } else {
-                snap()
-            },
+        val gridSectionHeight = sectionHeight(
+            target = if (hasAppResults) DividerHeight + GridContentHeight else 0.dp,
+            animate = animate,
             label = "gridHeight",
         )
         val gridCollapse = (DividerHeight + GridContentHeight) - gridSectionHeight
 
         var hasAnswer by remember { mutableStateOf(false) }
-        val answerHeight by animateDpAsState(
-            targetValue = if (hasAnswer) AnswerSectionHeight else 0.dp,
-            animationSpec = if (animate) {
-                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
-            } else {
-                snap()
-            },
+        val answerHeight = sectionHeight(
+            target = if (hasAnswer) AnswerSectionHeight else 0.dp,
+            animate = animate,
             label = "answerHeight",
         )
 
         // Grows and shrinks with the number of matching contacts, so the card stays tight to its
         // content rather than reserving space for rows that aren't there.
         var contactRows by remember { mutableStateOf(0) }
-        val contactsHeight by animateDpAsState(
-            targetValue = if (contactRows == 0) {
+        val contactsHeight = sectionHeight(
+            target = if (contactRows == 0) {
                 0.dp
             } else {
                 ContactsHeaderHeight + (ContactRowHeight * contactRows) + 10.dp
             },
-            animationSpec = if (animate) {
-                tween(TabCollapseMillis, easing = LinearOutSlowInEasing)
-            } else {
-                snap()
-            },
+            animate = animate,
             label = "contactsHeight",
         )
 
