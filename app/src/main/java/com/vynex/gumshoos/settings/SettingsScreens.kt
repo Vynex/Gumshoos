@@ -665,7 +665,7 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             onClick = { onOpen(Screen.WidgetBar) },
         )
         CategoryRow(
-            title = "1x1 widget",
+            title = "App icon widget",
             summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
                 if (GumshoosConfig.widgetIconOffsetDp == 0) {
                     ""

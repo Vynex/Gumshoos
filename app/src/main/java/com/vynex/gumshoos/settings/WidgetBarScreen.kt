@@ -71,7 +71,7 @@ private const val PreviewMaxDensity = 2f
  *
  * Every change writes config and immediately re-pushes the placed widgets, so the home screen and
  * this screen stay in step — the setters deliberately don't do that themselves, matching how the
- * 1x1's tuning works.
+ * app icon widget's tuning works.
  */
 @Composable
 internal fun WidgetBarScreen(onBack: () -> Unit) {

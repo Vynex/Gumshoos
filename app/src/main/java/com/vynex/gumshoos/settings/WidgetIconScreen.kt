@@ -25,7 +25,7 @@ import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchWidgetSmallProvider
 import kotlin.math.roundToInt
 
-/** Fallback cell size, used when no 1x1 is placed to measure. Close to a typical launcher cell. */
+/** Fallback cell size, used when none is placed to measure. Close to a typical launcher cell. */
 private val DefaultCellSize = 88.dp
 private val MinCellSize = 64.dp
 private val MaxCellSize = 140.dp
@@ -46,7 +46,7 @@ internal fun WidgetIconScreen(onBack: () -> Unit) {
     fun push() = SearchWidgetSmallProvider.refreshAll(context)
 
     SettingsScaffoldWithHeader(
-        title = "1x1 widget",
+        title = "App icon widget",
         onBack = onBack,
         header = { WidgetIconPreview(size.roundToInt(), offset.roundToInt()) },
     ) {

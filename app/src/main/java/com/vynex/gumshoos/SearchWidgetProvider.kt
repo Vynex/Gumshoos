@@ -109,7 +109,7 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
  * Re-pushes every placed widget of one provider, so config changes show up without re-adding it.
  *
  * Free function rather than an inherited companion — companions aren't inheritable, which is why
- * the 1x1 previously had this and the bar had nothing at all.
+ * the app icon widget previously had this and the bar had nothing at all.
  */
 private fun refreshProvider(context: Context, provider: SearchWidgetProviderBase, type: Class<*>) {
     val manager = AppWidgetManager.getInstance(context) ?: return
@@ -238,7 +238,7 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
 class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
     override val layoutRes = R.layout.widget_search_icon
     override val requestCode = 101
-    override val sourceTag = "widget-1x1"
+    override val sourceTag = "widget-app-icon"
 
     /**
      * Size and vertical position come from config rather than the layout, so they can be tuned from
@@ -274,7 +274,7 @@ class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
     }
 
     companion object {
-        /** Re-pushes every placed 1x1 widget so config changes show up without re-adding it. */
+        /** Re-pushes every placed app icon widget so config changes show up without re-adding it. */
         fun refreshAll(context: Context) {
             refreshProvider(
                 context, SearchWidgetSmallProvider(), SearchWidgetSmallProvider::class.java,

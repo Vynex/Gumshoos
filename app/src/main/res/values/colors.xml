@@ -9,7 +9,7 @@
     <color name="white">#FFFFFFFF</color>
 
     <!--
-      1x1 widget, styled to read as an app icon rather than a widget: opaque, not translucent.
+      App icon widget, styled to read as an app icon rather than a widget: opaque, not translucent.
       Grouped here because how convincingly this passes for an icon depends on the launcher and
       wallpaper, so these are expected to be tuned and eventually surfaced in settings.
     -->

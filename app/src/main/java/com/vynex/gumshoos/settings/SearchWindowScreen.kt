@@ -288,10 +288,15 @@ private fun SearchWindowPreview() {
         if (!AppRepository.loaded) runCatching { AppRepository.load(context) }
     }
 
+    // Sized to the card as configured, not to the largest it could be. Reserving for the maximum
+    // held the frame still while a slider was dragged, at the cost of dead wallpaper below the
+    // window at every setting short of the maximum — 44dp of it at the defaults. The frame now
+    // tracks the card, which does mean the controls below shift while an icon or label slider is
+    // dragged; that reads as the window resizing, which is what is actually happening.
     val stripHeight = overlaySettledHeight(
         rows = GumshoosConfig.overlayGridRows,
-        iconDp = GumshoosConfig.MAX_ICON_SIZE_DP,
-        labelSp = GumshoosConfig.MAX_LABEL_SIZE_SP,
+        iconDp = GumshoosConfig.overlayIconSize,
+        labelSp = GumshoosConfig.overlayLabelSize,
     ) + PreviewTopSlack + PreviewBottomSlack
 
     WallpaperBackdrop(

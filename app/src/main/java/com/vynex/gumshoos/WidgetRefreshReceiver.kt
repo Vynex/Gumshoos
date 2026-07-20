@@ -43,5 +43,5 @@ fun refreshAllWidgets(context: Context) {
     runCatching { SearchWidgetProvider.refreshAll(context) }
         .onFailure { EventLog.record("bar widget refresh FAILED ${it.javaClass.simpleName}") }
     runCatching { SearchWidgetSmallProvider.refreshAll(context) }
-        .onFailure { EventLog.record("1x1 widget refresh FAILED ${it.javaClass.simpleName}") }
+        .onFailure { EventLog.record("app icon widget refresh FAILED ${it.javaClass.simpleName}") }
 }

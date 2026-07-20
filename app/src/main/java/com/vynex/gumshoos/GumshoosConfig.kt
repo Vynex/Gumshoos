@@ -119,7 +119,7 @@ object GumshoosConfig {
     var newUpdatedWindowHours by mutableStateOf(DEFAULT_NEW_UPDATED_WINDOW_HOURS)
         private set
 
-    /** Drawn diameter of the 1x1 widget's icon, in dp. */
+    /** Drawn diameter of the app icon widget's icon, in dp. */
     var widgetIconSizeDp by mutableStateOf(DEFAULT_WIDGET_ICON_SIZE_DP)
         private set
 

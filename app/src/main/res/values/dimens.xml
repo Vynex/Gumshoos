@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Drawn size of the 1x1 widget's icon. Deliberately a fixed size centred in the cell rather than
+      Drawn size of the app icon widget's icon. Deliberately a fixed size centred in the cell rather than
       match_parent: launcher cells are much larger than an app icon, so filling the cell is exactly
       what made the widget read as oversized next to real icons. Overridden at runtime from GumshoosConfig, so this is
-      only the initial value — tune it from the app's 1x1 widget section instead.
+      only the initial value — tune it from the app's App icon widget screen instead.
     -->
     <dimen name="widget_icon_size">46dp</dimen>
 
