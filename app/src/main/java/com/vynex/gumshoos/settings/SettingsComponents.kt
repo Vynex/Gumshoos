@@ -116,6 +116,51 @@ internal fun SettingsScaffold(
 }
 
 /**
+ * A scaffold with something pinned between the bar and the scrolling content.
+ *
+ * For screens where the [header] is what the settings below are acting on — a preview that scrolls
+ * away is useless the moment you reach the control you wanted to watch it react to.
+ *
+ * The header sits outside the scroll and takes no horizontal inset of its own, so it can run edge
+ * to edge; [content] keeps the same padding every other settings list uses.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsScaffoldWithHeader(
+    title: String,
+    onBack: () -> Unit,
+    header: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            header()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = SettingsInset, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                content()
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+/**
  * A category on the home list. The summary carries the current state so the common case — checking
  * what something is set to — needs no tap.
  */

@@ -67,6 +67,14 @@ private val MaxPreviewHeight = 140.dp
 private const val PreviewMaxDensity = 2f
 
 /**
+ * Wallpaper visible around the bar in the preview.
+ *
+ * Some is the point: a bar drawn edge to edge against the backdrop shows nothing about how it sits
+ * on a home screen, which is what the margin and opacity settings are for.
+ */
+private val PreviewPadding = 16.dp
+
+/**
  * Styling for the wide search bar.
  *
  * Every change writes config and immediately re-pushes the placed widgets, so the home screen and
@@ -80,10 +88,11 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
 
     fun push() = SearchWidgetProvider.refreshAll(context)
 
-    SettingsScaffold(title = "Search bar widget", onBack = onBack) {
-        WidgetBarPreview(style)
-
-        SettingsDivider()
+    SettingsScaffoldWithHeader(
+        title = "Search bar widget",
+        onBack = onBack,
+        header = { WidgetBarPreview(style) },
+    ) {
         SettingsSection("Shape")
         CornerSlider(onChanged = ::push)
         PaddingSlider(
@@ -232,13 +241,16 @@ private fun WidgetBarPreview(style: WidgetBarStyle) {
         WidgetAction::id,
     )
 
-    Spacer(Modifier.height(8.dp))
-    SettingsNote("Preview")
-    Spacer(Modifier.height(6.dp))
-
+    WallpaperBackdrop(
+        Modifier
+            .fillMaxWidth()
+            .height(previewHeight + PreviewPadding * 2),
+    ) {
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
+            .align(Alignment.Center)
+            .padding(horizontal = PreviewPadding)
             .height(previewHeight),
     ) {
         // Rasterised at a capped density, then scaled back up to fill.
@@ -296,6 +308,7 @@ private fun WidgetBarPreview(style: WidgetBarStyle) {
                 )
             }
         }
+    }
     }
 }
 
