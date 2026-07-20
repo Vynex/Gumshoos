@@ -64,7 +64,7 @@ enum class WidgetAction(
          * An id stored by an older build that no longer exists here — "lens" — simply doesn't
          * resolve and is dropped, so no migration is needed for anyone who had it switched on.
          */
-        val DEFAULT_ENABLED: Set<String> = setOf(VOICE.id)
+        val DEFAULT_ENABLED: Set<String> = setOf(VOICE.id, LENS.id)
 
         fun fromId(id: String?): WidgetAction? = entries.firstOrNull { it.id == id }
 
