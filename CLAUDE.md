@@ -61,6 +61,19 @@ window gets none of an Activity's plumbing for free: all four ViewTree owners ar
 State resets when the card is **fully hidden**, via a `resetToken` the service bumps after the exit
 animation. Resetting at either end of an animation is visible as a stutter.
 
+The card's geometry is no longer measured constants: rows, icon size and label size are settings, and
+cell/grid/card heights derive from them. `overlaySettledHeight(rows, icon, label)` is a pure function
+for that reason — the settings preview asks it how tall the tallest card would be without mutating
+anything, and `OverlayGeometryTest` pins the shipped defaults to the measured 84dp cell and 302dp
+card. It has drifted once already, by 0.08dp, from a line-height ratio that looked harmless.
+
+**Compose animation values settle one frame after their target changes**, `snap()` included. That is
+invisible for something that only moves as the window opens, and very visible for something that
+moves while it is on screen: changing the row count left the grid a frame at its old height under a
+header that was already correct. So when `animate` is false, read targets **directly** rather than
+through the `Transition` or `animateDpAsState` — see the `sectionHeight` helper. This matters in the
+real window too, for anyone who has animations off system-wide.
+
 ## Matching
 
 `AppMatcher` is pure logic and the most heavily tested code here. It indexes a label once into an
@@ -71,6 +84,16 @@ several (`ß` → `ss`), so highlights drift without them.
 
 Tiers, strongest first: exact label, exact word initials, exact capitals, label prefix, initials
 prefix, word-boundary substring, substring, fuzzy subsequence. Recency breaks ties.
+
+Tiers 2–3 and 5–8 can be switched off, and an app can carry aliases (custom names, comma separated).
+Two rules there are load-bearing and were both got wrong first:
+
+- A disabled tier is **skipped**, not scored to zero. Zeroing keeps the match at that tier and still
+  returns it ahead of a weaker tier that is enabled.
+- An alias wins only on a strictly **stronger tier**, never on score. Score carries the brevity
+  bonus and an alias is nearly always shorter, so comparing on it let `insta` beat Instagram at the
+  same tier and cost the cell its highlight. When an alias does win the row draws unhighlighted —
+  the label holds none of the matched characters, so emboldening any would be a lie.
 
 ## Instant answers (`answers/`)
 
@@ -87,6 +110,76 @@ It also keeps providers on plain JVM types. **`android.icu` is unavailable to un
 why `MeasurementSystem` is a local enum rather than ICU's, and why `AnswerContextFactory` — the only
 Android-dependent piece — lives in its own file.
 
+## Widgets
+
+Two providers share `SearchWidgetProviderBase`: the wide search bar and the app icon widget.
+`RemoteViews` is not Compose and its constraints are unforgiving. Each of these cost a shipped bug:
+
+- **Only classes annotated `@RemoteViews.RemoteView` inflate.** `View` and `Space` are *not* among
+  them, despite both looking like obvious spacers. A rejected class fails the whole layout in the
+  *launcher's* process — the user sees "An error occurred when loading widget", nothing reaches our
+  logcat, and no `runCatching` of ours can see it. `WidgetLayoutTest` guards the permitted set, and
+  `res/layout` is a declared test input in `build.gradle.kts` so the check isn't cached away on
+  exactly the change it exists to catch.
+- **Resource ids are assigned alphabetically and shift when you add one.** The launcher caches
+  RemoteViews and records actions by *numeric* id, so adding an id to a widget layout silently
+  breaks widgets already on the home screen while a freshly added one works. `WidgetRefreshReceiver`
+  re-pushes everything on `MY_PACKAGE_REPLACED` — one of the few broadcasts still allowed a manifest
+  receiver. It must not warm the service: that would be a background FGS start.
+- **No elevation, no `setBackgroundDrawable`, no shadow.** The bar's background is therefore a
+  bitmap drawn on a *software* canvas, since `Paint.setShadowLayer` is the only remotable route to a
+  drop shadow. Skia derives that shadow from the alpha actually drawn, so a transparent paint casts
+  nothing — the shape is drawn opaque and then cleared back out with a `CLEAR` xfermode, leaving the
+  part that fell outside it.
+- **Updates are per widget id.** The bar is resizable, so two placed copies differ in width and one
+  shared bitmap stretched across both gives visibly elliptical corners.
+
+Action icons go through `WidgetActionActivity` because a PendingIntent holds exactly one Intent and
+these destinations need a fallback chain. Request codes are written out per action, never derived
+from `ordinal`: PendingIntent equality ignores extras, so an ordinal would reshuffle live intents the
+day someone reorders the enum.
+
+### Launching Google's own features
+
+**A successful `startActivity` proves nothing.** Several Google components are exported, resolve
+cleanly, start, return success — and show nothing. At the head of a fallback chain each one hides
+every working rung behind it. This cost four iterations on Lens and three on voice search, every one
+of them an attempt to reason the right component out from its name.
+
+Settings → Advanced has a probe that lists what each package declares, with exported flags, and where
+each candidate intent really resolves. Use it before changing a chain, and order chains by **what
+cannot fail silently** — a launcher intent is the app's own MAIN/LAUNCHER activity and cannot
+start-and-vanish, so it leads; deeplinks and exported trampolines go last.
+
+## Settings UI
+
+Screens are a hand-rolled back stack in `SettingsHost`; adding one touches three places (the `Screen`
+sealed interface, the `when`, and a `CategoryRow`). Shared pieces live in `SettingsComponents.kt`:
+
+- `SettingsScaffold`, and `SettingsScaffoldWithHeader` for screens whose preview must stay put while
+  the controls scroll under it.
+- `fullBleedRow()` — the list applies its inset to the scrolling column, so a row's ripple would
+  otherwise stop where the text starts. This measures the row wider, draws it shifted back out, and
+  reports the original width. Safe only because both lists pad *inside* `verticalScroll`. Rows inside
+  a card must **not** use it; the ripple belongs within the rounded bounds.
+- `SettingsCard` / `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
+- `ColorPickerAccordion`, used by both the widget bar and the search window.
+
+**Previews render the real thing.** The search window preview calls `OverlayContent` itself with
+`interactive = false`; the widget bar preview calls the same `WidgetBarRenderer.toBitmap` the widget
+does. A hand-built imitation agrees on the day it is written and drifts on the first change nobody
+thinks to mirror — which is exactly what happened before the search window preview was replaced.
+`interactive = false` suppresses focus, keyboard, back interception, dismissal and animation; nothing
+about how the overlay *draws* depends on it, which is what makes the preview trustworthy.
+
+Adaptive-versus-chosen colour is stored as **two independent values**, never as one sealed type whose
+colour lives only in its `Solid` case. That form discards the pick the moment adaptive is switched
+on, and both the widget bar and the search window shipped that bug before it was fixed.
+
+The device wallpaper bitmap is **not obtainable**: `WallpaperManager.peekDrawable` and `getDrawable`
+require `MANAGE_EXTERNAL_STORAGE` or signature-level `READ_WALLPAPER_INTERNAL`. Lint catches the
+attempt. `getWallpaperColors` needs no permission and is what the preview backdrops use.
+
 ## Configuration and diagnostics
 
 `GumshoosConfig` is a singleton of `mutableStateOf` values backed by SharedPreferences, loaded in
@@ -97,6 +190,22 @@ run in the process. Keys are stable and independent of labels, so settings survi
 Advanced. Both exist because silent failures have repeatedly been indistinguishable from working
 code — `runCatching { startActivity(...) }` around a refused intent looks exactly like success.
 Prefer recording an outcome over swallowing it.
+
+Two conventions that read as inconsistencies unless you know why:
+
+- On/off lists store the **disabled** set (`disabledProviders`), so a provider added in a later
+  version defaults on rather than being invisible to anyone with settings already saved. Widget
+  actions invert this and store the **enabled** set, because the layout has only three slots and a
+  fourth action must not shove itself into a bar someone has already arranged.
+- Ordered lists are a comma-joined string, never a `StringSet`: SharedPreferences sets are unordered
+  and order is the entire content of the value. Unlisted ids sort last, for the same
+  forward-compatibility reason.
+
+The app index is kept current by a `LauncherApps.Callback` registered in `OverlayService` — it
+reports per package, which is what makes an incremental re-index possible. A full `load()` decodes an
+icon for every installed app, so reacting to a Play Store batch that way would be ruinous; it also
+records its own cost to the trace. Settings → Advanced has manual rebuilds for both the index and the
+widgets.
 
 ## Testing reality
 
