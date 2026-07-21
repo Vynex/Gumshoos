@@ -261,23 +261,6 @@ internal fun AliasDialog(
 }
 
 @Composable
-internal fun HiddenContactsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-
-    MultiSelectPicker(
-        title = "Hidden contacts",
-        header = "Checked contacts never appear in results.",
-        emptyNote = "No contacts loaded. Grant contacts access and open search once.",
-        items = ContactsRepository.contacts.map {
-            PickerItem(id = it.lookupKey, title = it.name, subtitle = it.phone ?: it.email)
-        },
-        selected = GumshoosConfig.hiddenContacts,
-        onToggle = { key, hide -> GumshoosConfig.setContactHidden(context, key, hide) },
-        onBack = onBack,
-    )
-}
-
-@Composable
 internal fun ContactsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
     var hasContacts by remember { mutableStateOf(ContactsRepository.hasPermission(context)) }

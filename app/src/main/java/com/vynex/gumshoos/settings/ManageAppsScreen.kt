@@ -2,14 +2,11 @@ package com.vynex.gumshoos.settings
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Indication
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,20 +19,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -46,16 +37,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -182,9 +168,10 @@ internal fun ManageAppsScreen(onBack: () -> Unit, highlightKey: String? = null) 
                 modifier = Modifier.padding(horizontal = SettingsInset),
             )
 
-            FilterField(
+            SettingsFilterField(
                 query = query,
                 onQueryChange = { query = it },
+                placeholder = "Search apps",
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = SettingsInset, vertical = 8.dp),
@@ -233,45 +220,6 @@ internal fun ManageAppsScreen(onBack: () -> Unit, highlightKey: String? = null) 
             }
         }
     }
-}
-
-/**
- * A filled text field styled as an M3 search input: pill shape, leading magnifier, tonal container,
- * no underline indicator, and a clear button once there's something to clear.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FilterField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val container = MaterialTheme.colorScheme.surfaceContainerHigh
-    TextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        shape = RoundedCornerShape(28.dp),
-        placeholder = { Text("Search apps") },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear")
-                }
-            }
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = container,
-            unfocusedContainerColor = container,
-            disabledContainerColor = container,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent,
-        ),
-        modifier = modifier,
-    )
 }
 
 @Composable
@@ -351,37 +299,5 @@ private fun ManageAppRow(
                 onClick = onToggleHidden,
             )
         }
-    }
-}
-
-/**
- * A row action as an icon on a squircle card, matching the settings-card family.
- *
- * Groups the three actions as a set and gives each tap a visible target. Disabled reads as dimmed,
- * not gone, so the placeholder slot is already accounted for.
- */
-@Composable
-private fun ActionSquircle(
-    icon: Int,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(38.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(settingsCardColour())
-            .alpha(if (enabled) 1f else 0.38f)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
-    ) {
-        Icon(
-            painterResource(icon),
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(18.dp),
-        )
     }
 }
