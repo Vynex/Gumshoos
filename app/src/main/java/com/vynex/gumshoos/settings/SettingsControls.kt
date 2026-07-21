@@ -329,7 +329,7 @@ internal fun EmailAppPicker() {
         // left is the honest signal that this row is a different kind of option.
         SettingsRadioRow(
             title = "Automatic",
-            description = "Lets the phone decide, which may show a chooser.",
+            description = "Lets the phone decide, may show a picker.",
             selected = selected == null,
             onClick = { choose(null) },
             fullBleed = false,

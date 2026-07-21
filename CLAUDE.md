@@ -263,12 +263,21 @@ The home list is Permissions, Appearance, Manage apps, Search, Behaviour and Adv
 leading icon. **Search is a hub**, not a screen of controls: Matching, Instant answers, Contacts and
 Providers hang off it. Manage apps is the merge of what were Custom names and Hidden apps.
 
-The screens are being ported to a single M3 vocabulary, module by module. The root list and
-Permissions were already there; Manage apps and Hidden contacts set the long-list pattern. The rest
-still carry the older idiom — an accent `SettingsSection` heading over loose rows separated by
-`SettingsDivider` hairlines — which is a Material 2 / preference-screen layout. **Grouping is a
-container, not a heading and a line.** New work uses `SettingsGroup`; the old pair survives only
-where a screen has not been ported yet.
+The screens are being ported to a single M3 vocabulary, module by module. The root list set the
+pattern; Manage apps and Hidden contacts set the long-list variant of it. The rest still carry the
+older idiom — an accent `SettingsSection` heading over loose rows separated by `SettingsDivider`
+hairlines — which is a Material 2 / preference-screen layout. **Grouping is a container, not a
+heading and a line.** New work uses `SettingsGroup`; the old pair survives only where a screen has
+not been ported yet.
+
+**First-run setup and the Permissions screen are two composables, not one.** They were the same one,
+which is why opening Permissions from the root list arrived at a screen headed "Set up Gumshoos"
+with a Done button on it. `PermissionsScreen` is an ordinary subscreen — shared bar, back arrow,
+nothing to finish, because it is a list of states rather than a sequence of steps. `SetupScreen`
+keeps its own heading and no app bar on purpose: it runs before there is a back stack to belong to.
+Both render the same rows from `PermissionGroups`, so the list cannot drift between them, and
+`rememberPermissionState` holds the one piece they genuinely share — what is granted, and how to
+ask.
 
 Shared pieces live in `SettingsComponents.kt`:
 

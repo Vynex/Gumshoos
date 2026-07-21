@@ -26,7 +26,12 @@ internal sealed interface Screen {
     data object HiddenContacts : Screen
     data object Matching : Screen
     data object Providers : Screen
-    data object Setup : Screen
+
+    /**
+     * The permission list as a settings screen. Not the first-run wizard, which is not a
+     * destination at all — it is shown ahead of the whole back stack.
+     */
+    data object Permissions : Screen
     data object WidgetBar : Screen
     data object WidgetIcon : Screen
     data object SearchWindow : Screen
@@ -97,7 +102,7 @@ fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
         Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
         Screen.WidgetIcon -> WidgetIconScreen(onBack = ::pop)
         Screen.SearchWindow -> SearchWindowScreen(onBack = ::pop)
-        Screen.Setup -> SetupScreen(onDone = ::pop)
+        Screen.Permissions -> PermissionsScreen(onBack = ::pop)
         Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)
         Screen.Launching -> LaunchingScreen(onBack = ::pop)
         Screen.Behaviour -> BehaviourScreen(onBack = ::pop)

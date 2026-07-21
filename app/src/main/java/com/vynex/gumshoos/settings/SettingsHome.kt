@@ -61,7 +61,7 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
             CategoryRow(
                 title = "Permissions",
                 summary = permissionsSummary(),
-                onClick = { onOpen(Screen.Setup) },
+                onClick = { onOpen(Screen.Permissions) },
                 leadingIcon = R.drawable.ic_provider_terminal,
                 fullBleed = false,
             )

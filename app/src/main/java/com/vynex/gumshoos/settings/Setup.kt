@@ -5,6 +5,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,13 +19,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,25 +39,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vynex.gumshoos.AppPermission
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayService
 
 /**
- * First-run setup, shown ahead of settings.
+ * What is granted, and how to ask for the rest.
  *
- * Every permission is explained before it is requested, including the optional ones. A system
- * permission dialog says what is being asked for but never why, and two of these three are granted
- * in a Settings screen elsewhere in the OS with no room to explain anything at all.
- *
- * Reached whenever a required permission is missing, so it also serves as the recovery path if the
- * overlay grant is revoked later — at which point search has silently stopped working, and this is
- * the screen that says so.
+ * The state and the asking are one object because two screens need both: first-run setup and the
+ * Permissions screen in settings show the same list and take the same actions on it, and they used
+ * to be the *same composable* — which is why tapping "Permissions" in settings arrived at a screen
+ * headed "Set up Gumshoos" with a Done button on it.
  */
+private class PermissionState(
+    val granted: Set<AppPermission>,
+    val request: (AppPermission) -> Unit,
+)
+
 @Composable
-internal fun SetupScreen(onDone: () -> Unit) {
+private fun rememberPermissionState(): PermissionState {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(AppPermission.entries.filter { it.isGranted(context) }.toSet())
@@ -89,20 +90,140 @@ internal fun SetupScreen(onDone: () -> Unit) {
         }
     }
 
-    fun request(permission: AppPermission) = when (permission) {
-        AppPermission.OVERLAY -> context.startActivity(
-            Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                "package:${context.packageName}".toUri(),
+    return PermissionState(granted) { permission ->
+        when (permission) {
+            AppPermission.OVERLAY -> context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    "package:${context.packageName}".toUri(),
+                )
             )
-        )
-        AppPermission.USAGE -> context.startActivity(
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-        )
-        AppPermission.CONTACTS -> requestContacts.launch(Manifest.permission.READ_CONTACTS)
+            AppPermission.USAGE -> context.startActivity(
+                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            )
+            AppPermission.CONTACTS -> requestContacts.launch(Manifest.permission.READ_CONTACTS)
+        }
     }
+}
 
-    val missingRequired = AppPermission.required.any { it !in granted }
+/**
+ * The permission list, in the shared settings vocabulary.
+ *
+ * Dividered, because each row is a separate decision — the same call the root list and the Search
+ * hub make. Required and Optional are two groups rather than two accent headings over loose cards;
+ * a permission was a `Card` of its own before, which made a screen of three permissions a screen of
+ * three competing surfaces.
+ */
+@Composable
+private fun PermissionGroups(state: PermissionState) {
+    SettingsGroup(title = "Required") {
+        AppPermission.required.forEachIndexed { index, permission ->
+            if (index > 0) SettingsGroupDivider()
+            PermissionRow(permission, permission in state.granted) { state.request(permission) }
+        }
+    }
+    SettingsGroup(title = "Optional") {
+        AppPermission.optional.forEachIndexed { index, permission ->
+            if (index > 0) SettingsGroupDivider()
+            PermissionRow(permission, permission in state.granted) { state.request(permission) }
+        }
+    }
+}
+
+/**
+ * One permission: what it is for, and what is lost without it.
+ *
+ * `withoutIt` shows only while the permission is missing. Once granted, what would have happened is
+ * no longer a thing the reader has to weigh, and leaving it there reads as a warning about a state
+ * they are not in.
+ *
+ * The row is inert once granted — no chevron, no ripple. Revoking happens in the system's own
+ * screens, and the runtime one cannot be re-asked at all, so a tap here would either do nothing or
+ * silently reopen a screen the user did not ask for.
+ */
+@Composable
+private fun PermissionRow(
+    permission: AppPermission,
+    isGranted: Boolean,
+    onGrant: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clickable(enabled = !isGranted, onClick = onGrant)
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(permission.title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                permission.why,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!isGranted && permission.withoutIt.isNotEmpty()) {
+                Text(
+                    "Without it: ${permission.withoutIt}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        if (isGranted) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = "Granted",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        } else {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The Permissions screen in settings.
+ *
+ * A subscreen like any other: the shared bar, a back arrow, and no way to "finish" — there is
+ * nothing to finish, since it is a list of states rather than a sequence of steps.
+ */
+@Composable
+internal fun PermissionsScreen(onBack: () -> Unit) {
+    val state = rememberPermissionState()
+
+    SettingsScaffold(title = "Permissions", onBack = onBack) {
+        SettingsNote(
+            "Search needs one permission to open at all. The other two add to what it can find, " +
+                "and can be left off.",
+        )
+        PermissionGroups(state)
+    }
+}
+
+/**
+ * First-run setup, shown ahead of settings.
+ *
+ * Deliberately **not** a settings subscreen, which is why it keeps its own heading and no app bar:
+ * it is a sequence with an end, reached before there is anything to go back to. Every permission is
+ * explained before it is requested, including the optional ones — a system permission dialog says
+ * what is being asked for but never why, and two of these three are granted in a Settings screen
+ * elsewhere in the OS with no room to explain anything at all.
+ *
+ * Reached whenever a required permission is missing, so it also serves as the recovery path if the
+ * overlay grant is revoked later — at which point search has silently stopped working, and this is
+ * the screen that says so.
+ */
+@Composable
+internal fun SetupScreen(onDone: () -> Unit) {
+    val context = LocalContext.current
+    val state = rememberPermissionState()
+    val missingRequired = AppPermission.required.any { it !in state.granted }
 
     /**
      * Both exits record that setup has been seen — the explanations are worth reading once, not on
@@ -140,25 +261,9 @@ internal fun SetupScreen(onDone: () -> Unit) {
                     "one is for is below, so nothing is granted on trust.",
             )
 
-            SettingsSection("Required")
-            AppPermission.required.forEach { permission ->
-                PermissionCard(
-                    permission = permission,
-                    isGranted = permission in granted,
-                    onGrant = { request(permission) },
-                )
-            }
+            PermissionGroups(state)
 
-            SettingsSection("Optional")
-            AppPermission.optional.forEach { permission ->
-                PermissionCard(
-                    permission = permission,
-                    isGranted = permission in granted,
-                    onGrant = { request(permission) },
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = ::finish,
                 enabled = !missingRequired,
@@ -173,66 +278,6 @@ internal fun SetupScreen(onDone: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun PermissionCard(
-    permission: AppPermission,
-    isGranted: Boolean,
-    onGrant: () -> Unit,
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        ),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    permission.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                if (isGranted) {
-                    Icon(
-                        Icons.Filled.CheckCircle,
-                        contentDescription = "Granted",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Granted", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                permission.why,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (permission.withoutIt.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Without it: ${permission.withoutIt}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!isGranted) {
-                Spacer(Modifier.height(12.dp))
-                if (permission.required) {
-                    Button(onClick = onGrant, modifier = Modifier.fillMaxWidth()) {
-                        Text("Grant ${permission.title.lowercase()}")
-                    }
-                } else {
-                    OutlinedButton(onClick = onGrant, modifier = Modifier.fillMaxWidth()) {
-                        Text("Allow ${permission.title.lowercase()}")
-                    }
-                }
-            }
         }
     }
 }
