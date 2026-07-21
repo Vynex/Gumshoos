@@ -6,14 +6,19 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Bundle
 import android.util.SizeF
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
+import androidx.annotation.DrawableRes
+import androidx.core.content.ContextCompat
 import com.vynex.gumshoos.widget.WidgetAction
 import com.vynex.gumshoos.widget.WidgetBarMetrics
 import com.vynex.gumshoos.widget.WidgetBarRenderer
+import kotlin.math.roundToInt
 
 /**
  * The fast invoke path.
@@ -111,6 +116,46 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
  * Free function rather than an inherited companion — companions aren't inheritable, which is why
  * the app icon widget previously had this and the bar had nothing at all.
  */
+/**
+ * Rasterises a drawable so it can be handed to a widget as a bitmap rather than a resource id.
+ *
+ * The whole reason the icons go into the RemoteViews as bitmaps: `setImageViewResource` sends the
+ * launcher a bare `R.drawable` integer, and those integers are renumbered alphabetically every time
+ * a drawable is added. The launcher caches the widget's RemoteViews and re-resolves that integer
+ * against *its own* copy of our resources, which after an update is stale — so an id that meant
+ * "Google" now lands on whatever drawable took that slot, and no re-push of ids can heal it until
+ * the launcher process reloads our resources. A bitmap carries the pixels inside the RemoteViews;
+ * there is no id to go stale. The bar background already sits in the RemoteViews this way.
+ *
+ * Tint still rides as a separate `setColorStateList` action on the ImageView, so a tintable mark is
+ * recoloured from the bitmap's alpha exactly as it was when the source was a resource.
+ */
+private fun rasterizeIcon(context: Context, @DrawableRes resId: Int, sizePx: Int): Bitmap {
+    val size = sizePx.coerceAtLeast(1)
+    val drawable = requireNotNull(ContextCompat.getDrawable(context, resId)) {
+        "missing drawable $resId"
+    }
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+
+    // Fit the drawable's own aspect ratio, centred, rather than forcing it into the square — Voice
+    // Search is a tall 300×429 mark and stretches wide otherwise. This reproduces what the ImageView
+    // did for a resource: its default scaleType is fitCenter.
+    val iw = drawable.intrinsicWidth
+    val ih = drawable.intrinsicHeight
+    if (iw <= 0 || ih <= 0) {
+        drawable.setBounds(0, 0, size, size)
+    } else {
+        val scale = minOf(size.toFloat() / iw, size.toFloat() / ih)
+        val w = (iw * scale).roundToInt()
+        val h = (ih * scale).roundToInt()
+        val left = (size - w) / 2
+        val top = (size - h) / 2
+        drawable.setBounds(left, top, left + w, top + h)
+    }
+    drawable.draw(Canvas(bitmap))
+    return bitmap
+}
+
 private fun refreshProvider(context: Context, provider: SearchWidgetProviderBase, type: Class<*>) {
     val manager = AppWidgetManager.getInstance(context) ?: return
     val ids = manager.getAppWidgetIds(ComponentName(context, type))
@@ -155,13 +200,16 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         val edge = ((style.paddingHDp + CONTENT_INSET_DP) * density).toInt()
         views.setViewPadding(R.id.widget_content, edge, 0, edge, 0)
 
-        views.setImageViewResource(R.id.widget_logo, style.logo.icon)
+        val logoPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_logo_size)
+        views.setImageViewBitmap(R.id.widget_logo, rasterizeIcon(context, style.logo.icon, logoPx))
         // Null, not a colour, for a brand mark: a tint would flatten it to one tone.
         views.setColorStateList(
             R.id.widget_logo,
             "setImageTintList",
             if (style.logo.tintable) ColorStateList.valueOf(content) else null,
         )
+
+        val actionPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_action_size)
 
         views.setViewVisibility(R.id.widget_hint, if (style.showHint) View.VISIBLE else View.GONE)
         views.setTextColor(R.id.widget_hint, content)
@@ -178,7 +226,7 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
                 return@forEachIndexed
             }
             views.setViewVisibility(slot, View.VISIBLE)
-            views.setImageViewResource(slot, action.icon)
+            views.setImageViewBitmap(slot, rasterizeIcon(context, action.icon, actionPx))
             views.setColorStateList(
                 slot,
                 "setImageTintList",
@@ -261,6 +309,15 @@ class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
         val size = GumshoosConfig.widgetIconSizeDp.toFloat()
         views.setViewLayoutWidth(R.id.widget_icon, size, TypedValue.COMPLEX_UNIT_DIP)
         views.setViewLayoutHeight(R.id.widget_icon, size, TypedValue.COMPLEX_UNIT_DIP)
+
+        // A bitmap rather than the layout's static src, for the same reason the bar's icons are —
+        // a renumbered R.drawable resolves to the wrong glyph in the launcher's stale resource copy.
+        val density = context.resources.displayMetrics.density
+        val sizePx = (size * density).roundToInt()
+        views.setImageViewBitmap(
+            R.id.widget_icon,
+            rasterizeIcon(context, R.drawable.ic_widget_search_app, sizePx),
+        )
 
         val offset = GumshoosConfig.widgetIconOffsetDp
         val top = if (offset > 0) offset * 2f else 0f
