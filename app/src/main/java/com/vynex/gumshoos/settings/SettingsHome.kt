@@ -10,9 +10,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.AppPermission
@@ -48,10 +48,7 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // The root takes the same bar as everything below it, with no back arrow because there is
-    // nowhere to go back to. It used to hand-roll the heading as a displaySmall inside the list,
-    // which is a large app bar drawn by eye — and it scrolled away, which a title is not meant to.
-    SettingsScaffold(title = "Gumshoos", onBack = null) {
+    SettingsRootScaffold(title = "Gumshoos") {
         if (!hasOverlay) {
             SettingsWarning(
                 "Search can't open without permission to draw over other apps. " +

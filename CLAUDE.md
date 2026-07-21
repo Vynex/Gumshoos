@@ -35,6 +35,17 @@ python3 design/verify-icons.py           # needs cairosvg, numpy, pillow
 modules and an HTTP client have been built without adding one, using `HttpURLConnection`, `org.json`
 and a hand-written back stack instead. Treat adding one as a decision needing justification.
 
+Compose comes from the BOM, currently `2026.06.01` — **Material3 1.4.0**, the first stable release of
+the Expressive components, and Compose UI 1.11.4. Two things to know before touching it:
+
+- Material3 1.4 **stopped pulling in `material-icons-core` transitively**, so it is named explicitly
+  in the catalog. Ten stock icons are used across the app; the BOM still pins the artifact, so it
+  can't drift on its own. The library itself is frozen at 1.7.8 and no longer developed — if it is
+  ever dropped from the BOM, hand-author the ten as drawables rather than chasing a version.
+- Not everything the spec describes has shipped. Check the **sources jar** before building on a
+  component you read about in the M3 docs — several Expressive app bars are present in 1.4.0's
+  binary but declared `internal`. See the app bar notes under Settings UI.
+
 ## The latency architecture
 
 `OverlayService` holds a `ComposeView` **pre-attached to `WindowManager`** and merely flips its
@@ -253,14 +264,34 @@ where a screen has not been ported yet.
 
 Shared pieces live in `SettingsComponents.kt`:
 
-- `SettingsScaffold` — a `LargeTopAppBar` that collapses as the content scrolls, `onBack = null` on
-  the root, which takes the same bar as everything under it rather than a `displaySmall` drawn by
-  eye inside the list. `exitUntilCollapsed` reads the *gesture*, not the content, so on a screen
-  that fits in the window it would let the title be dragged away and leave a gap underneath —
-  `canScroll = { scrollState.maxValue > 0 }` is the hook that says no.
-- `SettingsScaffoldWithHeader` keeps the **compact** bar, and so do Manage apps and Hidden contacts.
-  The rule: a large title costs about 100dp, so it goes to screens you *scan*, and screens whose
-  real target sits at the top — a preview, a filter field — keep the small one.
+- `SettingsTopBar` — the **one** app bar, on every screen below the root: small, pinned, back arrow.
+  `SettingsScaffold`, `SettingsScaffoldWithHeader`, Manage apps, Hidden contacts and
+  `SearchablePicker` all take it, so no subscreen can drift from another. Large bars belong to
+  top-level destinations; everything here is a subscreen.
+- `SettingsRootScaffold` — the root has **no app bar**, just a `displaySmall` heading that scrolls
+  with the list. The root differing from the screens under it reads as a hierarchy; the subscreens
+  differing from *each other* was the actual defect.
+
+`LargeTopAppBar` was tried across the settings screens and reverted the same day. Three separate
+things were wrong with it and none showed up until it was on a phone:
+
+- It is a **two-row** component. The top row is a fixed 64dp for the navigation icon and actions, and
+  the large title lives in the row beneath. A screen with neither — the root — shows 64dp of nothing
+  above its title. That is the component's structure, not spacing to tune.
+- `exitUntilCollapsed` reads the **gesture, not the content**, so on a screen that already fits it
+  lets the title be dragged away and leaves a gap under it. `TopAppBarScrollBehavior`'s `canScroll`
+  hook stops that, but only by trading it for a bar that never collapses — and three of these screens
+  never fill a window, so a large bar there is 152dp that never earns itself back.
+- A collapsing bar makes the app bar behave **differently screen to screen** for a reason the user
+  cannot see, which is a sharper version of the inconsistency the port exists to remove.
+
+The M3 spec has since replaced the fixed sizes with **flexible** app bars, which would suit the root
+exactly — a large title, a subtitle, no wasted leading row. They are not usable: in Material3 1.4.0,
+the current stable, `LargeFlexibleTopAppBar`, `MediumFlexibleTopAppBar` and the subtitle-bearing
+`TopAppBar` are all declared **`internal`**. They exist in the binary and are not callable; only
+`1.5.0-alpha` exposes them. `LargeTopAppBar` itself is *not* deprecated in 1.4.0 — the `@Deprecated`
+on it is `HIDDEN`-level, on an old overload kept for binary compatibility. All of that came out of
+the sources jar, which is the only place it is written down.
 - `fullBleedRow()` — the list applies its inset to the scrolling column, so a row's ripple would
   otherwise stop where the text starts. This measures the row wider, draws it shifted back out, and
   reports the original width. Safe only because both lists pad *inside* `verticalScroll`. Rows inside

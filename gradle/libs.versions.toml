@@ -8,7 +8,7 @@ espressoCore = "3.5.1"
 # lifecycle-runtime and lifecycle-service must move together; they were 2.6.1 vs 2.9.2 before.
 lifecycle = "2.9.2"
 activityCompose = "1.8.0"
-composeBom = "2024.09.00"
+composeBom = "2026.06.01"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -25,6 +25,9 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Material3 1.4 stopped pulling this in transitively. Ten stock icons are used across the app, so it
+# is named here rather than re-authored; the BOM still pins it, so it can't drift on its own.
+androidx-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 androidx-lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-service", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 

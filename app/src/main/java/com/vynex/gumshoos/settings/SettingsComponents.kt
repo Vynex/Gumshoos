@@ -34,7 +34,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -45,6 +44,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -109,48 +109,100 @@ internal fun Modifier.fullBleedRow(): Modifier = layout { measurable, constraint
 }
 
 /**
- * A screen with a large title that collapses as its content scrolls.
+ * The one app bar every screen below the root wears.
  *
- * [onBack] is null on the root, which is the only screen with nowhere to go back to — it gets the
- * same bar as everything under it rather than a hand-rolled heading, which is what let the root and
- * the screens below it drift apart in the first place.
+ * Small, pinned, with a back arrow. **Large bars belong to top-level destinations**, and every screen
+ * that takes this one is a subscreen reached from the root list — the M3 reason for a large title is
+ * to give a destination presence on arrival, which a settings subscreen does not need and cannot
+ * afford: the three shortest screens here do not fill a window, so a large bar on them never
+ * collapses and simply eats a third of the screen forever.
  *
- * The bar only collapses when there is genuinely something to scroll. `exitUntilCollapsed` reads the
- * gesture, not the content, so on a screen that fits in the window it would otherwise let the title
- * be dragged away and leave a gap under it — [TopAppBarScrollBehavior]'s `canScroll` hook is what
- * says no. `maxValue` starts at `Int.MAX_VALUE` and is set at layout, so the first frame answers
- * "yes" before anything can be dragged anyway.
+ * `LargeTopAppBar` was tried and reverted. Two further reasons it is the wrong component here, both
+ * only visible once it was on a phone: it is a *two-row* layout whose top row is a fixed 64dp for
+ * the navigation icon and actions, so a screen with neither shows 64dp of nothing above its title;
+ * and `exitUntilCollapsed` reads the gesture rather than the content, so on a screen that fits it
+ * lets the title be dragged away and leaves a gap. Guarding that with `canScroll` only trades the
+ * gap for a bar that never collapses.
+ *
+ * The M3 spec has since replaced the fixed sizes with *flexible* app bars, which would suit the root
+ * exactly — a large title with no wasted leading row. `LargeFlexibleTopAppBar` is `internal` in
+ * Material3 1.4.0, the current stable, so it cannot be called yet. When it opens up, the root is the
+ * screen to give it to; this bar stays as it is.
+ *
+ * Pinned rather than static so it takes its scrolled container colour and content passing underneath
+ * reads as passing underneath.
  */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsTopBar(
+    title: String,
+    onBack: () -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior? = null,
+) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+        scrollBehavior = scrollBehavior,
+    )
+}
+
+/** A subscreen: [SettingsTopBar] over a scrolling list of controls. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsScaffold(
     title: String,
-    onBack: (() -> Unit)?,
+    onBack: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
-        canScroll = { scrollState.maxValue > 0 },
-    )
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            LargeTopAppBar(
-                title = { Text(title) },
-                navigationIcon = { BackArrow(onBack) },
-                scrollBehavior = scrollBehavior,
-            )
-        },
+        topBar = { SettingsTopBar(title, onBack, scrollBehavior) },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = SettingsInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            content()
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * The root, which has no app bar at all.
+ *
+ * Its title is a content-led heading that scrolls with the list — the pattern for a top-level
+ * destination whose bar would hold nothing but a title. This is deliberately *not* the subscreen
+ * bar: the root differing from the screens under it is normal and reads as a hierarchy, where the
+ * subscreens differing from **each other** was the actual defect this port set out to fix.
+ */
+@Composable
+internal fun SettingsRootScaffold(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Scaffold { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = SettingsInset),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Spacer(Modifier.height(16.dp))
+            Text(title, style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(12.dp))
             content()
             Spacer(Modifier.height(24.dp))
         }
@@ -165,11 +217,6 @@ internal fun SettingsScaffold(
  *
  * The header sits outside the scroll and takes no horizontal inset of its own, so it can run edge
  * to edge; [content] keeps the same padding every other settings list uses.
- *
- * The **one place a compact bar is still right**. A large title is around 100dp taller, and on these
- * screens that height would come straight off the preview the screen exists to show. It is pinned
- * rather than static so it still picks up its scrolled container colour and the content passing
- * underneath reads as passing underneath.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -179,27 +226,18 @@ internal fun SettingsScaffoldWithHeader(
     header: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
-        canScroll = { scrollState.maxValue > 0 },
-    )
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = { BackArrow(onBack) },
-                scrollBehavior = scrollBehavior,
-            )
-        },
+        topBar = { SettingsTopBar(title, onBack, scrollBehavior) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             header()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(scrollState)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = SettingsInset, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -207,15 +245,6 @@ internal fun SettingsScaffoldWithHeader(
                 Spacer(Modifier.height(24.dp))
             }
         }
-    }
-}
-
-/** The bar's navigation slot, empty on a screen with nowhere to go back to. */
-@Composable
-private fun BackArrow(onBack: (() -> Unit)?) {
-    if (onBack == null) return
-    IconButton(onClick = onBack) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
     }
 }
 
