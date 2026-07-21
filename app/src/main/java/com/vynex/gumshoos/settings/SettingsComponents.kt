@@ -317,31 +317,6 @@ internal val SettingsCardShape = RoundedCornerShape(16.dp)
 internal fun settingsCardColour(): Color = MaterialTheme.colorScheme.surfaceContainer
 
 /**
- * A titled group raised onto its own surface.
- *
- * For controls that belong together tightly enough that a heading alone under-sells it — a pair of
- * sliders that only make sense read against each other reads as two unrelated rows when left loose
- * in the list.
- */
-@Composable
-internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(SettingsCardShape)
-            .background(settingsCardColour())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
-        content()
-    }
-}
-
-/**
  * A filled text field styled as an M3 search input: pill shape, leading magnifier, tonal container,
  * no underline indicator, and a clear button once there's something to clear.
  *
@@ -500,24 +475,6 @@ internal fun SettingsSection(title: String) {
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(4.dp))
-}
-
-/**
- * A heading *within* a section.
- *
- * Deliberately quieter than [SettingsSection] on both counts a heading is read by — it drops the
- * accent colour and the title weight — because a sub-section set in the same style as its parent
- * just looks like the parent ended.
- */
-@Composable
-internal fun SettingsSubSection(title: String) {
-    Spacer(Modifier.height(16.dp))
-    Text(
-        title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(2.dp))
 }
 
 /** Explanatory text under a heading or control. */

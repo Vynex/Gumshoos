@@ -314,7 +314,7 @@ the sources jar, which is the only place it is written down.
   reports the original width. Safe only because both lists pad *inside* `verticalScroll`. Rows inside
   a card must **not** use it; the ripple belongs within the rounded bounds. It has no future: once
   every screen is grouped, nothing is loose enough to need it.
-- `SettingsCard` / `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
+- `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
   The colour is `surfaceContainer` — a **tonal role, never a translucent `surfaceVariant`**. A
   half-alpha colour is a guess that composites against whatever is behind it, so the same card came
   out one shade over the background and another over a preview. `ActionSquircle` sits a step above at
@@ -363,8 +363,9 @@ the sources jar, which is the only place it is written down.
 - `SettingsRadioRow` is the **only** radio row. Three others had grown alongside it, one per screen
   that wanted a leading picture the shared one didn't offer, and each had drifted in padding, text
   style and whether the label was clickable. It takes a drawable or an `ImageBitmap`.
-- `SettingsSection` / `SettingsSubSection` — the old accent headings, on their way out with the
-  screens that still use them.
+- `SettingsSection` — the last of the old accent headings, alive only on the screens module 8 has
+  yet to reach. `SettingsSubSection` and `SettingsCard` are already gone, both superseded by
+  `SettingsGroup`.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
 - `SettingsFilterField` and `ActionSquircle`, the filter input and the row-action tile of the long
   list screens — Manage apps and Hidden contacts. Both started life private to Manage apps and were

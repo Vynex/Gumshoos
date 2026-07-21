@@ -1,16 +1,8 @@
 package com.vynex.gumshoos.settings
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,9 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,11 +33,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -106,7 +95,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         onBack = onBack,
         header = { WidgetBarPreview(style, available) },
     ) {
-        SettingsSection("Style")
         ColorPickerAccordion(
             currentColor = WidgetBarRenderer.resolveFill(context, style.fill),
             selected = (style.fill as? WidgetBarFill.Solid)?.color,
@@ -121,95 +109,118 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 GumshoosConfig.setWidgetBarSolidColor(context, picked)
                 push()
             },
-        )
-        Spacer(Modifier.height(16.dp))
-        OpacitySlider(onChanged = ::push)
-        SettingsSwitchRow(
-            title = "Outline only",
-            description = "Draws just the border, in the fill colour, with nothing behind it.",
-            checked = style.wireframe,
-            onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
-        )
-        SettingsSwitchRow(
-            title = "Shadow",
-            description = "A short drop shadow. It needs a little room to fall into, so the bar " +
-                "pulls in where the margins below are smaller than that.",
-            checked = style.shadow,
-            onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
+            modifier = Modifier.padding(vertical = 8.dp),
         )
 
-        SettingsDivider()
-        SettingsSection("Shape")
-        CornerSlider(onChanged = ::push)
+        SettingsGroup(title = "Style") {
+            SettingsSliderRow(
+                label = "Opacity",
+                value = GumshoosConfig.widgetBarFillAlpha,
+                min = 0,
+                max = 100,
+                // Stepped, so a drag redraws the preview twenty times rather than once per frame.
+                step = 5,
+                valueText = { "$it%" },
+                onValue = { GumshoosConfig.setWidgetBarFillAlpha(context, it) },
+                onValueFinished = ::push,
+            )
+            SettingsSwitchRow(
+                title = "Outline only",
+                description = "Draws just the border, in the fill colour, with nothing behind it.",
+                checked = style.wireframe,
+                onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
+                fullBleed = false,
+            )
+            SettingsSwitchRow(
+                title = "Shadow",
+                description = "A short drop shadow. It needs a little room to fall into, so the " +
+                    "bar pulls in where the margins below are smaller than that.",
+                checked = style.shadow,
+                onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
+                fullBleed = false,
+            )
+        }
 
-        Spacer(Modifier.height(8.dp))
-        // Carded because the two only mean anything read against each other: they are the bar's
-        // size, expressed as what is left around it.
-        SettingsCard("Spacing") {
-            PaddingSlider(
+        SettingsGroup(title = "Shape") {
+            SettingsSliderRow(
+                label = "Corners",
+                value = GumshoosConfig.widgetBarCorner,
+                min = 0,
+                max = 100,
+                step = 10,
+                valueText = ::cornerLabel,
+                onValue = { GumshoosConfig.setWidgetBarCorner(context, it) },
+                onValueFinished = ::push,
+            )
+        }
+
+        // Their own group because the two only mean anything read against each other: they are the
+        // bar's size, expressed as what is left around it.
+        SettingsGroup(title = "Spacing") {
+            SettingsSliderRow(
                 label = "Side margin",
+                summary = "0 makes the bar span the whole cell.",
                 value = GumshoosConfig.widgetBarPaddingH,
+                min = 0,
                 max = WidgetBarMetrics.MAX_PADDING_H_DP,
                 // Coarser than the vertical one. It runs to 32dp, where single steps are more
                 // notches than the eye can tell apart and a drag that has to cross all of them.
                 step = 2,
-                hint = "0 makes the bar span the whole cell.",
+                valueText = { "${it}dp" },
                 onValue = { GumshoosConfig.setWidgetBarPaddingH(context, it) },
-                onChanged = ::push,
+                onValueFinished = ::push,
             )
-            Spacer(Modifier.height(16.dp))
-            PaddingSlider(
+            SettingsSliderRow(
                 label = "Top and bottom margin",
+                summary = "How thick the bar is within its row.",
                 value = GumshoosConfig.widgetBarPaddingV,
+                min = 0,
                 max = WidgetBarMetrics.MAX_PADDING_V_DP,
-                hint = "How thick the bar is within its row.",
+                valueText = { "${it}dp" },
                 onValue = { GumshoosConfig.setWidgetBarPaddingV(context, it) },
-                onChanged = ::push,
+                onValueFinished = ::push,
             )
         }
 
-        SettingsDivider()
-        SettingsSection("Logo and text")
-        SettingsSwitchRow(
-            title = "Show \"Search\"",
-            description = "The placeholder text next to the logo.",
-            checked = style.showHint,
-            onCheckedChange = { GumshoosConfig.setWidgetBarShowHint(context, it); push() },
-        )
+        SettingsGroup(title = "Logo and text") {
+            WidgetBarLogo.entries.forEach { logo ->
+                SettingsRadioRow(
+                    title = logo.label,
+                    description = if (logo.tintable) {
+                        "Follows the bar's contrast colour."
+                    } else {
+                        "Keeps its own colours."
+                    },
+                    selected = style.logo == logo,
+                    onClick = { GumshoosConfig.setWidgetBarLogo(context, logo); push() },
+                    icon = logo.icon,
+                    tintIcon = logo.tintable,
+                    fullBleed = false,
+                )
+            }
+            SettingsGroupDivider()
+            SettingsSwitchRow(
+                title = "Show \"Search\"",
+                description = "The placeholder text next to the logo.",
+                checked = style.showHint,
+                onCheckedChange = { GumshoosConfig.setWidgetBarShowHint(context, it); push() },
+                fullBleed = false,
+            )
+        }
 
-        Spacer(Modifier.height(8.dp))
-        Text("Logo", style = MaterialTheme.typography.bodyMedium)
-        WidgetBarLogo.entries.forEach { logo ->
-            SettingsRadioRow(
-                title = logo.label,
-                description = if (logo.tintable) {
-                    "Follows the bar's contrast colour."
-                } else {
-                    "Keeps its own colours."
+        ActionGroups(available = available, onChanged = ::push)
+
+        SettingsGroup {
+            SettingsActionRow(
+                title = "Reset to defaults",
+                summary = "Colour, shape, logo and actions go back to how they started.",
+                imageVector = Icons.Filled.Refresh,
+                onClick = {
+                    GumshoosConfig.resetWidgetBar(context)
+                    push()
                 },
-                selected = style.logo == logo,
-                onClick = { GumshoosConfig.setWidgetBarLogo(context, logo); push() },
-                icon = logo.icon,
-                tintIcon = logo.tintable,
             )
         }
-
-        SettingsDivider()
-        SettingsSection("Actions")
-        SettingsNote(
-            "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
-                "rest of the bar still opens search.",
-        )
-        ActionRows(available = available, onChanged = ::push)
-
-        SettingsDivider()
-        OutlinedButton(
-            onClick = {
-                GumshoosConfig.resetWidgetBar(context)
-                push()
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Reset to defaults") }
     }
 }
 
@@ -333,85 +344,15 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
     }
 }
 
-@Composable
-private fun CornerSlider(onChanged: () -> Unit) {
-    val context = LocalContext.current
-    var corner by remember { mutableStateOf(GumshoosConfig.widgetBarCorner.toFloat()) }
-    SettingsNote(cornerLabel(corner.roundToInt()))
-    Slider(
-        value = corner,
-        onValueChange = {
-            corner = it
-            // Written as it moves, not on release: the preview above is the point of this screen.
-            GumshoosConfig.setWidgetBarCorner(context, it.roundToInt())
-        },
-        onValueChangeFinished = onChanged,
-        valueRange = 0f..100f,
-        steps = 9,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
+/** The two ends read as shapes rather than percentages; between them the number says it. */
 private fun cornerLabel(percent: Int): String = when {
-    percent <= 5 -> "Corners: square"
-    percent >= 95 -> "Corners: fully rounded"
-    percent < 50 -> "Corners: $percent% — rounded square"
-    else -> "Corners: $percent%"
+    percent <= 5 -> "Square"
+    percent >= 95 -> "Pill"
+    else -> "$percent%"
 }
 
 @Composable
-private fun OpacitySlider(onChanged: () -> Unit) {
-    val context = LocalContext.current
-    var alpha by remember { mutableStateOf(GumshoosConfig.widgetBarFillAlpha.toFloat()) }
-    SettingsNote("Opacity: ${alpha.roundToInt()}%")
-    Slider(
-        value = alpha,
-        onValueChange = {
-            alpha = it
-            GumshoosConfig.setWidgetBarFillAlpha(context, it.roundToInt())
-        },
-        onValueChangeFinished = onChanged,
-        valueRange = 0f..100f,
-        // Stepped, so a drag redraws the preview twenty times rather than once per frame.
-        steps = 19,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-/**
- * Shared shape for the two margin sliders, [step] dp per notch.
- *
- * The notch count is derived rather than passed, so a slider cannot end up with stops that don't
- * land on its own maximum.
- */
-@Composable
-private fun PaddingSlider(
-    label: String,
-    value: Int,
-    max: Int,
-    hint: String,
-    onValue: (Int) -> Unit,
-    onChanged: () -> Unit,
-    step: Int = 1,
-) {
-    var current by remember(value) { mutableStateOf(value.toFloat()) }
-    SettingsNote("$label: ${current.roundToInt()}dp — $hint")
-    Slider(
-        value = current,
-        onValueChange = {
-            current = it
-            onValue(it.roundToInt())
-        },
-        onValueChangeFinished = onChanged,
-        valueRange = 0f..max.toFloat(),
-        // steps counts the stops *between* the ends, so a step of 2dp over 0..32 is 15 of them.
-        steps = (max / step) - 1,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun ActionRows(available: Set<WidgetAction>, onChanged: () -> Unit) {
+private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
     val context = LocalContext.current
     val all = SearchProviders.inConfiguredOrder(
         WidgetAction.entries.toList(),
@@ -425,45 +366,57 @@ private fun ActionRows(available: Set<WidgetAction>, onChanged: () -> Unit) {
     val (installed, missing) = all.partition { it in available }
     val enabledCount = installed.count { it.id in GumshoosConfig.widgetBarActions }
 
-    installed.forEachIndexed { index, action ->
-        val checked = action.id in GumshoosConfig.widgetBarActions
-        ProviderRow(
-            label = action.label,
-            icon = action.icon,
-            description = action.description,
-            checked = checked,
-            // Room runs out at SLOT_COUNT, so the rows that would not fit say so by going flat
-            // rather than accepting a tap that silently does nothing.
-            enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
-            canMoveUp = index > 0,
-            canMoveDown = index < installed.lastIndex,
-            onCheckedChange = {
-                GumshoosConfig.setWidgetBarActionEnabled(context, action.id, it)
-                onChanged()
-            },
-            // Reordering moves the action within the *whole* saved order, not within the visible
-            // subset. A missing action still holds its place in that list, so installing its app
-            // returns it to where it was rather than to the end.
-            onMoveUp = {
-                GumshoosConfig.setWidgetBarActionOrder(
-                    context, SearchProviders.reorder(all.map { it.id }, action.id, -1),
-                )
-                onChanged()
-            },
-            onMoveDown = {
-                GumshoosConfig.setWidgetBarActionOrder(
-                    context, SearchProviders.reorder(all.map { it.id }, action.id, 1),
-                )
-                onChanged()
-            },
-            control = RowControl.CHECKBOX,
-        )
+    SettingsGroup(
+        title = "Actions",
+        note = "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
+            "rest of the bar still opens search.",
+    ) {
+        installed.forEachIndexed { index, action ->
+            val checked = action.id in GumshoosConfig.widgetBarActions
+            ProviderRow(
+                label = action.label,
+                icon = action.icon,
+                description = action.description,
+                checked = checked,
+                // Room runs out at SLOT_COUNT, so the rows that would not fit say so by going flat
+                // rather than accepting a tap that silently does nothing.
+                enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
+                canMoveUp = index > 0,
+                canMoveDown = index < installed.lastIndex,
+                onCheckedChange = {
+                    GumshoosConfig.setWidgetBarActionEnabled(context, action.id, it)
+                    onChanged()
+                },
+                // Reordering moves the action within the *whole* saved order, not within the
+                // visible subset. A missing action still holds its place in that list, so
+                // installing its app returns it to where it was rather than to the end.
+                onMoveUp = {
+                    GumshoosConfig.setWidgetBarActionOrder(
+                        context, SearchProviders.reorder(all.map { it.id }, action.id, -1),
+                    )
+                    onChanged()
+                },
+                onMoveDown = {
+                    GumshoosConfig.setWidgetBarActionOrder(
+                        context, SearchProviders.reorder(all.map { it.id }, action.id, 1),
+                    )
+                    onChanged()
+                },
+                modifier = Modifier.padding(horizontal = SettingsInset),
+                control = RowControl.CHECKBOX,
+            )
+        }
     }
 
+    // A group of its own rather than a quieter heading inside the one above. These are not further
+    // actions to arrange, they are actions this phone cannot offer at all.
     if (missing.isNotEmpty()) {
-        SettingsSubSection("Uninstalled")
-        SettingsNote("These need an app that isn't on this phone.")
-        missing.forEach { MissingActionRow(it) }
+        SettingsGroup(
+            title = "Uninstalled",
+            note = "These need an app that isn't on this phone.",
+        ) {
+            missing.forEach { MissingActionRow(it) }
+        }
     }
 }
 
@@ -486,10 +439,11 @@ private fun MissingActionRow(action: WidgetAction) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(SettingsCardShape)
+            // No clip of its own: it sits inside a group card now, which is already clipped, and a
+            // second rounded shape inside that one showed as a ripple with the wrong corners.
             .clickable { openStorePage(context, packageName) }
-            .padding(vertical = 8.dp),
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 8.dp),
     ) {
         Image(
             painter = painterResource(action.icon),
