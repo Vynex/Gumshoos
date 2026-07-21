@@ -211,19 +211,17 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
         // Nothing to add in the state that already has a warning of its own below.
         note = when {
             source == UsageSource.GUMSHOOS ->
-                "Usage access isn't used with this option and can be revoked."
+                "Usage access isn't needed for this option and can be revoked."
             hasUsage -> "Granted. Apps are ordered by system-wide usage."
             else -> null
         },
     ) {
         SettingsRadioRow(
-            title = "Launches from Gumshoos (Recommended)",
+            title = "Launches from Gumshoos",
             description = if (tracked == 0) {
-                "Counts only apps opened from this search window. No permission needed; " +
-                    "nothing recorded yet, so ordering stays alphabetical until you open something."
+                "Recommended. Counts apps opened from search — none yet."
             } else {
-                "Counts only apps opened from this search window. No permission needed; " +
-                    "$tracked app${if (tracked == 1) "" else "s"} recorded so far."
+                "Recommended. Counts apps opened from search — $tracked so far."
             },
             selected = source == UsageSource.GUMSHOOS,
             onClick = {
@@ -234,7 +232,7 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
         )
         SettingsRadioRow(
             title = "System-wide usage",
-            description = "How much every app is used across the phone.",
+            description = "Counts foreground time across the whole phone.",
             selected = source == UsageSource.SYSTEM,
             onClick = {
                 source = UsageSource.SYSTEM
@@ -243,25 +241,16 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
             fullBleed = false,
         )
 
+        // The grant belongs with the choice, since it is what makes the chosen one work.
         if (needsGrant) {
             SettingsGroupDivider()
             SettingsActionRow(
                 title = "Grant usage access",
-                summary = "A special access grant rather than a normal prompt, so it opens a " +
-                    "system screen rather than a dialog.",
+                summary = "Opens a system screen rather than a prompt.",
                 icon = R.drawable.ic_provider_terminal,
                 onClick = {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 },
-            )
-        }
-        if (source == UsageSource.GUMSHOOS && tracked > 0) {
-            SettingsGroupDivider()
-            SettingsActionRow(
-                title = "Reset launch history",
-                summary = "Clears the counts behind Frequent and Recent.",
-                icon = R.drawable.ic_provider_trash,
-                onClick = { confirmReset = true },
             )
         }
     }
@@ -271,6 +260,20 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
             "Ordering by system usage needs usage access, and it isn't granted — Frequent and " +
                 "Recent stay alphabetical until it is.",
         )
+    }
+
+    // Its own card. It rode along under the two radios at first, which put an action about stored
+    // data inside the group that chooses between two options — and pushed that group's note so far
+    // from the choice it describes that the note read as a comment on the reset button.
+    if (source == UsageSource.GUMSHOOS && tracked > 0) {
+        SettingsGroup {
+            SettingsActionRow(
+                title = "Reset launch history",
+                summary = "Frequent and Recent go back to alphabetical.",
+                icon = R.drawable.ic_provider_trash,
+                onClick = { confirmReset = true },
+            )
+        }
     }
 
     if (confirmReset) {

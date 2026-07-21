@@ -568,6 +568,11 @@ internal fun SettingsWarning(text: String) {
  * to mean "this is the action here".
  *
  * No trailing chevron: nothing opens, so an affordance promising a destination would be a lie.
+ *
+ * Its title is `bodyMedium`, matching the switch and radio rows rather than [CategoryRow]'s
+ * `bodyLarge`. An action is subordinate to a destination, and more to the point these share a card
+ * with controls — set in the navigation size, a lone utility action was the loudest thing on the
+ * screen.
  */
 @Composable
 internal fun SettingsActionRow(
@@ -601,7 +606,7 @@ internal fun SettingsActionRow(
             )
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(title, style = MaterialTheme.typography.bodyMedium)
             if (!summary.isNullOrEmpty()) {
                 Text(
                     summary,
@@ -838,8 +843,15 @@ internal fun SettingsRadioRow(
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 6.dp),
     ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(4.dp))
+        // `onClick = null` matters for more than the redundant tap target. RadioButton applies
+        // `minimumInteractiveComponentSize()` *only* when it has its own click handler, so passing
+        // one makes it lay out 48dp wide and shove the label a further 24dp right — which is where
+        // the deep indent came from, and why a radio row and an icon row in the same card started
+        // their text in different places. Without it the control is exactly 24dp, the same slot an
+        // icon takes, so every row in the family lines up. The row itself is clickable, and a whole
+        // row is a far bigger target than 48dp anyway.
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(16.dp))
         if (icon != null) {
             Image(
                 painter = painterResource(icon),

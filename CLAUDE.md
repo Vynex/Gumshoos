@@ -42,15 +42,17 @@ the Expressive components, and Compose UI 1.11.4. Two things to know before touc
   in the catalog. Ten stock icons are used across the app; the BOM still pins the artifact, so it
   can't drift on its own. The library itself is frozen at 1.7.8 and no longer developed — if it is
   ever dropped from the BOM, hand-author the ten as drawables rather than chasing a version.
-- **1.4.0 is Expressive in tokens only.** `MaterialExpressiveTheme` is `internal`, so is every
-  flexible app bar, and the headline Expressive components — `ButtonGroup`, `LoadingIndicator`,
+- **What 1.4.0 exposes is uneven, and the only way to know is to read it.** Not usable: the theme
+  entry point `MaterialExpressiveTheme`, every flexible app bar, and the subtitle-bearing
+  `TopAppBar` are all `internal`; the brand-new components — `ButtonGroup`, `LoadingIndicator`,
   `FloatingToolbar`, `SplitButton`, wavy progress — have no source file at all, only design tokens.
-  `Slider.kt`, `Tab.kt` and `TabRow.kt` are the classic implementations. **The bump changed nothing
-  visually and could not have.** Adopting the Expressive look is a separate, deliberate pass once
-  1.5.0 is stable and the theme entry point is public.
-- That fact was got wrong here first, by reading the M3 docs and assuming the release matched them.
-  Check the **sources jar** — the spec runs ahead of what Compose ships, and `internal` in a stable
-  release is not something any documentation mentions.
+  But the **existing** components did take the Expressive redraw where their tokens moved:
+  `Slider` is now a 4dp x 44dp bar thumb with a track gap and stop indicators, not the classic 20dp
+  circle. So there is no opt-in switch to throw, and no single sentence covering the release.
+- Both halves of that were got wrong here first, in the same session. The docs were read and the
+  release assumed to match them; then the *file list* was read and "Slider.kt exists" taken to mean
+  the slider was unchanged. **A file name is not an implementation.** Open the sources jar and read
+  the tokens before saying what anything looks like.
 
 ## The latency architecture
 

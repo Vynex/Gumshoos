@@ -455,10 +455,11 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
 
         SettingsGroup(
             title = "New apps tab",
-            note = "An app shows up there for this long after it's installed or updated.",
+            note = "Search gives recently installed or updated apps a tab of their own. This is " +
+                "how long one stays in it.",
         ) {
             SettingsSliderRow(
-                label = "Counts as new for",
+                label = "Listed for",
                 // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit
                 // outside that, so snap it in rather than showing the thumb pinned at an end.
                 value = GumshoosConfig.newUpdatedWindowHours.toInt().coerceIn(3, 12),
