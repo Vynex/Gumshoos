@@ -53,7 +53,6 @@ import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
 import com.vynex.gumshoos.SearchWindowStyle
 import com.vynex.gumshoos.searchWindowCorner
 import com.vynex.gumshoos.searchWindowSurface
-import com.vynex.gumshoos.ui.theme.GumshoosTheme
 import kotlin.math.roundToInt
 
 /**

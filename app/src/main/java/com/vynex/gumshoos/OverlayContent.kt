@@ -353,7 +353,7 @@ fun OverlayContent(
      */
     interactive: Boolean = true,
 ) {
-    GumshoosTheme(darkTheme = true, dynamicColor = true) {
+    GumshoosTheme(darkTheme = true) {
         val context = LocalContext.current
         // Re-read while hidden rather than per frame: the system setting can change under us, but
         // only between one opening and the next does it matter.

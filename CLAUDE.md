@@ -244,26 +244,65 @@ The home list is Permissions, Appearance, Manage apps, Search, Behaviour and Adv
 leading icon. **Search is a hub**, not a screen of controls: Matching, Instant answers, Contacts and
 Providers hang off it. Manage apps is the merge of what were Custom names and Hidden apps.
 
+The screens are being ported to a single M3 vocabulary, module by module. The root list and
+Permissions were already there; Manage apps and Hidden contacts set the long-list pattern. The rest
+still carry the older idiom — an accent `SettingsSection` heading over loose rows separated by
+`SettingsDivider` hairlines — which is a Material 2 / preference-screen layout. **Grouping is a
+container, not a heading and a line.** New work uses `SettingsGroup`; the old pair survives only
+where a screen has not been ported yet.
+
 Shared pieces live in `SettingsComponents.kt`:
 
-- `SettingsScaffold`, and `SettingsScaffoldWithHeader` for screens whose preview must stay put while
-  the controls scroll under it.
+- `SettingsScaffold` — a `LargeTopAppBar` that collapses as the content scrolls, `onBack = null` on
+  the root, which takes the same bar as everything under it rather than a `displaySmall` drawn by
+  eye inside the list. `exitUntilCollapsed` reads the *gesture*, not the content, so on a screen
+  that fits in the window it would let the title be dragged away and leave a gap underneath —
+  `canScroll = { scrollState.maxValue > 0 }` is the hook that says no.
+- `SettingsScaffoldWithHeader` keeps the **compact** bar, and so do Manage apps and Hidden contacts.
+  The rule: a large title costs about 100dp, so it goes to screens you *scan*, and screens whose
+  real target sits at the top — a preview, a filter field — keep the small one.
 - `fullBleedRow()` — the list applies its inset to the scrolling column, so a row's ripple would
   otherwise stop where the text starts. This measures the row wider, draws it shifted back out, and
   reports the original width. Safe only because both lists pad *inside* `verticalScroll`. Rows inside
-  a card must **not** use it; the ripple belongs within the rounded bounds.
+  a card must **not** use it; the ripple belongs within the rounded bounds. It has no future: once
+  every screen is grouped, nothing is loose enough to need it.
 - `SettingsCard` / `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
-- `SettingsGroupCard` / `SettingsGroupDivider` — the home list's rounded groups. Rows inside pass
-  `CategoryRow(fullBleed = false)`, which is the rule above rather than an exception to it.
-- `SettingsSection`, and `SettingsSubSection` for a heading *within* one. The sub-section drops both
-  things that make a heading loud — the accent colour and the title weight — because a sub-section
-  set in its parent's style just reads as the parent having ended, which is exactly how the widget
-  bar's Uninstalled group first shipped.
+  The colour is `surfaceContainer` — a **tonal role, never a translucent `surfaceVariant`**. A
+  half-alpha colour is a guess that composites against whatever is behind it, so the same card came
+  out one shade over the background and another over a preview. `ActionSquircle` sits a step above at
+  `surfaceContainerHighest`: it used to match the card exactly, which worked only while the rows it
+  sits on were on the bare background and made it invisible the moment a list was grouped.
+- `SettingsGroup` — caption, rounded container of rows, supporting text. The **note goes under the
+  card**: copy written as a preamble is explaining controls the reader has not reached yet.
+- `SettingsGroupCard` / `SettingsGroupDivider` — the container itself. Rows inside pass
+  `fullBleed = false`, which is the rule above rather than an exception to it.
+- `SettingsActionRow` — a row that *does* something. What every `OutlinedButton(fillMaxWidth())`
+  should have been: a stack of full-width buttons is a form, and six down the Advanced screen gave
+  equal maximum weight to six things of very unequal importance. No trailing chevron, because
+  nothing opens. A real `Button` is then free to mean "this is the action here".
+- `SettingsSliderRow` — title, value read off the row, slider beneath. Five near-identical copies of
+  this existed, each pairing a bare `Slider` with a note reading "Icon size: 42dp", which puts the
+  value in prose above the control you are currently dragging. `valueText` formats it because a
+  value is not always a number — a zero corner radius reads "square". The readout has a floor width
+  so the title beside it doesn't shift as digits are gained.
+- `SettingsNote` and `SettingsWarning`. A warning gets its own `errorContainer` row with an icon: a
+  note merely recoloured to `error` is the same shape as every other note on the screen and gets
+  skimmed past, which is what happened to the line saying search cannot open at all.
+- `SettingsRadioRow` is the **only** radio row. Three others had grown alongside it, one per screen
+  that wanted a leading picture the shared one didn't offer, and each had drifted in padding, text
+  style and whether the label was clickable. It takes a drawable or an `ImageBitmap`.
+- `SettingsSection` / `SettingsSubSection` — the old accent headings, on their way out with the
+  screens that still use them.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
 - `SettingsFilterField` and `ActionSquircle`, the filter input and the row-action tile of the long
   list screens — Manage apps and Hidden contacts. Both started life private to Manage apps and were
   hoisted when Hidden contacts was brought up to the same design; that screen had been left on an
   `OutlinedTextField` and checkboxes, which read as a different app once the list beside it changed.
+
+`GumshoosTheme` is **always** the wallpaper-derived dynamic scheme. `minSdk` is 31 and dynamic colour
+arrives with 31, so the template's purple fallback could never be selected on any device this runs
+on — a scheme nobody can reach is a scheme nobody checks. `darkTheme` stays a parameter only because
+the overlay forces it on.
 
 **Write the copy for someone who has never seen the code.** The developer is not the audience even
 though he is currently the only user, and the drift is always the same: a note that explains the

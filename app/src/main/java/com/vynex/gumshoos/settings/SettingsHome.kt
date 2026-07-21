@@ -1,16 +1,8 @@
 package com.vynex.gumshoos.settings
 
 import android.provider.Settings
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,81 +48,72 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = SettingsInset),
-        ) {
-            Spacer(Modifier.height(20.dp))
-            Text("Gumshoos", style = MaterialTheme.typography.displaySmall)
+    // The root takes the same bar as everything below it, with no back arrow because there is
+    // nowhere to go back to. It used to hand-roll the heading as a displaySmall inside the list,
+    // which is a large app bar drawn by eye — and it scrolled away, which a title is not meant to.
+    SettingsScaffold(title = "Gumshoos", onBack = null) {
+        if (!hasOverlay) {
+            SettingsWarning(
+                "Search can't open without permission to draw over other apps. " +
+                    "Grant it under Permissions.",
+            )
+            Spacer(Modifier.height(8.dp))
+        }
 
-            if (!hasOverlay) {
-                Spacer(Modifier.height(10.dp))
-                SettingsNote(
-                    "Search can't open without permission to draw over other apps. " +
-                        "Grant it under Permissions.",
-                    isWarning = true,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
+        SettingsGroupCard {
+            CategoryRow(
+                title = "Permissions",
+                summary = permissionsSummary(),
+                onClick = { onOpen(Screen.Setup) },
+                leadingIcon = R.drawable.ic_provider_terminal,
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Appearance",
+                summary = appearanceSummary(),
+                onClick = { onOpen(Screen.Appearance) },
+                leadingIcon = R.drawable.ic_provider_moon,
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Manage apps",
+                summary = manageAppsSummary(),
+                onClick = { onOpen(Screen.ManageApps()) },
+                leadingIcon = R.drawable.ic_provider_text_search,
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Search",
+                summary = searchSummary(),
+                onClick = { onOpen(Screen.Search) },
+                leadingIcon = R.drawable.ic_provider_search_code,
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Behaviour",
+                summary = behaviourSummary(hasUsage),
+                onClick = { onOpen(Screen.Behaviour) },
+                leadingIcon = R.drawable.ic_provider_wrench,
+                fullBleed = false,
+            )
+        }
 
-            SettingsGroupCard {
-                CategoryRow(
-                    title = "Permissions",
-                    summary = permissionsSummary(),
-                    onClick = { onOpen(Screen.Setup) },
-                    leadingIcon = R.drawable.ic_provider_terminal,
-                    fullBleed = false,
-                )
-                SettingsGroupDivider()
-                CategoryRow(
-                    title = "Appearance",
-                    summary = appearanceSummary(),
-                    onClick = { onOpen(Screen.Appearance) },
-                    leadingIcon = R.drawable.ic_provider_moon,
-                    fullBleed = false,
-                )
-                SettingsGroupDivider()
-                CategoryRow(
-                    title = "Manage apps",
-                    summary = manageAppsSummary(),
-                    onClick = { onOpen(Screen.ManageApps()) },
-                    leadingIcon = R.drawable.ic_provider_text_search,
-                    fullBleed = false,
-                )
-                SettingsGroupDivider()
-                CategoryRow(
-                    title = "Search",
-                    summary = searchSummary(),
-                    onClick = { onOpen(Screen.Search) },
-                    leadingIcon = R.drawable.ic_provider_search_code,
-                    fullBleed = false,
-                )
-                SettingsGroupDivider()
-                CategoryRow(
-                    title = "Behaviour",
-                    summary = behaviourSummary(hasUsage),
-                    onClick = { onOpen(Screen.Behaviour) },
-                    leadingIcon = R.drawable.ic_provider_wrench,
-                    fullBleed = false,
-                )
-            }
+        // The list's own arrangement adds 4dp either side, so this is a 12dp gap — enough to read
+        // as a separate group without the two looking unrelated.
+        Spacer(Modifier.height(4.dp))
 
-            Spacer(Modifier.height(12.dp))
-
-            SettingsGroupCard {
-                CategoryRow(
-                    title = "Advanced",
-                    summary = "Auto-close, launching, diagnostics",
-                    onClick = { onOpen(Screen.Advanced) },
-                    leadingIcon = R.drawable.ic_provider_hat_glasses,
-                    fullBleed = false,
-                )
-            }
-            Spacer(Modifier.height(24.dp))
+        SettingsGroupCard {
+            CategoryRow(
+                title = "Advanced",
+                summary = "Auto-close, launching, diagnostics",
+                onClick = { onOpen(Screen.Advanced) },
+                leadingIcon = R.drawable.ic_provider_hat_glasses,
+                fullBleed = false,
+            )
         }
     }
 }

@@ -505,23 +505,27 @@ internal fun AssistSettings() {
         },
     )
 
-    SettingsNote(
-        when {
-            isAssistant == true && !offered ->
-                "Gumshoos is still the selected assistant, but is no longer being offered. Pick " +
-                    "another one in system settings, or the gesture will stop doing anything."
-            isAssistant == true -> "Selected. The assistant gesture opens Gumshoos."
-            isAssistant == false && offered ->
-                "Listed but not selected — choose Gumshoos in system settings to finish. Some " +
-                    "phones only offer their own assistant here, in which case this can't be set."
-            isAssistant == false -> "Not selected."
-            // Null is "couldn't tell", not "no". Saying "not selected" on a device where the check
-            // is unavailable would be a confident wrong answer to the one question this row asks.
-            else -> "Couldn't read the current assistant on this device. The button below still " +
-                "opens the picker."
-        },
-        isWarning = isAssistant == true && !offered,
-    )
+    val assistState = when {
+        isAssistant == true && !offered ->
+            "Gumshoos is still the selected assistant, but is no longer being offered. Pick " +
+                "another one in system settings, or the gesture will stop doing anything."
+        isAssistant == true -> "Selected. The assistant gesture opens Gumshoos."
+        isAssistant == false && offered ->
+            "Listed but not selected — choose Gumshoos in system settings to finish. Some " +
+                "phones only offer their own assistant here, in which case this can't be set."
+        isAssistant == false -> "Not selected."
+        // Null is "couldn't tell", not "no". Saying "not selected" on a device where the check
+        // is unavailable would be a confident wrong answer to the one question this row asks.
+        else -> "Couldn't read the current assistant on this device. The button below still " +
+            "opens the picker."
+    }
+    // The contradictory state is the one worth raising: still the selected assistant, no longer
+    // offered as one, so the gesture is about to stop working with nothing on screen saying why.
+    if (isAssistant == true && !offered) {
+        SettingsWarning(assistState)
+    } else {
+        SettingsNote(assistState)
+    }
 
     OutlinedButton(
         onClick = { pickerMissing = !AssistIntegration.openPicker(context) },
@@ -529,10 +533,9 @@ internal fun AssistSettings() {
     ) { Text("Open assistant settings") }
 
     if (pickerMissing) {
-        SettingsNote(
+        SettingsWarning(
             "This phone didn't answer to any of the assistant settings screens. Look under " +
                 "Settings → Apps → Default apps.",
-            isWarning = true,
         )
     }
 }

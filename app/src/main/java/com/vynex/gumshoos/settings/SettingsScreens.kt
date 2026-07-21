@@ -403,9 +403,8 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
         // Granting lives on the Permissions screen, not here. What this screen still owes the user
         // is a reason for the dead button below, which is disabled without the permission.
         if (!hasOverlay) {
-            SettingsNote(
+            SettingsWarning(
                 "Nothing here works until \"draw over other apps\" is granted, under Permissions.",
-                isWarning = true,
             )
         }
 
@@ -442,17 +441,21 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
         UsageSourcePicker()
 
         Spacer(Modifier.height(8.dp))
-        SettingsNote(
-            when {
-                GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
-                    "Usage access isn't used with this option and can be revoked."
-                hasUsage -> "Granted. Apps are ordered by system-wide usage."
-                else ->
-                    "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
-                        "rather than a normal prompt."
-            },
-            isWarning = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage,
-        )
+        val usageState = when {
+            GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
+                "Usage access isn't used with this option and can be revoked."
+            hasUsage -> "Granted. Apps are ordered by system-wide usage."
+            else ->
+                "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
+                    "rather than a normal prompt."
+        }
+        // Only a warning in the one state that leaves a chosen setting doing nothing: system
+        // ordering picked, and the access it needs missing.
+        if (GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage) {
+            SettingsWarning(usageState)
+        } else {
+            SettingsNote(usageState)
+        }
         Button(
             onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
             enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,

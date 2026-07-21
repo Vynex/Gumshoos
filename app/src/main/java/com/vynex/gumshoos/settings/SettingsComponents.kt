@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -26,31 +27,43 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 /**
  * Shared building blocks for the settings screens, so a row looks and behaves the same wherever it
@@ -95,23 +108,38 @@ internal fun Modifier.fullBleedRow(): Modifier = layout { measurable, constraint
     }
 }
 
-/** A screen with a title and a back arrow. Content scrolls; the bar does not. */
+/**
+ * A screen with a large title that collapses as its content scrolls.
+ *
+ * [onBack] is null on the root, which is the only screen with nowhere to go back to — it gets the
+ * same bar as everything under it rather than a hand-rolled heading, which is what let the root and
+ * the screens below it drift apart in the first place.
+ *
+ * The bar only collapses when there is genuinely something to scroll. `exitUntilCollapsed` reads the
+ * gesture, not the content, so on a screen that fits in the window it would otherwise let the title
+ * be dragged away and leave a gap under it — [TopAppBarScrollBehavior]'s `canScroll` hook is what
+ * says no. `maxValue` starts at `Int.MAX_VALUE` and is set at layout, so the first frame answers
+ * "yes" before anything can be dragged anyway.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsScaffold(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     content: @Composable () -> Unit,
 ) {
+    val scrollState = rememberScrollState()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        canScroll = { scrollState.maxValue > 0 },
+    )
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+                navigationIcon = { BackArrow(onBack) },
+                scrollBehavior = scrollBehavior,
             )
         },
     ) { padding ->
@@ -119,7 +147,7 @@ internal fun SettingsScaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = SettingsInset, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -137,6 +165,11 @@ internal fun SettingsScaffold(
  *
  * The header sits outside the scroll and takes no horizontal inset of its own, so it can run edge
  * to edge; [content] keeps the same padding every other settings list uses.
+ *
+ * The **one place a compact bar is still right**. A large title is around 100dp taller, and on these
+ * screens that height would come straight off the preview the screen exists to show. It is pinned
+ * rather than static so it still picks up its scrolled container colour and the content passing
+ * underneath reads as passing underneath.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,15 +179,18 @@ internal fun SettingsScaffoldWithHeader(
     header: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val scrollState = rememberScrollState()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
+        canScroll = { scrollState.maxValue > 0 },
+    )
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+                navigationIcon = { BackArrow(onBack) },
+                scrollBehavior = scrollBehavior,
             )
         },
     ) { padding ->
@@ -163,7 +199,7 @@ internal fun SettingsScaffoldWithHeader(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(horizontal = SettingsInset, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -171,6 +207,15 @@ internal fun SettingsScaffoldWithHeader(
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
+}
+
+/** The bar's navigation slot, empty on a screen with nowhere to go back to. */
+@Composable
+private fun BackArrow(onBack: (() -> Unit)?) {
+    if (onBack == null) return
+    IconButton(onClick = onBack) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
     }
 }
 
@@ -224,12 +269,17 @@ internal fun CategoryRow(
 internal val SettingsCardShape = RoundedCornerShape(16.dp)
 
 /**
- * A step off the background rather than a fixed grey, so a card sits with whatever the wallpaper
- * theme produced instead of fighting it.
+ * The container every settings card sits on.
+ *
+ * `surfaceContainer`, not a translucent `surfaceVariant`. The tonal container roles are the scheme's
+ * own answer to "one step off the background", already correct in both light and dark, where a
+ * half-alpha colour is a guess that happens to land — and it composites against whatever is behind
+ * it, so two cards overlapping or a card over a preview came out a different shade from a card over
+ * the background. [SettingsFilterField] was already on `surfaceContainerHigh`, so the app has been
+ * disagreeing with itself since that field was written.
  */
 @Composable
-internal fun settingsCardColour(): Color =
-    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+internal fun settingsCardColour(): Color = MaterialTheme.colorScheme.surfaceContainer
 
 /**
  * A titled group raised onto its own surface.
@@ -306,6 +356,10 @@ internal fun SettingsFilterField(
  *
  * Groups a row's actions as a set and gives each tap a visible target. Disabled reads as dimmed, not
  * gone, so a placeholder slot is already accounted for.
+ *
+ * A step *above* [settingsCardColour] rather than equal to it. It used to be the same colour, which
+ * worked only because the rows it sits on are on the bare background; the moment a list is grouped
+ * into a card the squircle and its card are the same shade and the target disappears.
  */
 @Composable
 internal fun ActionSquircle(
@@ -320,7 +374,7 @@ internal fun ActionSquircle(
         modifier = Modifier
             .size(38.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(settingsCardColour())
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .alpha(if (enabled) 1f else 0.38f)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
@@ -352,6 +406,49 @@ internal fun SettingsGroupCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 internal fun SettingsGroupDivider() {
     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+}
+
+/**
+ * The one way to group settings: a caption, a rounded container of rows, and supporting text.
+ *
+ * This replaces grouping by [SettingsSection] heading and [SettingsDivider] hairline, which is a
+ * Material 2 / preference-screen idiom — it draws the *boundaries* between groups and leaves each
+ * group itself shapeless. A container says what belongs together without a line having to separate
+ * it from what doesn't, and it is what the root list already does.
+ *
+ * [note] sits under the card rather than over it. Supporting text is read after the thing it
+ * supports; copy written as a preamble to controls the reader hasn't reached yet is explaining
+ * something they can't see.
+ *
+ * Rows inside pass `fullBleed = false` — the card is clipped, so a ripple belongs within its rounded
+ * bounds rather than shoved out to the screen edge. Put [SettingsGroupDivider] between them where
+ * they are separate decisions rather than one set.
+ */
+@Composable
+internal fun SettingsGroup(
+    title: String? = null,
+    note: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Spacer(Modifier.height(8.dp))
+    if (title != null) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+    }
+    SettingsGroupCard(content)
+    if (note != null) {
+        Text(
+            note,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 /** A heading inside a screen, for grouping related controls. */
@@ -386,29 +483,178 @@ internal fun SettingsSubSection(title: String) {
 
 /** Explanatory text under a heading or control. */
 @Composable
-internal fun SettingsNote(text: String, isWarning: Boolean = false) {
+internal fun SettingsNote(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,
-        color = if (isWarning) {
-            MaterialTheme.colorScheme.error
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
+/**
+ * Something is wrong and the screen has to say so.
+ *
+ * Its own container, not red body text. A [SettingsNote] recoloured to `error` is the same shape as
+ * every other note on the screen and is read as one of them — which is exactly what happened to the
+ * line saying search cannot open at all. A warning has to survive being skimmed.
+ */
+@Composable
+internal fun SettingsWarning(text: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(SettingsCardShape)
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Icon(
+            Icons.Filled.Warning,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.padding(end = 12.dp).size(20.dp),
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+    }
+}
+
+/**
+ * A row that does something rather than going somewhere.
+ *
+ * What every `OutlinedButton(Modifier.fillMaxWidth())` in this app should have been. A stack of
+ * full-width buttons is a form, and reads as one — six of them in a row down the Advanced screen
+ * gave equal, maximum weight to six things of very unequal importance, none of which is the thing
+ * the screen is for. A row states what it does and stays out of the way; a real button is then free
+ * to mean "this is the action here".
+ *
+ * No trailing chevron: nothing opens, so an affordance promising a destination would be a lie.
+ */
+@Composable
+internal fun SettingsActionRow(
+    title: String,
+    summary: String? = null,
+    @DrawableRes icon: Int? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = SettingsInset, vertical = 14.dp),
+    ) {
+        if (icon != null) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 16.dp).size(24.dp),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (!summary.isNullOrEmpty()) {
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A slider over whole units, with its value read off the row rather than out of a sentence.
+ *
+ * Five near-identical copies of this existed — icon size, label size, corner radius, opacity, widget
+ * margins — each pairing a bare [Slider] with a note reading "Icon size: 42dp". That puts the label
+ * and the number in prose above a control that has neither, so the eye has to travel to a sentence
+ * to read a value it is currently dragging.
+ *
+ * [valueText] formats the number because a value is not always a number: a zero corner radius reads
+ * "square", not "0dp". The readout is given a floor width so the title beside it doesn't shift as
+ * the digit count changes mid-drag.
+ *
+ * Local state keyed on [value] so the readout tracks the drag while config is written through
+ * [onValue] on every change — the previews these sliders drive read config, not the slider.
+ * [onValueFinished] is for the writes too expensive to make continuously, like re-pushing a widget
+ * across to the launcher.
+ */
+@Composable
+internal fun SettingsSliderRow(
+    label: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    onValue: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    step: Int = 1,
+    summary: String? = null,
+    valueText: (Int) -> String = { "$it" },
+    onValueFinished: (() -> Unit)? = null,
+) {
+    var current by remember(value) { mutableFloatStateOf(value.toFloat()) }
+
+    Column(modifier.fillMaxWidth().padding(horizontal = SettingsInset, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.bodyLarge)
+                if (!summary.isNullOrEmpty()) {
+                    Text(
+                        summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                valueText(current.roundToInt()),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = 56.dp),
+            )
+        }
+        Slider(
+            value = current,
+            onValueChange = {
+                current = it
+                onValue(it.roundToInt())
+            },
+            onValueChangeFinished = onValueFinished ?: {},
+            valueRange = min.toFloat()..max.toFloat(),
+            // One notch per step. Guarded because a range shorter than a step would ask for a
+            // negative count, which Slider rejects at runtime rather than at compile time.
+            steps = (((max - min) / step) - 1).coerceAtLeast(0),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * [fullBleed] false for a row inside a [SettingsGroup] — see [CategoryRow] for why the card's rows
+ * keep their ripple inside its rounded bounds.
+ */
 @Composable
 internal fun SettingsSwitchRow(
     title: String,
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fullBleedRow()
+            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable { onCheckedChange(!checked) }
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 8.dp),
@@ -496,6 +742,14 @@ internal fun ProviderRow(
     }
 }
 
+/**
+ * One choice in an exclusive set.
+ *
+ * The only radio row. Three others grew alongside it — one per screen that needed a leading picture
+ * the shared one didn't offer — and each drifted in padding, text style and whether the label was
+ * even clickable. A leading mark comes either as a drawable ([icon]) or as a live one loaded from
+ * the system ([iconBitmap], an app's own icon), which was the whole reason for the copies.
+ */
 @Composable
 internal fun SettingsRadioRow(
     title: String,
@@ -504,17 +758,20 @@ internal fun SettingsRadioRow(
     onClick: () -> Unit,
     /** Optional mark shown before the label, for choices that are themselves a picture. */
     @DrawableRes icon: Int? = null,
+    /** As [icon], for a mark that isn't a resource — an installed app's own icon. */
+    iconBitmap: ImageBitmap? = null,
     /**
      * Whether [icon] should take the text colour. False for brand marks, which a tint flattens —
      * but true for a monochrome glyph, which is authored black and would otherwise vanish into a
      * dark settings background.
      */
     tintIcon: Boolean = false,
+    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fullBleedRow()
+            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 6.dp),
@@ -530,6 +787,13 @@ internal fun SettingsRadioRow(
                 } else {
                     null
                 },
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+        } else if (iconBitmap != null) {
+            Image(
+                bitmap = iconBitmap,
+                contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(12.dp))
