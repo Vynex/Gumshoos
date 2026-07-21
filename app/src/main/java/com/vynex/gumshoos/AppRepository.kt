@@ -317,12 +317,37 @@ object AppRepository {
     /**
      * Opens an app, by whichever method is configured.
      *
-     * The method is a setting because of a reproducible OxygenOS misbehaviour: launch an app, go
-     * Home immediately, tap the widget, and the app reopens instead of search. A trace taken on
-     * 2026-07-18 showed our launch firing exactly once and the second widget tap never reaching the
-     * service at all, which points at the system swallowing the tap mid-transition rather than at
-     * anything here. These alternatives exist to test that conclusion rather than to assume it —
-     * and [LaunchMethod.LAUNCHER_API] is the launcher-native path we were not using regardless.
+     * The method became a setting because of a reproducible misbehaviour: launch an app, swipe Home,
+     * and tap the widget before the minimize transition finishes — the app reopens instead of
+     * search. The window of failure is that transition and nothing else: it does not depend on how
+     * long you spent inside the app, only on the animation still running when the tap lands. Its
+     * length is unmeasured and likely well under half a second. **That is not our bug, and the
+     * levers below have been spent proving it** — all four behave identically, so nothing here needs
+     * trying again.
+     *
+     * The trace (2026-07-18) showed our launch firing exactly once and the second widget tap never
+     * reaching the service at all; `onStartCommand` logs before it can branch, so the tap is dropped
+     * in the launcher's process, upstream of the send. What settled it was a controlled experiment
+     * (2026-07-21): with two copies of the *same* widget placed side by side, tapping the copy you
+     * invoked from fails and tapping its neighbour works. Both copies share one PendingIntent —
+     * `requestCode` is per provider — so the failing tap and the working tap are identical in
+     * target, flags and extras, and are in the same region of the screen. The only thing that
+     * differs is which host view the launcher dispatched from, which is a fact that exists only
+     * inside the launcher and is consumed there before `send` runs.
+     *
+     * So the deaf target is the widget view last clicked, and it is deaf for exactly as long as the
+     * minimize transition runs. The likely mechanism — **unverified**, and
+     * reasoning-from-component-behaviour of exactly the kind that cost four iterations on Lens — is
+     * that the launcher anchors the transition to the view a RemoteViews click came from, leaving a
+     * live task surface over that widget while the app animates home. That the deaf interval tracks
+     * the transition rather than a fixed timeout is consistent with it. Checking it means watching a
+     * slowed recording to see whether the app shrinks into the widget you tapped. That would explain
+     * the bug, not fix it.
+     *
+     * Nothing we send participates: no `setSourceBounds`, and no `ActivityOptions` outside
+     * [LaunchMethod.NO_ANIMATION]. The workaround is the QS tile, which has no home-screen view to
+     * be anchored to. [LaunchMethod.LAUNCHER_API] stays because it is the launcher-native path we
+     * were not using regardless.
      *
      * The outcome is recorded rather than swallowed, so the trace can tell a refused launch from a
      * launch the system then undid.
