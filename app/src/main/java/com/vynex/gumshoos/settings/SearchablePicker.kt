@@ -108,7 +108,6 @@ internal fun SearchablePicker(
                         description = defaultDescription,
                         selected = selectedId == null,
                         onClick = { onPick(null) },
-                        fullBleed = false,
                     )
                     // A real separator rather than a grouping device: it divides the one default
                     // from the several hundred alternatives, which is a different kind of break.
@@ -120,7 +119,6 @@ internal fun SearchablePicker(
                         description = entry.subtitle.orEmpty(),
                         selected = entry.id == selectedId,
                         onClick = { onPick(entry.id) },
-                        fullBleed = false,
                     )
                 }
                 if (filtered.isEmpty()) {

@@ -2,15 +2,12 @@ package com.vynex.gumshoos.settings
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,8 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -76,13 +71,13 @@ internal fun IndexRefresh() {
     var running by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
 
-    SettingsSection("Rebuild index")
-    SettingsNote(
-        result ?: "Re-reads every installed app and, if permitted, contacts. The app index also " +
-            "records how long it took, which is the number worth knowing before blaming the index " +
-            "for anything.",
-    )
-    Button(
+    // A row, and the outcome is its summary. The timing this reports is the number worth having
+    // before blaming the index for anything, so it replaces the description rather than joining it.
+    SettingsActionRow(
+        title = if (running) "Rebuilding…" else "Rebuild index",
+        summary = result ?: "Re-reads every installed app, and contacts if permitted.",
+        imageVector = Icons.Filled.Refresh,
+        enabled = !running,
         onClick = {
             running = true
             result = null
@@ -100,17 +95,7 @@ internal fun IndexRefresh() {
                 running = false
             }
         },
-        enabled = !running,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Icon(
-            Icons.Filled.Refresh,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(if (running) "Rebuilding…" else "Rebuild index now")
-    }
+    )
 }
 
 /**
@@ -125,46 +110,48 @@ internal fun WidgetRefresh() {
     val context = LocalContext.current
     var done by remember { mutableStateOf(false) }
 
-    SettingsSection("Refresh widgets")
-    SettingsNote(
-        if (done) {
+    SettingsActionRow(
+        title = "Refresh widgets",
+        summary = if (done) {
             "Pushed. If a widget was opening the wrong thing, try it now."
         } else {
             "Re-sends both widgets to the launcher. Worth doing if one stops responding, or " +
-                "opens this app instead of search — that means the launcher is holding a copy " +
-                "from before an upgrade."
+                "opens this app instead of search."
         },
-    )
-    OutlinedButton(
+        imageVector = Icons.Filled.Refresh,
         onClick = { refreshAllWidgets(context); done = true },
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Refresh widgets")
-    }
+    )
 }
 
+/**
+ * The event trace, opened in place.
+ *
+ * Its own group rather than a loose stack of buttons: the trace, the actions on it, and the reason
+ * it exists are one thing. Copy and Clear appear only once there is something on screen to act on.
+ */
 @Composable
 internal fun EventTrace() {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var trace by remember { mutableStateOf(EventLog.read()) }
     var expanded by remember { mutableStateOf(false) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { trace = EventLog.read(); expanded = true }) {
-                Text(if (expanded) "Refresh trace" else "Show event trace")
-            }
-            if (expanded) {
-                OutlinedButton(
-                    onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace)) },
-                ) { Text("Copy") }
-                OutlinedButton(onClick = { EventLog.clear(); trace = "" }) { Text("Clear") }
-            }
-        }
+    SettingsGroup(
+        title = "Event trace",
+        note = "Records what the overlay did and when. This is how the last few misbehaviours " +
+            "were pinned down without a debugger attached.",
+    ) {
+        SettingsActionRow(
+            title = if (expanded) "Hide trace" else "Show trace",
+            summary = if (expanded) null else "Reads the log from disk.",
+            imageVector = Icons.Filled.Refresh,
+            onClick = {
+                trace = EventLog.read()
+                expanded = !expanded
+            },
+        )
 
         if (expanded) {
+            SettingsGroupDivider()
             Text(
                 text = trace.ifBlank { "No events recorded yet." },
                 style = MaterialTheme.typography.bodySmall.copy(
@@ -174,8 +161,19 @@ internal fun EventTrace() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 260.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = SettingsInset, vertical = 12.dp),
             )
+            SettingsGroupDivider()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = SettingsInset, vertical = 8.dp),
+            ) {
+                TextButton(
+                    onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(trace)) },
+                ) { Text("Copy") }
+                TextButton(onClick = { EventLog.clear(); trace = "" }) { Text("Clear") }
+            }
         }
     }
 }
@@ -222,7 +220,6 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
                 source = UsageSource.GUMSHOOS
                 GumshoosConfig.setUsageSource(context, UsageSource.GUMSHOOS)
             },
-            fullBleed = false,
         )
         SettingsRadioRow(
             title = "System-wide usage",
@@ -232,7 +229,6 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
                 source = UsageSource.SYSTEM
                 GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
             },
-            fullBleed = false,
         )
 
         // The grant belongs with the choice, since it is what makes the chosen one work.
@@ -332,7 +328,6 @@ internal fun EmailAppPicker() {
             description = "Lets the phone decide, may show a picker.",
             selected = selected == null,
             onClick = { choose(null) },
-            fullBleed = false,
         )
         handlers.forEach { handler ->
             SettingsRadioRow(
@@ -341,7 +336,6 @@ internal fun EmailAppPicker() {
                 selected = selected == handler.packageName,
                 onClick = { choose(handler.packageName) },
                 iconBitmap = handler.icon,
-                fullBleed = false,
             )
         }
     }
@@ -393,48 +387,29 @@ internal fun SearchIconSettings() {
     val context = LocalContext.current
     var drawerIcon by remember { mutableStateOf(SearchShortcuts.isDrawerIconEnabled(context)) }
 
-    SettingsSection("Search icons")
-    Text(
-        "A shortcut can only launch an activity, so these pass through a hidden one on the way to " +
-            "the search window. The widget reaches it directly and should still be quicker — " +
-            "compare the millisecond readout under the search bar.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    Row(
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                drawerIcon = !drawerIcon
-                SearchShortcuts.setDrawerIconEnabled(context, drawerIcon)
-            },
+    // A switch, not a checkbox. It is an on/off setting like every other on/off setting here, and
+    // the checkbox was only ever there because this control predates the shared row.
+    SettingsGroup(
+        title = "Search icons",
+        note = "Both open search through a hidden activity, so expect them to read a little " +
+            "slower than the widget.",
     ) {
-        Checkbox(
+        SettingsSwitchRow(
+            title = "Second icon in the app drawer",
+            description = "Adds a separate \"Gumshoos Search\" entry alongside the normal icon.",
             checked = drawerIcon,
             onCheckedChange = {
                 drawerIcon = it
                 SearchShortcuts.setDrawerIconEnabled(context, it)
             },
         )
-        Spacer(Modifier.width(4.dp))
-        Column {
-            Text("Second icon in the app drawer", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "Adds a separate \"Gumshoos Search\" entry that opens the search window, alongside " +
-                    "the normal icon that opens this screen.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        SettingsGroupDivider()
+        SettingsActionRow(
+            title = "Pin a search icon to the home screen",
+            enabled = SearchShortcuts.canPin(context),
+            onClick = { SearchShortcuts.requestPin(context) },
+        )
     }
-
-    OutlinedButton(
-        onClick = { SearchShortcuts.requestPin(context) },
-        enabled = SearchShortcuts.canPin(context),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text("Pin a search icon to the home screen") }
 }
 
 /**
@@ -453,25 +428,6 @@ internal fun AssistSettings() {
     val isAssistant = rememberOnResume { AssistIntegration.isCurrentAssistant(context) }
     var pickerMissing by remember { mutableStateOf(false) }
 
-    SettingsSection("Assistant")
-    SettingsNote(
-        "Opens the same search window the widget does, from whatever gesture your phone uses for " +
-            "the assistant — long-pressing the power button, or the corner swipe. It arrives as " +
-            "an activity, so it takes the same trampoline the shortcut does and reads a little " +
-            "slower than the widget; the readout tags it \"assist\".",
-    )
-
-    SettingsSwitchRow(
-        title = "Offer Gumshoos as an assistant",
-        description = "Adds Gumshoos to the phone's list of assistant apps. It doesn't select it " +
-            "— no app is allowed to give itself that role.",
-        checked = offered,
-        onCheckedChange = {
-            offered = it
-            AssistIntegration.setEntryEnabled(context, it)
-        },
-    )
-
     val assistState = when {
         isAssistant == true && !offered ->
             "Gumshoos is still the selected assistant, but is no longer being offered. Pick " +
@@ -488,16 +444,31 @@ internal fun AssistSettings() {
     }
     // The contradictory state is the one worth raising: still the selected assistant, no longer
     // offered as one, so the gesture is about to stop working with nothing on screen saying why.
-    if (isAssistant == true && !offered) {
-        SettingsWarning(assistState)
-    } else {
-        SettingsNote(assistState)
+    val contradictory = isAssistant == true && !offered
+
+    SettingsGroup(
+        title = "Assistant",
+        note = if (contradictory) null else assistState,
+    ) {
+        SettingsSwitchRow(
+            title = "Offer Gumshoos as an assistant",
+            description = "Adds it to the phone's list, so the assistant gesture — the power " +
+                "button, or the corner swipe — can open search. Choosing it is a separate step.",
+            checked = offered,
+            onCheckedChange = {
+                offered = it
+                AssistIntegration.setEntryEnabled(context, it)
+            },
+        )
+        SettingsGroupDivider()
+        SettingsActionRow(
+            title = "Open assistant settings",
+            summary = "No app is allowed to make itself the assistant, so this is where it's set.",
+            onClick = { pickerMissing = !AssistIntegration.openPicker(context) },
+        )
     }
 
-    OutlinedButton(
-        onClick = { pickerMissing = !AssistIntegration.openPicker(context) },
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text("Open assistant settings") }
+    if (contradictory) SettingsWarning(assistState)
 
     if (pickerMissing) {
         SettingsWarning(

@@ -99,7 +99,6 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
                         },
                     )
                 },
-                fullBleed = false,
             )
             SettingsSliderRow(
                 label = "Corners",

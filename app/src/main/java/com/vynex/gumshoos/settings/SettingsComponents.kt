@@ -77,42 +77,11 @@ import kotlin.math.roundToInt
  */
 
 /**
- * The inset every settings list holds its content at.
+ * The inset every settings list holds its content at, and every row inside a card repeats.
  *
- * Shared because [fullBleedRow] has to undo exactly this much. A row whose bleed and whose list's
- * padding disagree either overhangs the screen or leaves a visible notch.
+ * One value, so a row's text lands in the same column whichever card it is in.
  */
 internal val SettingsInset = 20.dp
-
-/**
- * Lets a row's touch target and ripple reach the screen edges while its content stays inset.
- *
- * The list applies its padding to the scrolling column, so everything inside is already narrower
- * than the window and a ripple can only fill the width its row was given — it stops where the text
- * starts, which reads as a misaligned highlight rather than a row being pressed.
- *
- * Rather than move the inset onto every child in every screen, this measures the row [SettingsInset]
- * wider on each side and draws it shifted back out, while still reporting the original width to the
- * column. Nothing above or below it moves. The row then re-applies the inset internally, so its
- * content lands exactly where it did before.
- *
- * Safe because both lists apply their padding *inside* `verticalScroll`, so the clip bounds are the
- * full window width and the widened row isn't cut off.
- */
-internal fun Modifier.fullBleedRow(): Modifier = layout { measurable, constraints ->
-    val bleed = SettingsInset.roundToPx()
-    val extra = bleed * 2
-    val widened = if (constraints.hasBoundedWidth) {
-        constraints.copy(maxWidth = constraints.maxWidth + extra)
-    } else {
-        constraints
-    }
-    val placeable = measurable.measure(widened)
-    // The reported width excludes the bleed, so the column lays out as though nothing changed.
-    layout((placeable.width - extra).coerceAtLeast(0), placeable.height) {
-        placeable.place(-bleed, 0)
-    }
-}
 
 /**
  * The one app bar every screen below the root wears.
@@ -264,14 +233,10 @@ internal fun CategoryRow(
     summary: String,
     onClick: () -> Unit,
     @DrawableRes leadingIcon: Int? = null,
-    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            // Inside a group card the row must not full-bleed: the card is clipped, so the ripple
-            // belongs within its rounded bounds rather than shoved out to the screen edge.
-            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 14.dp),
@@ -398,8 +363,9 @@ internal fun ActionSquircle(
 }
 
 /**
- * A titleless rounded group for the home list — rows share one container and the clip keeps each
- * ripple within its rounded bounds. Rows inside pass `fullBleed = false` for the same reason.
+ * A titleless rounded group — rows share one container and the clip keeps each ripple within its
+ * rounded bounds. Usually reached through [SettingsGroup]; called directly only where a screen
+ * wants the container without a caption or a note.
  */
 @Composable
 internal fun SettingsGroupCard(content: @Composable ColumnScope.() -> Unit) {
@@ -421,18 +387,15 @@ internal fun SettingsGroupDivider() {
 /**
  * The one way to group settings: a caption, a rounded container of rows, and supporting text.
  *
- * This replaces grouping by [SettingsSection] heading and [SettingsDivider] hairline, which is a
- * Material 2 / preference-screen idiom — it draws the *boundaries* between groups and leaves each
- * group itself shapeless. A container says what belongs together without a line having to separate
+ * This replaced grouping by accent heading and hairline divider, a Material 2 / preference-screen
+ * idiom that draws the *boundaries* between groups and leaves each group itself shapeless. A container says what belongs together without a line having to separate
  * it from what doesn't, and it is what the root list already does.
  *
  * [note] sits under the card rather than over it. Supporting text is read after the thing it
  * supports; copy written as a preamble to controls the reader hasn't reached yet is explaining
  * something they can't see.
  *
- * Rows inside pass `fullBleed = false` — the card is clipped, so a ripple belongs within its rounded
- * bounds rather than shoved out to the screen edge. Put [SettingsGroupDivider] between them where
- * they are separate decisions rather than one set.
+ * Put [SettingsGroupDivider] between rows where they are separate decisions rather than one set.
  */
 @Composable
 internal fun SettingsGroup(
@@ -463,18 +426,6 @@ internal fun SettingsGroup(
             )
         }
     }
-}
-
-/** A heading inside a screen, for grouping related controls. */
-@Composable
-internal fun SettingsSection(title: String) {
-    Spacer(Modifier.height(12.dp))
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    Spacer(Modifier.height(4.dp))
 }
 
 /** Explanatory text under a heading or control. */
@@ -718,22 +669,16 @@ internal fun SettingsSliderRow(
     }
 }
 
-/**
- * [fullBleed] false for a row inside a [SettingsGroup] — see [CategoryRow] for why the card's rows
- * keep their ripple inside its rounded bounds.
- */
 @Composable
 internal fun SettingsSwitchRow(
     title: String,
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable { onCheckedChange(!checked) }
             .fillMaxWidth()
             // 12dp, not 8. This was the shallowest row in the family, which showed up as a first
@@ -860,12 +805,10 @@ internal fun SettingsRadioRow(
      * vanish into a dark settings background.
      */
     tintIcon: Boolean = false,
-    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 10.dp),

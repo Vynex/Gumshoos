@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -95,7 +95,6 @@ internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         }
                     },
                 onClick = { onOpen(Screen.Matching) },
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -112,7 +111,6 @@ internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     "$on of $total on · $units · $currency"
                 },
                 onClick = { onOpen(Screen.Answers) },
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -123,7 +121,6 @@ internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
                 },
                 onClick = { onOpen(Screen.Contacts) },
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -136,7 +133,6 @@ internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     }
                 },
                 onClick = { onOpen(Screen.Providers) },
-                fullBleed = false,
             )
         }
     }
@@ -233,7 +229,6 @@ internal fun MatchingScreen(onBack: () -> Unit) {
                     description = tier.example,
                     checked = tier in options,
                     onCheckedChange = { GumshoosConfig.setMatchTierEnabled(context, tier, it) },
-                    fullBleed = false,
                 )
             }
         }
@@ -299,7 +294,6 @@ internal fun ContactsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         if (it == 0) "None hidden" else "$it hidden"
                     },
                     onClick = { onOpen(Screen.HiddenContacts) },
-                    fullBleed = false,
                 )
             }
             EmailAppPicker()
@@ -343,7 +337,6 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         enabled = if (on) enabled + provider.id else enabled - provider.id
                         GumshoosConfig.setAnswerProvidersEnabled(context, enabled)
                     },
-                    fullBleed = false,
                 )
             }
         }
@@ -366,7 +359,6 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         unitSystem = option
                         GumshoosConfig.setUnitSystemOverride(context, option)
                     },
-                    fullBleed = false,
                 )
             }
         }
@@ -381,14 +373,12 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 title = "Currency",
                 summary = GumshoosConfig.preferredCurrency ?: "Follow device",
                 onClick = { onOpen(Screen.CurrencyPicker) },
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
                 title = "Time zone",
                 summary = GumshoosConfig.preferredZone ?: "Follow device",
                 onClick = { onOpen(Screen.ZonePicker) },
-                fullBleed = false,
             )
         }
 
@@ -426,25 +416,25 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
             )
         }
 
-        SettingsSection("Keep it warm")
-        SettingsNote(
-            "Starts the service and pre-attaches the window, which is what makes opening search " +
-                "near-instant. Needed once per boot; placing the widget does it too.",
-        )
-        Button(
-            onClick = {
-                context.startForegroundService(
-                    OverlayService.intent(context, OverlayService.ACTION_WARM)
-                )
-            },
-            enabled = hasOverlay,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Start & pre-warm") }
+        SettingsGroup(
+            title = "Keep it warm",
+            note = "Needed once per boot. Placing the widget does it too.",
+        ) {
+            SettingsActionRow(
+                title = "Start & pre-warm",
+                summary = "Starts the service and pre-attaches the window, which is what makes " +
+                    "opening search near-instant.",
+                imageVector = Icons.Filled.Refresh,
+                enabled = hasOverlay,
+                onClick = {
+                    context.startForegroundService(
+                        OverlayService.intent(context, OverlayService.ACTION_WARM)
+                    )
+                },
+            )
+        }
 
-        SettingsDivider()
         SearchIconSettings()
-
-        SettingsDivider()
         AssistSettings()
     }
 }
@@ -485,128 +475,109 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
 
     SettingsScaffold(title = "Advanced", onBack = onBack) {
-        SettingsSwitchRow(
-            title = "Close when focus is lost",
-            description = "Dismisses the search window when another app takes over — tapping a " +
-                "notification, or pulling down the shade. This also covers the Home gesture, " +
-                "which reports late and so feels sluggish.",
-            checked = hideOnFocusLoss,
-            onCheckedChange = {
-                hideOnFocusLoss = it
-                GumshoosConfig.setHideOnFocusLoss(context, it)
-            },
-        )
-
-        SettingsDivider()
-        CategoryRow(
-            title = "Launching Gumshoos",
-            summary = when {
-                !hasOverlay -> "Overlay permission needed"
-                AssistIntegration.isCurrentAssistant(context) == true ->
-                    "Widget · assistant gesture on"
-                SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
-                else -> "Widget, quick tile and shortcuts"
-            },
-            onClick = { onOpen(Screen.Launching) },
-        )
-
-        SettingsDivider()
-        SettingsSection("How apps are opened")
-        SettingsNote(
-            "A diagnostic lever, not a preference. Some launchers reopen the app you just left " +
-                "when you tap the widget mid-transition — a trace showed that tap never reaching " +
-                "Gumshoos at all, so this most likely can't fix it, but it makes the alternatives " +
-                "cheap to rule out. Each launch records which method it used in the event trace.",
-        )
-        LaunchMethod.entries.forEach { method ->
-            SettingsRadioRow(
-                title = method.label,
-                description = method.description,
-                selected = GumshoosConfig.launchMethod == method,
-                onClick = { GumshoosConfig.setLaunchMethod(context, method) },
+        SettingsGroup {
+            SettingsSwitchRow(
+                title = "Close when focus is lost",
+                description = "Dismisses the search window when another app takes over — a " +
+                    "notification, or the shade. This also covers the Home gesture.",
+                checked = hideOnFocusLoss,
+                onCheckedChange = {
+                    hideOnFocusLoss = it
+                    GumshoosConfig.setHideOnFocusLoss(context, it)
+                },
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Launching Gumshoos",
+                summary = when {
+                    !hasOverlay -> "Overlay permission needed"
+                    AssistIntegration.isCurrentAssistant(context) == true ->
+                        "Widget · assistant gesture on"
+                    SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
+                    else -> "Widget, quick tile and shortcuts"
+                },
+                onClick = { onOpen(Screen.Launching) },
+            )
+            SettingsGroupDivider()
+            SettingsActionRow(
+                title = "Open notification settings",
+                // The full story — that a foreground service cannot run without a notification and
+                // cannot suppress it from inside — is a platform constraint, and belongs in the
+                // service's own source. What is useful here is what turning it off does.
+                summary = "A foreground service must show one. Switching notifications off hides " +
+                    "it and leaves the service running; Gumshoos stays under \"Active apps\".",
+                onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    )
+                },
             )
         }
 
-        SettingsDivider()
-        SettingsSection("Notification")
-        SettingsNote(
-            "A foreground service must supply a notification — the system won't let it run " +
-                "without one, and it can't be suppressed from inside the app. On Android 13+ the " +
-                "system only shows it when notification permission is granted, so switching " +
-                "notifications off hides it while the service keeps running. Gumshoos will still " +
-                "be listed under \"Active apps\" in the shade; that part is unavoidable.",
-        )
-        OutlinedButton(
-            onClick = {
-                context.startActivity(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        SettingsGroup(
+            title = "How apps are opened",
+            note = "A diagnostic lever, not a preference. Each launch records which method it " +
+                "used in the event trace.",
+        ) {
+            LaunchMethod.entries.forEach { method ->
+                SettingsRadioRow(
+                    title = method.label,
+                    description = method.description,
+                    selected = GumshoosConfig.launchMethod == method,
+                    onClick = { GumshoosConfig.setLaunchMethod(context, method) },
                 )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Open notification settings") }
+            }
+        }
 
-        SettingsDivider()
-        IndexRefresh()
+        SettingsGroup(title = "Maintenance") {
+            IndexRefresh()
+            SettingsGroupDivider()
+            WidgetRefresh()
+        }
 
-        SettingsDivider()
-        WidgetRefresh()
-
-        SettingsDivider()
-        SettingsNote(
-            "Diagnostics. The event trace records what the overlay did and when, which is how " +
-                "the last few misbehaviours were pinned down without a debugger attached.",
-        )
-
-        SettingsDivider()
         CrashReport()
         EventTrace()
 
-        SettingsDivider()
-        SettingsSection("Google entry points")
-        SettingsNote(
-            "Lists what the Google apps expose for voice search and Lens on this device, into the " +
-                "trace above. Neither has a published intent, and the ones that look right don't " +
-                "behave as their names suggest — voice search turned out to funnel five different " +
-                "actions into the same assistant hand-off. These read the answer off the device " +
-                "instead of guessing at component names.",
-        )
-        OutlinedButton(
-            onClick = { WidgetActionActivity.probeVoiceTargets(context) },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Probe voice search targets") }
-        OutlinedButton(
-            onClick = { WidgetActionActivity.probeLensTargets(context) },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Probe Lens targets") }
+        SettingsGroup(
+            title = "Google entry points",
+            note = "Neither app publishes an intent for voice search or Lens, and the components " +
+                "that look right often aren't. These read the answer off this device instead.",
+        ) {
+            SettingsActionRow(
+                title = "Probe voice search targets",
+                summary = "Writes what the Google app declares into the trace.",
+                onClick = { WidgetActionActivity.probeVoiceTargets(context) },
+            )
+            SettingsGroupDivider()
+            SettingsActionRow(
+                title = "Probe Lens targets",
+                summary = "Writes what the Lens apps declare into the trace.",
+                onClick = { WidgetActionActivity.probeLensTargets(context) },
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Entry point tester",
+                // A probe says what exists and where an intent resolves; it cannot say whether
+                // anything appeared, because a component that opens and closes itself reports
+                // success. Only a pair of eyes settles that, one candidate at a time.
+                summary = "Fires one target at a time so it can be watched",
+                onClick = { onOpen(Screen.EntryPoints) },
+            )
+        }
 
-        SettingsDivider()
-        SettingsNote(
-            "The probes say what exists and where an intent resolves. Neither can say whether " +
-                "anything appeared — a component that opens and closes itself again reports " +
-                "success — and that is what four wrong Lens entry points have had in common. The " +
-                "tester fires one candidate at a time so it can be watched.",
-        )
-        CategoryRow(
-            title = "Entry point tester",
-            summary = "Fire one Lens or voice target at a time",
-            onClick = { onOpen(Screen.EntryPoints) },
-        )
-
-        SettingsDivider()
-        SettingsSection("Compare launch paths")
-        SettingsNote(
-            "Opens the overlay from here, which goes through an activity and is deliberately the " +
-                "slow path. Compare it against tapping the widget.",
-        )
-        OutlinedButton(
-            onClick = {
-                context.startForegroundService(
-                    OverlayService.intent(context, OverlayService.ACTION_SHOW, source = "in-app")
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Show overlay from app") }
+        SettingsGroup(title = "Compare launch paths") {
+            SettingsActionRow(
+                title = "Show overlay from app",
+                summary = "Goes through an activity, which is deliberately the slow path. " +
+                    "Compare it against tapping the widget.",
+                onClick = {
+                    context.startForegroundService(
+                        OverlayService.intent(context, OverlayService.ACTION_SHOW, source = "in-app")
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -625,7 +596,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 title = "Search bar widget",
                 summary = widgetBarSummary(),
                 onClick = { onOpen(Screen.WidgetBar) },
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -637,7 +607,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
                     },
                 onClick = { onOpen(Screen.WidgetIcon) },
-                fullBleed = false,
             )
         }
 
@@ -646,7 +615,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 title = "Search window",
                 summary = searchWindowSummary(),
                 onClick = { onOpen(Screen.SearchWindow) },
-                fullBleed = false,
             )
         }
 
@@ -675,7 +643,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                         mode = option
                         GumshoosConfig.setAnimationMode(context, option)
                     },
-                    fullBleed = false,
                 )
             }
         }

@@ -51,20 +51,20 @@ internal fun EntryPointsScreen(onBack: () -> Unit) {
         )
 
         WidgetAction.entries.forEach { action ->
-            SettingsDivider()
-            SettingsSection(action.label)
-
             // Resolution is read per row, so the list is rebuilt on every recomposition rather than
             // remembered: returning from a launch is exactly when a rung's availability may have
             // changed, and a stale row would be reporting on the state before the tap.
             val candidates = WidgetActionTargets.candidates(context, action)
             val chain = WidgetActionTargets.chain(context, action).map(WidgetActionTargets::describe)
-            candidates.forEachIndexed { index, candidate ->
-                val at = candidate.intent
-                    ?.let { chain.indexOf(WidgetActionTargets.describe(it)) }
-                    ?.takeIf { it >= 0 }
-                CandidateRow(action, candidate, chainAt = at?.plus(1))
-                if (index < candidates.lastIndex) SettingsGroupDivider()
+
+            SettingsGroup(title = action.label) {
+                candidates.forEachIndexed { index, candidate ->
+                    val at = candidate.intent
+                        ?.let { chain.indexOf(WidgetActionTargets.describe(it)) }
+                        ?.takeIf { it >= 0 }
+                    CandidateRow(action, candidate, chainAt = at?.plus(1))
+                    if (index < candidates.lastIndex) SettingsGroupDivider()
+                }
             }
         }
     }
@@ -94,8 +94,9 @@ private fun CandidateRow(action: WidgetAction, candidate: LaunchCandidate, chain
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fullBleedRow()
-            .clickable(enabled = intent != null && resolved != null) { fire(context, action, candidate) }
+            .clickable(enabled = intent != null && resolved != null) {
+                fire(context, action, candidate)
+            }
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 12.dp),
     ) {

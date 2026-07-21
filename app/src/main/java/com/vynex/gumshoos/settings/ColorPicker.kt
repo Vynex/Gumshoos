@@ -99,11 +99,8 @@ internal fun ColorPickerAccordion(
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
 
     // Raised onto its own surface so the palette reads as one object rather than as loose rows in
-    // the list. surfaceVariant rather than a fixed grey, so it sits a step off whatever background
-    // the wallpaper theme has produced instead of fighting it.
-    //
-    // Deliberately not fullBleedRow, unlike every other settings row: the ripple belongs inside the
-    // card's rounded bounds, and a row that draws past them would break the shape it sits in.
+    // the list — the same container a SettingsGroup would have given it, drawn here because the
+    // header row has to sit inside the card to be the thing that opens it.
     Column(
         modifier
             .fillMaxWidth()

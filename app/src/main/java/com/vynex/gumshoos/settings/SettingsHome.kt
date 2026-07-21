@@ -63,7 +63,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = permissionsSummary(),
                 onClick = { onOpen(Screen.Permissions) },
                 leadingIcon = R.drawable.ic_provider_terminal,
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -71,7 +70,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = appearanceSummary(),
                 onClick = { onOpen(Screen.Appearance) },
                 leadingIcon = R.drawable.ic_provider_moon,
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -79,7 +77,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = manageAppsSummary(),
                 onClick = { onOpen(Screen.ManageApps()) },
                 leadingIcon = R.drawable.ic_provider_text_search,
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -87,7 +84,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = searchSummary(),
                 onClick = { onOpen(Screen.Search) },
                 leadingIcon = R.drawable.ic_provider_search_code,
-                fullBleed = false,
             )
             SettingsGroupDivider()
             CategoryRow(
@@ -95,7 +91,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = behaviourSummary(hasUsage),
                 onClick = { onOpen(Screen.Behaviour) },
                 leadingIcon = R.drawable.ic_provider_wrench,
-                fullBleed = false,
             )
         }
 
@@ -109,7 +104,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 summary = "Auto-close, launching, diagnostics",
                 onClick = { onOpen(Screen.Advanced) },
                 leadingIcon = R.drawable.ic_provider_hat_glasses,
-                fullBleed = false,
             )
         }
     }

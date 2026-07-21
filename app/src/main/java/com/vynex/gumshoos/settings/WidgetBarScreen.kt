@@ -129,7 +129,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 description = "Draws just the border, in the fill colour, with nothing behind it.",
                 checked = style.wireframe,
                 onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
-                fullBleed = false,
             )
             SettingsSwitchRow(
                 title = "Shadow",
@@ -137,7 +136,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                     "bar pulls in where the margins below are smaller than that.",
                 checked = style.shadow,
                 onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
-                fullBleed = false,
             )
         }
 
@@ -195,7 +193,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                     onClick = { GumshoosConfig.setWidgetBarLogo(context, logo); push() },
                     icon = logo.icon,
                     tintIcon = logo.tintable,
-                    fullBleed = false,
                 )
             }
             SettingsGroupDivider()
@@ -204,7 +201,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 description = "The placeholder text next to the logo.",
                 checked = style.showHint,
                 onCheckedChange = { GumshoosConfig.setWidgetBarShowHint(context, it); push() },
-                fullBleed = false,
             )
         }
 
