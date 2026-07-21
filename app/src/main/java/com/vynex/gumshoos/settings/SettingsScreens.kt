@@ -74,56 +74,16 @@ internal fun <T> rememberOnResume(read: () -> T): T {
 @Composable
 private fun rememberPermission(check: () -> Boolean): Boolean = rememberOnResume(check)
 
+/**
+ * Everything about what a query turns up: how it matches, what answers itself, contacts, and the
+ * hand-off providers. Each is its own screen; this is the hub that gathers them.
+ */
 @Composable
-internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
+internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
-    val hasUsage = rememberPermission { UsageRepository.hasPermission(context) }
+    val hasContacts = rememberPermission { ContactsRepository.hasPermission(context) }
 
-    SettingsScaffold(title = "Apps", onBack = onBack) {
-        SettingsSection("Frequent & Recent ordering")
-        UsageSourcePicker()
-
-        Spacer(Modifier.height(8.dp))
-        SettingsNote(
-            when {
-                GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
-                    "Usage access isn't used with this option and can be revoked."
-                hasUsage -> "Granted. Apps are ordered by system-wide usage."
-                else ->
-                    "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
-                        "rather than a normal prompt."
-            },
-            isWarning = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage,
-        )
-        Button(
-            onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
-            enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Grant usage access") }
-
-        SettingsDivider()
-        SettingsSection("New apps tab")
-        // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit outside
-        // that, so snap it in for display rather than showing the thumb pinned at an end.
-        var windowHours by remember {
-            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat().coerceIn(3f, 12f))
-        }
-        SettingsNote(
-            "How recently an app must have been installed or updated to appear there: " +
-                "${windowHours.roundToInt()} hours.",
-        )
-        Slider(
-            value = windowHours,
-            onValueChange = { windowHours = it },
-            onValueChangeFinished = {
-                GumshoosConfig.setNewUpdatedWindowHours(context, windowHours.roundToInt().toLong())
-            },
-            valueRange = 3f..12f,
-            steps = 2,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        SettingsDivider()
+    SettingsScaffold(title = "Search", onBack = onBack) {
         CategoryRow(
             title = "Matching",
             summary = AppMatcher.MatchTier.entries
@@ -136,6 +96,41 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     }
                 },
             onClick = { onOpen(Screen.Matching) },
+        )
+        CategoryRow(
+            title = "Instant answers",
+            summary = run {
+                val on = AnswerProviders.enabledIds.size
+                val total = AnswerProviders.all.size
+                val units = when (GumshoosConfig.unitSystemOverride) {
+                    MeasurementSystem.SI -> "Metric"
+                    MeasurementSystem.US, MeasurementSystem.UK -> "Imperial"
+                    null -> "Device units"
+                }
+                val currency = GumshoosConfig.preferredCurrency ?: "device currency"
+                "$on of $total on · $units · $currency"
+            },
+            onClick = { onOpen(Screen.Answers) },
+        )
+        CategoryRow(
+            title = "Contacts",
+            summary = when {
+                !hasContacts -> "Off — results won't include contacts"
+                GumshoosConfig.hiddenContacts.isEmpty() -> "On"
+                else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
+            },
+            onClick = { onOpen(Screen.Contacts) },
+        )
+        CategoryRow(
+            title = "Providers",
+            summary = SearchProviders.enabled.let { shown ->
+                if (shown.isEmpty()) {
+                    "None — the \"Search using\" row is hidden"
+                } else {
+                    "${shown.size} shown · ${shown.first().label} first"
+                }
+            },
+            onClick = { onOpen(Screen.Providers) },
         )
     }
 }
@@ -167,7 +162,7 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
         )
     }
 
-    SettingsScaffold(title = "Search providers", onBack = onBack) {
+    SettingsScaffold(title = "Providers", onBack = onBack) {
         SettingsNote(
             "The row of marks under \"Search using\", shown once a query matches no installed " +
                 "app. The first one is also where Enter goes when nothing matched.",
@@ -457,9 +452,61 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
 @Composable
 internal fun BehaviourScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
+    val hasUsage = rememberPermission { UsageRepository.hasPermission(context) }
 
     SettingsScaffold(title = "Behaviour", onBack = onBack) {
+        SettingsSection("Frequent & Recent ordering")
+        UsageSourcePicker()
+
+        Spacer(Modifier.height(8.dp))
+        SettingsNote(
+            when {
+                GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
+                    "Usage access isn't used with this option and can be revoked."
+                hasUsage -> "Granted. Apps are ordered by system-wide usage."
+                else ->
+                    "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
+                        "rather than a normal prompt."
+            },
+            isWarning = GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage,
+        )
+        Button(
+            onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+            enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Grant usage access") }
+
+        SettingsDivider()
+        SettingsSection("New apps tab")
+        // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit outside
+        // that, so snap it in for display rather than showing the thumb pinned at an end.
+        var windowHours by remember {
+            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat().coerceIn(3f, 12f))
+        }
+        SettingsNote(
+            "How recently an app must have been installed or updated to appear there: " +
+                "${windowHours.roundToInt()} hours.",
+        )
+        Slider(
+            value = windowHours,
+            onValueChange = { windowHours = it },
+            onValueChangeFinished = {
+                GumshoosConfig.setNewUpdatedWindowHours(context, windowHours.roundToInt().toLong())
+            },
+            valueRange = 3f..12f,
+            steps = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
+    val context = LocalContext.current
+    val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
+    var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
+
+    SettingsScaffold(title = "Advanced", onBack = onBack) {
         SettingsSwitchRow(
             title = "Close when focus is lost",
             description = "Dismisses the search window when another app takes over — tapping a " +
@@ -470,6 +517,19 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
                 hideOnFocusLoss = it
                 GumshoosConfig.setHideOnFocusLoss(context, it)
             },
+        )
+
+        SettingsDivider()
+        CategoryRow(
+            title = "Launching Gumshoos",
+            summary = when {
+                !hasOverlay -> "Overlay permission needed"
+                AssistIntegration.isCurrentAssistant(context) == true ->
+                    "Widget · assistant gesture on"
+                SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
+                else -> "Widget, quick tile and shortcuts"
+            },
+            onClick = { onOpen(Screen.Launching) },
         )
 
         SettingsDivider()
@@ -507,26 +567,6 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Open notification settings") }
-    }
-}
-
-@Composable
-internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
-    val context = LocalContext.current
-    val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
-
-    SettingsScaffold(title = "Advanced", onBack = onBack) {
-        CategoryRow(
-            title = "Launching Gumshoos",
-            summary = when {
-                !hasOverlay -> "Overlay permission needed"
-                AssistIntegration.isCurrentAssistant(context) == true ->
-                    "Widget · assistant gesture on"
-                SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
-                else -> "Widget, quick tile and shortcuts"
-            },
-            onClick = { onOpen(Screen.Launching) },
-        )
 
         SettingsDivider()
         IndexRefresh()

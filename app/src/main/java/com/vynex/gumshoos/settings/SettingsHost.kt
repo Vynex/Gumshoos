@@ -14,7 +14,7 @@ import com.vynex.gumshoos.GumshoosConfig
 /** Every destination in settings. */
 internal sealed interface Screen {
     data object Home : Screen
-    data object Apps : Screen
+    data object Search : Screen
     data object Contacts : Screen
     data object Answers : Screen
     data object Launching : Screen
@@ -87,7 +87,7 @@ fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
 
     when (val current = stack.last()) {
         Screen.Home -> SettingsHome(onOpen = ::push)
-        Screen.Apps -> AppsScreen(onBack = ::pop, onOpen = ::push)
+        Screen.Search -> SearchScreen(onBack = ::pop, onOpen = ::push)
         Screen.Contacts -> ContactsScreen(onBack = ::pop, onOpen = ::push)
         is Screen.ManageApps -> ManageAppsScreen(onBack = ::pop, highlightKey = current.highlightKey)
         Screen.HiddenContacts -> HiddenContactsScreen(onBack = ::pop)

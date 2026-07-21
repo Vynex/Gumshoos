@@ -1,7 +1,6 @@
 package com.vynex.gumshoos.settings
 
 import android.provider.Settings
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,14 +24,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.AppPermission
-import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
 import com.vynex.gumshoos.answers.AnswerProviders
-import com.vynex.gumshoos.answers.CurrencyRates
-import com.vynex.gumshoos.answers.MeasurementSystem
 
 /**
  * The settings root.
@@ -45,7 +42,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
     val context = LocalContext.current
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasUsage by remember { mutableStateOf(UsageRepository.hasPermission(context)) }
-    var hasContacts by remember { mutableStateOf(ContactsRepository.hasPermission(context)) }
 
     // Permissions are granted in other apps, so re-read whenever we come back to the front.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -54,7 +50,6 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasOverlay = Settings.canDrawOverlays(context)
                 hasUsage = UsageRepository.hasPermission(context)
-                hasContacts = ContactsRepository.hasPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -68,78 +63,73 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = SettingsInset),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Spacer(Modifier.height(16.dp))
-            Text("Gumshoos", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(20.dp))
+            Text("Gumshoos", style = MaterialTheme.typography.displaySmall)
 
             if (!hasOverlay) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 SettingsNote(
                     "Search can't open without permission to draw over other apps. " +
                         "Grant it under Permissions.",
                     isWarning = true,
                 )
             }
+            Spacer(Modifier.height(20.dp))
+
+            SettingsGroupCard {
+                CategoryRow(
+                    title = "Permissions",
+                    summary = permissionsSummary(),
+                    onClick = { onOpen(Screen.Setup) },
+                    leadingIcon = R.drawable.ic_provider_terminal,
+                    fullBleed = false,
+                )
+                SettingsGroupDivider()
+                CategoryRow(
+                    title = "Appearance",
+                    summary = appearanceSummary(),
+                    onClick = { onOpen(Screen.Appearance) },
+                    leadingIcon = R.drawable.ic_provider_moon,
+                    fullBleed = false,
+                )
+                SettingsGroupDivider()
+                CategoryRow(
+                    title = "Manage apps",
+                    summary = manageAppsSummary(),
+                    onClick = { onOpen(Screen.ManageApps()) },
+                    leadingIcon = R.drawable.ic_provider_text_search,
+                    fullBleed = false,
+                )
+                SettingsGroupDivider()
+                CategoryRow(
+                    title = "Search",
+                    summary = searchSummary(),
+                    onClick = { onOpen(Screen.Search) },
+                    leadingIcon = R.drawable.ic_provider_search_code,
+                    fullBleed = false,
+                )
+                SettingsGroupDivider()
+                CategoryRow(
+                    title = "Behaviour",
+                    summary = behaviourSummary(hasUsage),
+                    onClick = { onOpen(Screen.Behaviour) },
+                    leadingIcon = R.drawable.ic_provider_wrench,
+                    fullBleed = false,
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
 
-            CategoryRow(
-                title = "Permissions",
-                summary = permissionsSummary(),
-                onClick = { onOpen(Screen.Setup) },
-            )
-
-            CategoryRow(
-                title = "Appearance",
-                summary = appearanceSummary(),
-                onClick = { onOpen(Screen.Appearance) },
-            )
-            CategoryRow(
-                title = "Apps",
-                summary = appsSummary(hasUsage),
-                onClick = { onOpen(Screen.Apps) },
-            )
-            CategoryRow(
-                title = "Manage apps",
-                summary = manageAppsSummary(),
-                onClick = { onOpen(Screen.ManageApps()) },
-            )
-            CategoryRow(
-                title = "Instant answers",
-                summary = answersSummary(),
-                onClick = { onOpen(Screen.Answers) },
-            )
-            CategoryRow(
-                title = "Contacts",
-                summary = when {
-                    !hasContacts -> "Off — results won't include contacts"
-                    GumshoosConfig.hiddenContacts.isEmpty() -> "On"
-                    else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
-                },
-                onClick = { onOpen(Screen.Contacts) },
-            )
-            CategoryRow(
-                title = "Search providers",
-                summary = providersSummary(),
-                onClick = { onOpen(Screen.Providers) },
-            )
-            CategoryRow(
-                title = "Behaviour",
-                summary = if (GumshoosConfig.hideOnFocusLoss) {
-                    "Closes when focus is lost"
-                } else {
-                    "Stays open until dismissed"
-                },
-                onClick = { onOpen(Screen.Behaviour) },
-            )
-
-            SettingsDivider()
-
-            CategoryRow(
-                title = "Advanced",
-                summary = "Launching, diagnostics and troubleshooting",
-                onClick = { onOpen(Screen.Advanced) },
-            )
+            SettingsGroupCard {
+                CategoryRow(
+                    title = "Advanced",
+                    summary = "Auto-close, launching, diagnostics",
+                    onClick = { onOpen(Screen.Advanced) },
+                    leadingIcon = R.drawable.ic_provider_hat_glasses,
+                    fullBleed = false,
+                )
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -156,26 +146,22 @@ private fun manageAppsSummary(): String {
     return if (parts.isEmpty()) "Rename or hide any app" else parts.joinToString(" · ")
 }
 
-private fun appsSummary(hasUsage: Boolean): String {
+/** Ordering and the new-apps window, the two levers this screen now carries. */
+private fun behaviourSummary(hasUsage: Boolean): String {
     val ordering = when {
-        GumshoosConfig.usageSource == UsageSource.GUMSHOOS -> "Ordered by launches from Gumshoos"
-        hasUsage -> "Ordered by system-wide usage"
-        else -> "Alphabetical — usage access not granted"
+        GumshoosConfig.usageSource == UsageSource.GUMSHOOS -> "Ordered by launches"
+        hasUsage -> "Ordered by system usage"
+        else -> "Alphabetical"
     }
-    val hidden = GumshoosConfig.hiddenApps.size
-    return if (hidden == 0) ordering else "$ordering · $hidden hidden"
+    return "$ordering · new apps within ${GumshoosConfig.newUpdatedWindowHours}h"
 }
 
-private fun answersSummary(): String {
-    val on = AnswerProviders.enabledIds.size
-    val total = AnswerProviders.all.size
-    val units = when (GumshoosConfig.unitSystemOverride) {
-        MeasurementSystem.SI -> "Metric"
-        MeasurementSystem.US, MeasurementSystem.UK -> "Imperial"
-        null -> "Device units"
-    }
-    val currency = GumshoosConfig.preferredCurrency ?: "device currency"
-    return "$on of $total on · $units · $currency"
+/** Answers and providers carry live counts; matching and contacts sit behind the same row. */
+private fun searchSummary(): String {
+    val answersOn = AnswerProviders.enabledIds.size
+    val answersTotal = AnswerProviders.all.size
+    val providers = SearchProviders.enabled.size
+    return "$answersOn of $answersTotal answers · $providers providers"
 }
 
 /** Leads with the required one, since that's the only state that stops search working. */
@@ -187,15 +173,6 @@ private fun permissionsSummary(): String {
     return when {
         missingRequired.isNotEmpty() -> "${missingRequired.first().title} not granted"
         else -> "Required granted · $optionalOn of ${AppPermission.optional.size} optional"
-    }
-}
-
-/** Counts what actually appears, so an uninstalled provider isn't reported as available. */
-private fun providersSummary(): String {
-    val shown = SearchProviders.enabled
-    return when {
-        shown.isEmpty() -> "None — the \"Search using\" row is hidden"
-        else -> "${shown.size} shown · ${shown.first().label} first"
     }
 }
 

@@ -175,15 +175,27 @@ internal fun CategoryRow(
     title: String,
     summary: String,
     onClick: () -> Unit,
+    @DrawableRes leadingIcon: Int? = null,
+    fullBleed: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .fullBleedRow()
+            // Inside a group card the row must not full-bleed: the card is clipped, so the ripple
+            // belongs within its rounded bounds rather than shoved out to the screen edge.
+            .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 14.dp),
     ) {
+        if (leadingIcon != null) {
+            Icon(
+                painter = painterResource(leadingIcon),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 16.dp).size(24.dp),
+            )
+        }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(
@@ -234,6 +246,27 @@ internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> 
         )
         content()
     }
+}
+
+/**
+ * A titleless rounded group for the home list — rows share one container and the clip keeps each
+ * ripple within its rounded bounds. Rows inside pass `fullBleed = false` for the same reason.
+ */
+@Composable
+internal fun SettingsGroupCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(SettingsCardShape)
+            .background(settingsCardColour()),
+        content = content,
+    )
+}
+
+/** Hairline between rows in a [SettingsGroupCard]; no vertical padding, so rows stay flush. */
+@Composable
+internal fun SettingsGroupDivider() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 }
 
 /** A heading inside a screen, for grouping related controls. */
