@@ -216,11 +216,6 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
     ) {
         SettingsRadioRow(
             title = "Launches from Gumshoos",
-//            description = if (tracked == 0) {
-//                "Recommended. Counts apps opened from search — none yet."
-//            } else {
-//                "Recommended. Counts apps opened from search — $tracked so far."
-//            },
             description = "Recommended. Counts apps opened from search.",
             selected = source == UsageSource.GUMSHOOS,
             onClick = {
@@ -329,17 +324,14 @@ internal fun EmailAppPicker() {
             "Used for the mail action on a contact."
         },
     ) {
-        // Automatic carries a mark of its own so the column of app icons has nothing missing from
-        // the top of it. A row with no leading mark in a group where every other row has one starts
-        // its text 36dp further left, which reads as a mistake rather than as a different kind of
-        // option.
+        // No mark, and no space held for one. Automatic is not an app, so a glyph invented to fill
+        // the slot the app icons occupy would be claiming it is one — the label sitting further
+        // left is the honest signal that this row is a different kind of option.
         SettingsRadioRow(
             title = "Automatic",
             description = "Lets the phone decide, which may show a chooser.",
             selected = selected == null,
             onClick = { choose(null) },
-            icon = R.drawable.ic_provider_at_sign,
-            tintIcon = true,
             fullBleed = false,
         )
         handlers.forEach { handler ->

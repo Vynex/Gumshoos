@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -823,14 +824,19 @@ internal fun SettingsRadioRow(
     description: String,
     selected: Boolean,
     onClick: () -> Unit,
-    /** Optional mark shown before the label, for choices that are themselves a picture. */
+    /**
+     * Optional mark shown before the label, for choices that are themselves a picture. Give none
+     * and the slot **collapses** — the label follows the control directly. A row without a mark in
+     * a group where the others have one is a deliberate choice about that row, not a hole to pack
+     * with blank space.
+     */
     @DrawableRes icon: Int? = null,
     /** As [icon], for a mark that isn't a resource — an installed app's own icon. */
     iconBitmap: ImageBitmap? = null,
     /**
-     * Whether [icon] should take the text colour. False for brand marks, which a tint flattens —
-     * but true for a monochrome glyph, which is authored black and would otherwise vanish into a
-     * dark settings background.
+     * Whether the mark should take the text colour. False for brand marks and app icons, which a
+     * tint flattens — but true for a monochrome glyph, which is authored black and would otherwise
+     * vanish into a dark settings background.
      */
     tintIcon: Boolean = false,
     fullBleed: Boolean = true,
@@ -841,7 +847,7 @@ internal fun SettingsRadioRow(
             .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
-            .padding(horizontal = SettingsInset, vertical = 8.dp),
+            .padding(horizontal = SettingsInset, vertical = 10.dp),
     ) {
         // `onClick = null` matters for more than the redundant tap target. RadioButton applies
         // `minimumInteractiveComponentSize()` *only* when it has its own click handler, so passing
@@ -852,22 +858,22 @@ internal fun SettingsRadioRow(
         // row is a far bigger target than 48dp anyway.
         RadioButton(selected = selected, onClick = null)
         Spacer(Modifier.width(16.dp))
-        if (icon != null) {
+        // One emission rather than a branch per source, so "no mark, no space" is the shape of the
+        // code rather than something to check twice.
+        val mark = when {
+            icon != null -> painterResource(icon)
+            iconBitmap != null -> remember(iconBitmap) { BitmapPainter(iconBitmap) }
+            else -> null
+        }
+        if (mark != null) {
             Image(
-                painter = painterResource(icon),
+                painter = mark,
                 contentDescription = null,
                 colorFilter = if (tintIcon) {
                     ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
                 } else {
                     null
                 },
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-        } else if (iconBitmap != null) {
-            Image(
-                bitmap = iconBitmap,
-                contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(12.dp))
