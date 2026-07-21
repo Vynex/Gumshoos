@@ -14,7 +14,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,14 +40,12 @@ import com.vynex.gumshoos.OverlayService
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
-import com.vynex.gumshoos.UsageSource
 import com.vynex.gumshoos.WidgetActionActivity
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.answers.MeasurementSystem
 import java.time.ZoneId
 import java.util.Currency
-import kotlin.math.roundToInt
 
 /**
  * Re-reads something whenever the screen comes back to the front, because it is changed elsewhere
@@ -454,52 +451,26 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
     val hasUsage = rememberPermission { UsageRepository.hasPermission(context) }
 
     SettingsScaffold(title = "Behaviour", onBack = onBack) {
-        SettingsSection("Frequent & Recent ordering")
-        UsageSourcePicker()
+        UsageSourcePicker(hasUsage = hasUsage)
 
-        Spacer(Modifier.height(8.dp))
-        val usageState = when {
-            GumshoosConfig.usageSource == UsageSource.GUMSHOOS ->
-                "Usage access isn't used with this option and can be revoked."
-            hasUsage -> "Granted. Apps are ordered by system-wide usage."
-            else ->
-                "Not granted. ${AppPermission.USAGE.withoutIt} It's a special access grant " +
-                    "rather than a normal prompt."
+        SettingsGroup(
+            title = "New apps tab",
+            note = "An app shows up there for this long after it's installed or updated.",
+        ) {
+            SettingsSliderRow(
+                label = "Counts as new for",
+                // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit
+                // outside that, so snap it in rather than showing the thumb pinned at an end.
+                value = GumshoosConfig.newUpdatedWindowHours.toInt().coerceIn(3, 12),
+                min = 3,
+                max = 12,
+                step = 3,
+                valueText = { "$it hours" },
+                onValue = {
+                    GumshoosConfig.setNewUpdatedWindowHours(context, it.toLong())
+                },
+            )
         }
-        // Only a warning in the one state that leaves a chosen setting doing nothing: system
-        // ordering picked, and the access it needs missing.
-        if (GumshoosConfig.usageSource == UsageSource.SYSTEM && !hasUsage) {
-            SettingsWarning(usageState)
-        } else {
-            SettingsNote(usageState)
-        }
-        Button(
-            onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
-            enabled = !hasUsage && GumshoosConfig.usageSource == UsageSource.SYSTEM,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Grant usage access") }
-
-        SettingsDivider()
-        SettingsSection("New apps tab")
-        // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit outside
-        // that, so snap it in for display rather than showing the thumb pinned at an end.
-        var windowHours by remember {
-            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat().coerceIn(3f, 12f))
-        }
-        SettingsNote(
-            "How recently an app must have been installed or updated to appear there: " +
-                "${windowHours.roundToInt()} hours.",
-        )
-        Slider(
-            value = windowHours,
-            onValueChange = { windowHours = it },
-            onValueChangeFinished = {
-                GumshoosConfig.setNewUpdatedWindowHours(context, windowHours.roundToInt().toLong())
-            },
-            valueRange = 3f..12f,
-            steps = 2,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

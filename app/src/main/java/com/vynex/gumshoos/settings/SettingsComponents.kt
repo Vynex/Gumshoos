@@ -48,6 +48,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -624,10 +625,17 @@ internal fun SettingsActionRow(
  * "square", not "0dp". The readout is given a floor width so the title beside it doesn't shift as
  * the digit count changes mid-drag.
  *
- * Local state keyed on [value] so the readout tracks the drag while config is written through
- * [onValue] on every change — the previews these sliders drive read config, not the slider.
- * [onValueFinished] is for the writes too expensive to make continuously, like re-pushing a widget
- * across to the launcher.
+ * Local state so the readout tracks the drag, while config is written through [onValue] on every
+ * change — the previews these sliders drive read config, not the slider. [onValueFinished] is for
+ * the writes too expensive to make continuously, like re-pushing a widget across to the launcher.
+ *
+ * The thumb still has to follow [value] when something *else* moves it — a "Reset to defaults"
+ * button. `remember(value)` would do that, but it also re-seeds mid-drag from the write [onValue]
+ * just made, which is only harmless while `Slider` is snapping to ticks and handing back exactly the
+ * integer we reported. It snaps only when `steps > 0`, and `steps` is derived here, so a range
+ * shorter than two [step]s would silently make this a continuous slider that fights its own drag.
+ * Comparing against the last value *we* reported takes the guess out: an incoming value we did not
+ * produce is an external change and moves the thumb; our own echo never does.
  */
 @Composable
 internal fun SettingsSliderRow(
@@ -642,7 +650,12 @@ internal fun SettingsSliderRow(
     valueText: (Int) -> String = { "$it" },
     onValueFinished: (() -> Unit)? = null,
 ) {
-    var current by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    var current by remember { mutableFloatStateOf(value.toFloat()) }
+    var reported by remember { mutableIntStateOf(value) }
+    if (value != reported) {
+        current = value.toFloat()
+        reported = value
+    }
 
     Column(modifier.fillMaxWidth().padding(horizontal = SettingsInset, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.Top) {
@@ -669,7 +682,8 @@ internal fun SettingsSliderRow(
             value = current,
             onValueChange = {
                 current = it
-                onValue(it.roundToInt())
+                reported = it.roundToInt()
+                onValue(reported)
             },
             onValueChangeFinished = onValueFinished ?: {},
             valueRange = min.toFloat()..max.toFloat(),

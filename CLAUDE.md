@@ -329,7 +329,14 @@ the sources jar, which is the only place it is written down.
   this existed, each pairing a bare `Slider` with a note reading "Icon size: 42dp", which puts the
   value in prose above the control you are currently dragging. `valueText` formats it because a
   value is not always a number — a zero corner radius reads "square". The readout has a floor width
-  so the title beside it doesn't shift as digits are gained.
+  so the title beside it doesn't shift as digits are gained. It holds local state for the drag but
+  still has to follow the value when a "Reset to defaults" moves it, and `remember(value)` is the
+  wrong way to do that: it also re-seeds mid-drag from the write the row itself just made. That is
+  harmless only while `Slider` snaps to ticks and hands back exactly the integer we reported, which
+  it does **only when `steps > 0`** — and `steps` is derived from the range here, so a range shorter
+  than two of its own steps would quietly make it continuous and fight its own drag. It compares
+  against the last value *it* reported instead, so an external change moves the thumb and its own
+  echo never does.
 - `SettingsNote` and `SettingsWarning`. A warning gets its own `errorContainer` row with an icon: a
   note merely recoloured to `error` is the same shape as every other note on the screen and gets
   skimmed past, which is what happened to the line saying search cannot open at all.

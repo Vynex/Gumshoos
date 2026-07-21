@@ -1,5 +1,6 @@
 package com.vynex.gumshoos.settings
 
+import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ import com.vynex.gumshoos.EventLog
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchHistory
 import com.vynex.gumshoos.OverlayService
+import com.vynex.gumshoos.R
 import com.vynex.gumshoos.refreshAllWidgets
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
@@ -181,24 +183,41 @@ internal fun EventTrace() {
 }
 
 /**
- * Which signal orders the Frequent and Recent tabs.
+ * Which signal orders the Frequent and Recent tabs, and the access one of the two options needs.
  *
  * The two answer subtly different questions. System usage measures foreground time across the whole
  * phone, so something left open in the background outranks what you actually reach for. Gumshoos'
  * own history counts launches made here — narrower, but a truer picture of how the launcher is
  * used, and it needs no permission at all.
+ *
+ * The choice and the grant are one group rather than a picker and a loose button below it, because
+ * the grant only means anything under one of the two options. It appears when that option is chosen
+ * and the access is missing, and is absent otherwise — not dimmed. A greyed row saying "Grant usage
+ * access" invites the reading that the grant is unavailable, when what is true is that nothing needs
+ * granting. [hasUsage] is passed in because the screen re-reads it on resume: it is granted in a
+ * system screen we get no result back from.
  */
 @Composable
-internal fun UsageSourcePicker() {
+internal fun UsageSourcePicker(hasUsage: Boolean) {
     val context = LocalContext.current
     var source by remember { mutableStateOf(GumshoosConfig.usageSource) }
     val tracked = LaunchHistory.stats.size
-
     var confirmReset by remember { mutableStateOf(false) }
 
-    Column {
-        UsageSourceRow(
-            label = "Launches from Gumshoos (Recommended)",
+    val needsGrant = source == UsageSource.SYSTEM && !hasUsage
+
+    SettingsGroup(
+        title = "Frequent & Recent ordering",
+        // Nothing to add in the state that already has a warning of its own below.
+        note = when {
+            source == UsageSource.GUMSHOOS ->
+                "Usage access isn't used with this option and can be revoked."
+            hasUsage -> "Granted. Apps are ordered by system-wide usage."
+            else -> null
+        },
+    ) {
+        SettingsRadioRow(
+            title = "Launches from Gumshoos (Recommended)",
             description = if (tracked == 0) {
                 "Counts only apps opened from this search window. No permission needed; " +
                     "nothing recorded yet, so ordering stays alphabetical until you open something."
@@ -207,26 +226,51 @@ internal fun UsageSourcePicker() {
                     "$tracked app${if (tracked == 1) "" else "s"} recorded so far."
             },
             selected = source == UsageSource.GUMSHOOS,
-        ) {
-            source = UsageSource.GUMSHOOS
-            GumshoosConfig.setUsageSource(context, UsageSource.GUMSHOOS)
-        }
-        UsageSourceRow(
-            label = "System-wide usage",
-            description = "How much every app is used across the phone. Needs usage access below.",
+            onClick = {
+                source = UsageSource.GUMSHOOS
+                GumshoosConfig.setUsageSource(context, UsageSource.GUMSHOOS)
+            },
+            fullBleed = false,
+        )
+        SettingsRadioRow(
+            title = "System-wide usage",
+            description = "How much every app is used across the phone.",
             selected = source == UsageSource.SYSTEM,
-        ) {
-            source = UsageSource.SYSTEM
-            GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
-        }
+            onClick = {
+                source = UsageSource.SYSTEM
+                GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
+            },
+            fullBleed = false,
+        )
 
-        if (source == UsageSource.GUMSHOOS && tracked > 0) {
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = { confirmReset = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Reset launch history") }
+        if (needsGrant) {
+            SettingsGroupDivider()
+            SettingsActionRow(
+                title = "Grant usage access",
+                summary = "A special access grant rather than a normal prompt, so it opens a " +
+                    "system screen rather than a dialog.",
+                icon = R.drawable.ic_provider_terminal,
+                onClick = {
+                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                },
+            )
         }
+        if (source == UsageSource.GUMSHOOS && tracked > 0) {
+            SettingsGroupDivider()
+            SettingsActionRow(
+                title = "Reset launch history",
+                summary = "Clears the counts behind Frequent and Recent.",
+                icon = R.drawable.ic_provider_trash,
+                onClick = { confirmReset = true },
+            )
+        }
+    }
+
+    if (needsGrant) {
+        SettingsWarning(
+            "Ordering by system usage needs usage access, and it isn't granted — Frequent and " +
+                "Recent stay alphabetical until it is.",
+        )
     }
 
     if (confirmReset) {
@@ -250,32 +294,6 @@ internal fun UsageSourcePicker() {
                 TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
             },
         )
-    }
-}
-
-@Composable
-internal fun UsageSourceRow(
-    label: String,
-    description: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(4.dp))
-        Column {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
