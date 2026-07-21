@@ -1,20 +1,15 @@
 package com.vynex.gumshoos.settings
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -23,10 +18,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 
 internal data class PickerItem(
@@ -38,9 +33,15 @@ internal data class PickerItem(
 /**
  * A filterable single-choice list.
  *
- * Shared because the lists it serves are all too long to scroll: 160-odd currencies, 600-odd time
- * zones, and later every installed app. The first entry is always the "follow the device" option,
- * so the default stays reachable without hunting for it.
+ * Shared because the lists it serves are all too long to scroll: 160-odd currencies and 600-odd time
+ * zones. The first entry is always the "follow the device" option, so the default stays reachable
+ * without hunting for it.
+ *
+ * Built on the same pieces as Manage apps and Hidden contacts — [SettingsTopBar],
+ * [SettingsFilterField], and the shared [SettingsRadioRow]. It had been left on an
+ * `OutlinedTextField` and a private row of its own, which is exactly the state Hidden contacts was
+ * in before it was brought across: a list screen that reads as a different app from the list screen
+ * beside it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,9 +51,11 @@ internal fun SearchablePicker(
     selectedId: String?,
     defaultLabel: String,
     defaultDescription: String,
+    filterPlaceholder: String,
     onPick: (String?) -> Unit,
     onBack: () -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     var query by remember { mutableStateOf("") }
 
     val filtered = remember(query, items) {
@@ -74,34 +77,50 @@ internal fun SearchablePicker(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = { SettingsTopBar(title, onBack, scrollBehavior) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Filter") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // A tap anywhere off the field drops focus and lowers the keyboard, as the other
+                // two list screens do. Taps a child consumes never reach here.
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { focusManager.clearFocus() })
+                },
+        ) {
+            SettingsFilterField(
+                query = query,
+                onQueryChange = { query = it },
+                placeholder = filterPlaceholder,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                    .padding(horizontal = SettingsInset, vertical = 8.dp),
             )
 
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 12.dp),
+            ) {
                 item {
-                    PickerRow(
+                    // Not full-bleed: the rows are already the full window width here, so widening
+                    // one would push it off the edge rather than let its ripple reach further.
+                    SettingsRadioRow(
                         title = defaultLabel,
-                        subtitle = defaultDescription,
+                        description = defaultDescription,
                         selected = selectedId == null,
                         onClick = { onPick(null) },
+                        fullBleed = false,
                     )
+                    // A real separator rather than a grouping device: it divides the one default
+                    // from the several hundred alternatives, which is a different kind of break.
                     SettingsDivider()
                 }
                 items(filtered, key = { it.id }) { entry ->
-                    PickerRow(
+                    SettingsRadioRow(
                         title = entry.title,
-                        subtitle = entry.subtitle,
+                        description = entry.subtitle.orEmpty(),
                         selected = entry.id == selectedId,
                         onClick = { onPick(entry.id) },
+                        fullBleed = false,
                     )
                 }
                 if (filtered.isEmpty()) {
@@ -110,39 +129,10 @@ internal fun SearchablePicker(
                             "Nothing matches \"$query\".",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(20.dp),
+                            modifier = Modifier.padding(SettingsInset),
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PickerRow(
-    title: String,
-    subtitle: String?,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(4.dp))
-        Column {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            if (!subtitle.isNullOrEmpty()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }

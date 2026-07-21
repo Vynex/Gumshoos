@@ -1,10 +1,6 @@
 package com.vynex.gumshoos.settings
 
-import android.Manifest
-import android.content.Intent
 import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,13 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vynex.gumshoos.answers.AnswerContextFactory
 import com.vynex.gumshoos.answers.AnswerFormat
 import com.vynex.gumshoos.answers.CurrencyRates
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.AssistIntegration
 import com.vynex.gumshoos.ContactAction
@@ -57,12 +49,9 @@ import com.vynex.gumshoos.EventLog
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchHistory
 import com.vynex.gumshoos.OverlayService
-import com.vynex.gumshoos.R
 import com.vynex.gumshoos.refreshAllWidgets
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
-import com.vynex.gumshoos.SearchWidgetSmallProvider
-import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
 
 /**
@@ -389,36 +378,32 @@ internal fun CurrencyRatesSettings() {
     val table = CurrencyRates.table
     var lastAttemptFailed by remember { mutableStateOf(false) }
 
-    SettingsSection("Exchange rates")
-    Text(
-        when {
-            table == null -> "No rates yet. Conversions stay hidden until some are fetched — an " +
-                "invented exchange rate would be worse than no answer."
-            else -> "${table.rates.size} currencies, based on ${table.base}. Updated " +
-                AnswerFormat.relativeTime(table.fetchedAtMillis, System.currentTimeMillis()) + "."
-        },
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    if (lastAttemptFailed) {
-        Text(
-            "Couldn't reach the rate service. Any cached rates are still in use.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
+    // The status is the row's own summary rather than a separate paragraph: what the rates are and
+    // the button that changes them are one thing, and reading them apart was never useful.
+    SettingsGroup(title = "Exchange rates") {
+        SettingsActionRow(
+            title = if (CurrencyRates.refreshing) "Refreshing…" else "Refresh rates now",
+            summary = when {
+                table == null -> "No rates yet. Conversions stay hidden until some are fetched — " +
+                    "an invented exchange rate would be worse than no answer."
+                else -> "${table.rates.size} currencies, based on ${table.base}. Updated " +
+                    AnswerFormat.relativeTime(table.fetchedAtMillis, System.currentTimeMillis()) +
+                    "."
+            },
+            imageVector = Icons.Filled.Refresh,
+            enabled = !CurrencyRates.refreshing,
+            onClick = {
+                lastAttemptFailed = false
+                scope.launch {
+                    val base = AnswerContextFactory.forDevice(context).currencyCode
+                    lastAttemptFailed = !CurrencyRates.refresh(context, base, force = true)
+                }
+            },
         )
     }
-
-    OutlinedButton(
-        onClick = {
-            lastAttemptFailed = false
-            scope.launch {
-                val base = AnswerContextFactory.forDevice(context).currencyCode
-                lastAttemptFailed = !CurrencyRates.refresh(context, base, force = true)
-            }
-        },
-        enabled = !CurrencyRates.refreshing,
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text(if (CurrencyRates.refreshing) "Refreshing…" else "Refresh rates now") }
+    if (lastAttemptFailed) {
+        SettingsWarning("Couldn't reach the rate service. Any cached rates are still in use.")
+    }
 }
 
 @Composable

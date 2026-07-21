@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -31,10 +31,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
-import com.vynex.gumshoos.AppEntry
 import com.vynex.gumshoos.AppMatcher
 import com.vynex.gumshoos.AppPermission
-import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.AssistIntegration
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
@@ -84,54 +82,65 @@ internal fun SearchScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val hasContacts = rememberPermission { ContactsRepository.hasPermission(context) }
 
     SettingsScaffold(title = "Search", onBack = onBack) {
-        CategoryRow(
-            title = "Matching",
-            summary = AppMatcher.MatchTier.entries
-                .count { it in GumshoosConfig.matchOptions }
-                .let { on ->
-                    if (on == AppMatcher.MatchTier.entries.size) {
-                        "All ways of matching are on"
+        // Dividered, unlike Matching's switches: these are four separate destinations rather than
+        // one set of choices, which is the same call the root list makes.
+        SettingsGroup {
+            CategoryRow(
+                title = "Matching",
+                summary = AppMatcher.MatchTier.entries
+                    .count { it in GumshoosConfig.matchOptions }
+                    .let { on ->
+                        if (on == AppMatcher.MatchTier.entries.size) {
+                            "All ways of matching are on"
+                        } else {
+                            "$on of ${AppMatcher.MatchTier.entries.size} on"
+                        }
+                    },
+                onClick = { onOpen(Screen.Matching) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Instant answers",
+                summary = run {
+                    val on = AnswerProviders.enabledIds.size
+                    val total = AnswerProviders.all.size
+                    val units = when (GumshoosConfig.unitSystemOverride) {
+                        MeasurementSystem.SI -> "Metric"
+                        MeasurementSystem.US, MeasurementSystem.UK -> "Imperial"
+                        null -> "Device units"
+                    }
+                    val currency = GumshoosConfig.preferredCurrency ?: "device currency"
+                    "$on of $total on · $units · $currency"
+                },
+                onClick = { onOpen(Screen.Answers) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Contacts",
+                summary = when {
+                    !hasContacts -> "Off — results won't include contacts"
+                    GumshoosConfig.hiddenContacts.isEmpty() -> "On"
+                    else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
+                },
+                onClick = { onOpen(Screen.Contacts) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Providers",
+                summary = SearchProviders.enabled.let { shown ->
+                    if (shown.isEmpty()) {
+                        "None — the \"Search using\" row is hidden"
                     } else {
-                        "$on of ${AppMatcher.MatchTier.entries.size} on"
+                        "${shown.size} shown · ${shown.first().label} first"
                     }
                 },
-            onClick = { onOpen(Screen.Matching) },
-        )
-        CategoryRow(
-            title = "Instant answers",
-            summary = run {
-                val on = AnswerProviders.enabledIds.size
-                val total = AnswerProviders.all.size
-                val units = when (GumshoosConfig.unitSystemOverride) {
-                    MeasurementSystem.SI -> "Metric"
-                    MeasurementSystem.US, MeasurementSystem.UK -> "Imperial"
-                    null -> "Device units"
-                }
-                val currency = GumshoosConfig.preferredCurrency ?: "device currency"
-                "$on of $total on · $units · $currency"
-            },
-            onClick = { onOpen(Screen.Answers) },
-        )
-        CategoryRow(
-            title = "Contacts",
-            summary = when {
-                !hasContacts -> "Off — results won't include contacts"
-                GumshoosConfig.hiddenContacts.isEmpty() -> "On"
-                else -> "On · ${GumshoosConfig.hiddenContacts.size} hidden"
-            },
-            onClick = { onOpen(Screen.Contacts) },
-        )
-        CategoryRow(
-            title = "Providers",
-            summary = SearchProviders.enabled.let { shown ->
-                if (shown.isEmpty()) {
-                    "None — the \"Search using\" row is hidden"
-                } else {
-                    "${shown.size} shown · ${shown.first().label} first"
-                }
-            },
-            onClick = { onOpen(Screen.Providers) },
-        )
+                onClick = { onOpen(Screen.Providers) },
+                fullBleed = false,
+            )
+        }
     }
 }
 
@@ -168,33 +177,34 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
                 "app. The first one is also where Enter goes when nothing matched.",
         )
 
-        SettingsSection("Providers")
-        ordered.forEachIndexed { index, provider ->
-            val isMissing = provider.id in SearchProviders.missing
-            ProviderRow(
-                label = provider.label,
-                icon = provider.icon,
-                description = when {
-                    isMissing -> "Not installed, so it stays hidden"
-                    else -> null
-                },
-                checked = provider.id !in GumshoosConfig.disabledProviders,
-                enabled = !isMissing,
-                canMoveUp = index > 0,
-                canMoveDown = index < ordered.lastIndex,
-                onCheckedChange = {
-                    GumshoosConfig.setProviderEnabled(context, provider.id, it)
-                },
-                onMoveUp = { move(provider.id, -1) },
-                onMoveDown = { move(provider.id, 1) },
-            )
+        // Undividered: this is one ordered list being arranged, and a line between each row would
+        // cut the sequence the arrows exist to change into six unrelated entries.
+        SettingsGroup(
+            note = "Spotify and ChatGPT appear only when their app is installed — searching " +
+                "either on the web lands on a login wall rather than a result.",
+        ) {
+            ordered.forEachIndexed { index, provider ->
+                val isMissing = provider.id in SearchProviders.missing
+                ProviderRow(
+                    label = provider.label,
+                    icon = provider.icon,
+                    description = when {
+                        isMissing -> "Not installed, so it stays hidden"
+                        else -> null
+                    },
+                    checked = provider.id !in GumshoosConfig.disabledProviders,
+                    enabled = !isMissing,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < ordered.lastIndex,
+                    onCheckedChange = {
+                        GumshoosConfig.setProviderEnabled(context, provider.id, it)
+                    },
+                    onMoveUp = { move(provider.id, -1) },
+                    onMoveDown = { move(provider.id, 1) },
+                    modifier = Modifier.padding(horizontal = SettingsInset),
+                )
+            }
         }
-
-        SettingsDivider()
-        SettingsNote(
-            "Spotify and ChatGPT appear only when their app is installed — searching either " +
-                "on the web lands on a login wall rather than a result.",
-        )
     }
 }
 
@@ -210,22 +220,25 @@ internal fun MatchingScreen(onBack: () -> Unit) {
                 "isn't search.",
         )
 
-        SettingsSection("Ways to match")
-        AppMatcher.MatchTier.entries.forEach { tier ->
-            SettingsSwitchRow(
-                title = tier.label,
-                description = tier.example,
-                checked = tier in options,
-                onCheckedChange = { GumshoosConfig.setMatchTierEnabled(context, tier, it) },
-            )
+        // No dividers between the four: they are one set of related toggles, not four separate
+        // decisions, and a line between each would say otherwise.
+        SettingsGroup(
+            title = "Ways to match",
+            note = "Switching one off doesn't score it lower, it stops it counting: with camel " +
+                "case off, \"bms\" no longer pulls BookMyShow above an app actually starting " +
+                "with those letters. Turning off skipped letters is the one that most reduces " +
+                "stray results.",
+        ) {
+            AppMatcher.MatchTier.entries.forEach { tier ->
+                SettingsSwitchRow(
+                    title = tier.label,
+                    description = tier.example,
+                    checked = tier in options,
+                    onCheckedChange = { GumshoosConfig.setMatchTierEnabled(context, tier, it) },
+                    fullBleed = false,
+                )
+            }
         }
-
-        SettingsDivider()
-        SettingsNote(
-            "Switching one off doesn't score it lower, it stops it counting: with camel case off, " +
-                "\"bms\" no longer pulls BookMyShow above an app actually starting with those " +
-                "letters. Turning off skipped letters is the one that most reduces stray results.",
-        )
     }
 }
 
@@ -319,61 +332,65 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 "shows a result above the contacts section.",
         )
 
-        SettingsSection("Modules")
-        AnswerProviders.all.forEach { provider ->
-            SettingsSwitchRow(
-                title = provider.label,
-                description = answerExample(provider.id),
-                checked = provider.id in enabled,
-                onCheckedChange = { on ->
-                    enabled = if (on) enabled + provider.id else enabled - provider.id
-                    GumshoosConfig.setAnswerProvidersEnabled(context, enabled)
-                },
+        SettingsGroup(title = "Modules") {
+            AnswerProviders.all.forEach { provider ->
+                SettingsSwitchRow(
+                    title = provider.label,
+                    description = answerExample(provider.id),
+                    checked = provider.id in enabled,
+                    onCheckedChange = { on ->
+                        enabled = if (on) enabled + provider.id else enabled - provider.id
+                        GumshoosConfig.setAnswerProvidersEnabled(context, enabled)
+                    },
+                    fullBleed = false,
+                )
+            }
+        }
+
+        SettingsGroup(title = "Measurements") {
+            listOf(
+                null to "Follow device",
+                MeasurementSystem.SI to "Metric",
+                MeasurementSystem.US to "Imperial",
+            ).forEach { (option, label) ->
+                SettingsRadioRow(
+                    title = label,
+                    description = when (option) {
+                        null -> "Whatever your phone's region implies."
+                        MeasurementSystem.SI -> "5ft answers in metres."
+                        else -> "5m answers in feet."
+                    },
+                    selected = unitSystem == option,
+                    onClick = {
+                        unitSystem = option
+                        GumshoosConfig.setUnitSystemOverride(context, option)
+                    },
+                    fullBleed = false,
+                )
+            }
+        }
+
+        // The note lands after the last of the three defaults rather than ahead of the first,
+        // because it is one statement about all of them.
+        SettingsGroup(
+            note = "These are what a conversion becomes when the query doesn't say. Writing the " +
+                "target explicitly — \"5ft to inches\", \"\$5 to CAD\" — always wins over them.",
+        ) {
+            CategoryRow(
+                title = "Currency",
+                summary = GumshoosConfig.preferredCurrency ?: "Follow device",
+                onClick = { onOpen(Screen.CurrencyPicker) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Time zone",
+                summary = GumshoosConfig.preferredZone ?: "Follow device",
+                onClick = { onOpen(Screen.ZonePicker) },
+                fullBleed = false,
             )
         }
 
-        SettingsDivider()
-        SettingsSection("Defaults")
-        SettingsNote(
-            "What a conversion becomes when the query doesn't say. Writing the target explicitly " +
-                "— \"5ft to inches\", \"\$5 to CAD\" — always wins over these.",
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Text("Measurements", style = MaterialTheme.typography.bodyMedium)
-        listOf(
-            null to "Follow device",
-            MeasurementSystem.SI to "Metric",
-            MeasurementSystem.US to "Imperial",
-        ).forEach { (option, label) ->
-            SettingsRadioRow(
-                title = label,
-                description = when (option) {
-                    null -> "Whatever your phone's region implies."
-                    MeasurementSystem.SI -> "5ft answers in metres."
-                    else -> "5m answers in feet."
-                },
-                selected = unitSystem == option,
-                onClick = {
-                    unitSystem = option
-                    GumshoosConfig.setUnitSystemOverride(context, option)
-                },
-            )
-        }
-
-        SettingsDivider()
-        CategoryRow(
-            title = "Currency",
-            summary = GumshoosConfig.preferredCurrency ?: "Follow device",
-            onClick = { onOpen(Screen.CurrencyPicker) },
-        )
-        CategoryRow(
-            title = "Time zone",
-            summary = GumshoosConfig.preferredZone ?: "Follow device",
-            onClick = { onOpen(Screen.ZonePicker) },
-        )
-
-        SettingsDivider()
         CurrencyRatesSettings()
     }
 }
@@ -731,6 +748,7 @@ internal fun CurrencyPickerScreen(onBack: () -> Unit) {
         selectedId = GumshoosConfig.preferredCurrency,
         defaultLabel = "Follow device",
         defaultDescription = "Uses the currency your phone's region implies.",
+        filterPlaceholder = "Search currencies",
         onPick = { GumshoosConfig.setPreferredCurrency(context, it); onBack() },
         onBack = onBack,
     )
@@ -757,6 +775,7 @@ internal fun ZonePickerScreen(onBack: () -> Unit) {
         selectedId = GumshoosConfig.preferredZone,
         defaultDescription = "Uses whatever your phone is set to.",
         defaultLabel = "Follow device",
+        filterPlaceholder = "Search time zones",
         onPick = { GumshoosConfig.setPreferredZone(context, it); onBack() },
         onBack = onBack,
     )

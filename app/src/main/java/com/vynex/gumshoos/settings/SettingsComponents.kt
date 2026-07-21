@@ -57,6 +57,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
@@ -459,25 +461,29 @@ internal fun SettingsGroup(
     note: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Spacer(Modifier.height(8.dp))
-    if (title != null) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
+    // One node, not three siblings. The settings lists arrange their children with
+    // `spacedBy(4.dp)`, which would otherwise be inserted *inside* the group — between the caption
+    // and its card, and between the card and its note — so a group's internal spacing would depend
+    // on the list it was dropped into.
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        if (title != null) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
+        SettingsGroupCard(content)
+        if (note != null) {
+            Text(
+                note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
-    SettingsGroupCard(content)
-    if (note != null) {
-        Text(
-            note,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-    }
-    Spacer(Modifier.height(8.dp))
 }
 
 /** A heading inside a screen, for grouping related controls. */
@@ -567,6 +573,8 @@ internal fun SettingsActionRow(
     title: String,
     summary: String? = null,
     @DrawableRes icon: Int? = null,
+    /** As [icon], for one of the stock Material marks rather than a drawable of ours. */
+    imageVector: ImageVector? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -578,9 +586,14 @@ internal fun SettingsActionRow(
             .alpha(if (enabled) 1f else 0.38f)
             .padding(horizontal = SettingsInset, vertical = 14.dp),
     ) {
-        if (icon != null) {
+        val painter = when {
+            icon != null -> painterResource(icon)
+            imageVector != null -> rememberVectorPainter(imageVector)
+            else -> null
+        }
+        if (painter != null) {
             Icon(
-                painter = painterResource(icon),
+                painter = painter,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 16.dp).size(24.dp),
@@ -724,11 +737,17 @@ internal fun ProviderRow(
     onCheckedChange: (Boolean) -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    /**
+     * Carries the row's horizontal inset, rather than the row baking one in. Inside a
+     * [SettingsGroup] that is [SettingsInset]; on a screen not yet ported it is nothing, because the
+     * list has already inset the whole column.
+     */
+    modifier: Modifier = Modifier,
     control: RowControl = RowControl.SWITCH,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
         // Image, not Icon: these are full-colour brand marks and Icon would tint them flat.
         Image(

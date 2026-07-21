@@ -310,7 +310,15 @@ the sources jar, which is the only place it is written down.
   `surfaceContainerHighest`: it used to match the card exactly, which worked only while the rows it
   sits on were on the bare background and made it invisible the moment a list was grouped.
 - `SettingsGroup` — caption, rounded container of rows, supporting text. The **note goes under the
-  card**: copy written as a preamble is explaining controls the reader has not reached yet.
+  card**: copy written as a preamble is explaining controls the reader has not reached yet. A
+  screen-level intro before the first group is the exception and stays a plain `SettingsNote`.
+  It wraps itself in a `Column` so it is **one** node: the lists arrange with `spacedBy(4.dp)`,
+  which would otherwise be inserted between a group's own caption, card and note, making its
+  internal spacing depend on the list it was dropped into.
+  **Dividers inside a group are a judgement, not a default.** Separate destinations get them — the
+  root list, the Search hub — because each row goes somewhere else. One set of related choices does
+  not: Matching's four tiers and the Providers list are each a single thing being configured, and a
+  line between every row would cut them into unrelated entries.
 - `SettingsGroupCard` / `SettingsGroupDivider` — the container itself. Rows inside pass
   `fullBleed = false`, which is the rule above rather than an exception to it.
 - `SettingsActionRow` — a row that *does* something. What every `OutlinedButton(fillMaxWidth())`
