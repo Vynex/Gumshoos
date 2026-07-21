@@ -602,7 +602,7 @@ internal fun SettingsActionRow(
                 painter = painter,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 16.dp).size(24.dp),
+                modifier = Modifier.padding(end = 16.dp).size(20.dp),
             )
         }
         Column(Modifier.weight(1f)) {
@@ -841,7 +841,7 @@ internal fun SettingsRadioRow(
             .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable(onClick = onClick)
             .fillMaxWidth()
-            .padding(horizontal = SettingsInset, vertical = 6.dp),
+            .padding(horizontal = SettingsInset, vertical = 8.dp),
     ) {
         // `onClick = null` matters for more than the redundant tap target. RadioButton applies
         // `minimumInteractiveComponentSize()` *only* when it has its own click handler, so passing

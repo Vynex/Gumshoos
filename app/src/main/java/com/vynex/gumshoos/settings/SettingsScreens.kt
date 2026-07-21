@@ -37,6 +37,7 @@ import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchMethod
 import com.vynex.gumshoos.OverlayService
+import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
@@ -288,31 +289,34 @@ internal fun ContactsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     }
 
     SettingsScaffold(title = "Contacts", onBack = onBack) {
-        SettingsNote(
-            if (hasContacts) {
-                "Granted. ${AppPermission.CONTACTS.why}"
-            } else {
-                "Optional. ${AppPermission.CONTACTS.withoutIt}"
-            },
-        )
-        Button(
-            onClick = { request.launch(Manifest.permission.READ_CONTACTS) },
-            enabled = !hasContacts,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Allow contacts access") }
+        SettingsNote(AppPermission.CONTACTS.why)
 
         if (hasContacts) {
-            SettingsDivider()
-            CategoryRow(
-                title = "Hidden contacts",
-                summary = GumshoosConfig.hiddenContacts.size.let {
-                    if (it == 0) "None hidden" else "$it hidden"
-                },
-                onClick = { onOpen(Screen.HiddenContacts) },
-            )
-
-            SettingsDivider()
+            SettingsGroup {
+                CategoryRow(
+                    title = "Hidden contacts",
+                    summary = GumshoosConfig.hiddenContacts.size.let {
+                        if (it == 0) "None hidden" else "$it hidden"
+                    },
+                    onClick = { onOpen(Screen.HiddenContacts) },
+                    fullBleed = false,
+                )
+            }
             EmailAppPicker()
+        } else {
+            // The grant is the only thing on the screen until it is made — the two controls below
+            // both act on contacts there is no permission to read. It is a row rather than the
+            // full-width button it was, so the one screen that has nothing else on it doesn't
+            // shout, and `withoutIt` sits under it because "nothing else changes" is the reassurance
+            // that makes an optional permission easy to decline.
+            SettingsGroup(note = AppPermission.CONTACTS.withoutIt) {
+                SettingsActionRow(
+                    title = "Allow contacts access",
+                    summary = "Optional, and asked for with a normal prompt.",
+                    icon = R.drawable.ic_provider_terminal,
+                    onClick = { request.launch(Manifest.permission.READ_CONTACTS) },
+                )
+            }
         }
     }
 }
@@ -455,11 +459,10 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
 
         SettingsGroup(
             title = "New apps tab",
-            note = "Search gives recently installed or updated apps a tab of their own. This is " +
-                "how long one stays in it.",
+            note = "Controls how long to show app installs and updates in the New tab",
         ) {
             SettingsSliderRow(
-                label = "Listed for",
+                label = "Show for",
                 // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit
                 // outside that, so snap it in rather than showing the thumb pinned at an end.
                 value = GumshoosConfig.newUpdatedWindowHours.toInt().coerceIn(3, 12),

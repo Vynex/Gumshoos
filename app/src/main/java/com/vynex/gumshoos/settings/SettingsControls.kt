@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +22,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -218,11 +216,12 @@ internal fun UsageSourcePicker(hasUsage: Boolean) {
     ) {
         SettingsRadioRow(
             title = "Launches from Gumshoos",
-            description = if (tracked == 0) {
-                "Recommended. Counts apps opened from search — none yet."
-            } else {
-                "Recommended. Counts apps opened from search — $tracked so far."
-            },
+//            description = if (tracked == 0) {
+//                "Recommended. Counts apps opened from search — none yet."
+//            } else {
+//                "Recommended. Counts apps opened from search — $tracked so far."
+//            },
+            description = "Recommended. Counts apps opened from search.",
             selected = source == UsageSource.GUMSHOOS,
             onClick = {
                 source = UsageSource.GUMSHOOS
@@ -322,70 +321,40 @@ internal fun EmailAppPicker() {
         context.startForegroundService(OverlayService.intent(context, OverlayService.ACTION_WARM))
     }
 
-    Spacer(Modifier.height(4.dp))
-    Text("Email app", style = MaterialTheme.typography.titleSmall)
-    Text(
-        "Used for the mail action on a contact.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    EmailAppRow(
-        label = "Automatic",
-        icon = null,
-        selected = selected == null,
-        onClick = { choose(null) },
-    )
-    handlers.forEach { handler ->
-        EmailAppRow(
-            label = handler.label,
-            icon = handler.icon,
-            selected = selected == handler.packageName,
-            onClick = { choose(handler.packageName) },
-        )
-    }
-    if (handlers.isEmpty()) {
-        Text(
-            "No mail apps found.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-internal fun EmailAppRow(
-    label: String,
-    icon: androidx.compose.ui.graphics.ImageBitmap?,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+    SettingsGroup(
+        title = "Email app",
+        note = if (handlers.isEmpty()) {
+            "No mail apps found on this phone."
+        } else {
+            "Used for the mail action on a contact."
+        },
     ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(4.dp))
-        if (icon != null) {
-            androidx.compose.foundation.Image(
-                bitmap = icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
+        // Automatic carries a mark of its own so the column of app icons has nothing missing from
+        // the top of it. A row with no leading mark in a group where every other row has one starts
+        // its text 36dp further left, which reads as a mistake rather than as a different kind of
+        // option.
+        SettingsRadioRow(
+            title = "Automatic",
+            description = "Lets the phone decide, which may show a chooser.",
+            selected = selected == null,
+            onClick = { choose(null) },
+            icon = R.drawable.ic_provider_at_sign,
+            tintIcon = true,
+            fullBleed = false,
+        )
+        handlers.forEach { handler ->
+            SettingsRadioRow(
+                title = handler.label,
+                description = "",
+                selected = selected == handler.packageName,
+                onClick = { choose(handler.packageName) },
+                iconBitmap = handler.icon,
+                fullBleed = false,
             )
-            Spacer(Modifier.width(10.dp))
         }
-        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
-/**
- * Icons that open search directly. Both go through a trampoline activity, because a shortcut cannot
- * start a service — only a widget can. Expect them to measure slower than the widget for that
- * reason; the overlay's readout tags this path "icon".
- */
 /**
  * Exchange rate status, and a way to refresh without waiting for the automatic one.
  *
