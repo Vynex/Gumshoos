@@ -119,13 +119,13 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             note = "More columns means a narrower cell, so a large icon and six columns leave " +
                 "little room for the label.",
         ) {
-            SettingsSegmentedRow(
+            SettingsChoiceRow(
                 label = "Rows",
                 values = (GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS).toList(),
                 selected = GumshoosConfig.overlayGridRows,
                 onSelect = { GumshoosConfig.setOverlayGridRows(context, it) },
             )
-            SettingsSegmentedRow(
+            SettingsChoiceRow(
                 label = "Columns",
                 values = (GumshoosConfig.MIN_GRID_COLUMNS..GumshoosConfig.MAX_GRID_COLUMNS)
                     .toList(),

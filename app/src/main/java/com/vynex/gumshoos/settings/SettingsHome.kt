@@ -160,7 +160,6 @@ private fun permissionsSummary(): String {
 private fun appearanceSummary(): String {
     val animations = when (GumshoosConfig.animationMode) {
         AnimationMode.FOLLOW_SYSTEM -> "Animations follow system"
-        AnimationMode.ALWAYS_ON -> "Animations always on"
         AnimationMode.ALWAYS_OFF -> "Animations off"
     }
     return "$animations · widget ${GumshoosConfig.widgetIconSizeDp}dp"

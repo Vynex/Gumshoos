@@ -169,7 +169,9 @@ internal fun ColorPickerAccordion(
                 Spacer(Modifier.height(16.dp))
                 PaletteLabel("Custom")
                 HexField(selected, onPick)
-                Spacer(Modifier.height(8.dp))
+                // Matches the inset the card holds its content at on every other side. At 8dp the
+                // field sat closer to the card's bottom edge than to anything beside it.
+                Spacer(Modifier.height(SettingsInset))
             }
         }
     }
@@ -258,6 +260,19 @@ private fun SwatchCircle(
     }
 }
 
+/**
+ * The hex input and the colour it currently describes.
+ *
+ * No floating label. The field had one reading "Hex" directly under a heading reading "Custom",
+ * above a placeholder reading "#1B6EF3" — three labels for one input, and the floating one is what
+ * pushed the text off centre and made a field of M3's minimum height look taller than it is. 56dp
+ * *is* the spec minimum (`TextFieldDefaults.MinHeight`), so the height is not the thing to fight;
+ * the label was.
+ *
+ * The field takes the remaining width so the swatch lands on the right edge of the card, in line
+ * with the last column of the palette above it. At a fixed width it stopped short of the edge and
+ * the swatch floated in the middle of nothing.
+ */
 @Composable
 private fun HexField(selected: Int?, onPick: (Int) -> Unit) {
     var text by remember(selected) { mutableStateOf(selected?.let { ColorHex.format(it) } ?: "") }
@@ -272,11 +287,11 @@ private fun HexField(selected: Int?, onPick: (Int) -> Unit) {
                 // tracks typing the way every other control on this screen does.
                 ColorHex.parse(it)?.let(onPick)
             },
-            label = { Text("Hex") },
             placeholder = { Text("#1B6EF3") },
             isError = text.isNotBlank() && parsed == null,
             singleLine = true,
-            modifier = Modifier.width(180.dp),
+            shape = SettingsCardShape,
+            modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
         Box(

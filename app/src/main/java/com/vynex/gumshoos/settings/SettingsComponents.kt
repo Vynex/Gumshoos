@@ -29,17 +29,16 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -623,19 +622,19 @@ internal fun SettingsActionRow(
 }
 
 /**
- * A short exclusive set, as segmented buttons.
+ * A short exclusive set, as a row of equal-width buttons.
  *
- * For ranges where every option can be on screen at once — grid rows and columns run three to six —
- * which a slider would hide behind a drag and a radio list would spend half a screen on. These were
- * a hand-rolled row of `OutlinedButton`s with the selected one tinted, reinventing the component M3
- * has for exactly this.
+ * For ranges where every option can be on screen at once — grid rows and columns run three each —
+ * which a slider would hide behind a drag and a radio list would spend half a screen on.
  *
- * It sizes to its content rather than filling the width, and that is not a choice made here:
- * `SingleChoiceSegmentedButtonRow` applies `width(IntrinsicSize.Min)` *after* the caller's modifier,
- * so a `fillMaxWidth` passed in would be overridden anyway.
+ * **Not** M3's `SingleChoiceSegmentedButtonRow`, which was tried here and reverted. It applies
+ * `width(IntrinsicSize.Min)` *after* the caller's modifier, so it sizes to its content and silently
+ * ignores a `fillMaxWidth` — three buttons wide enough for one digit each, huddled against the left
+ * edge of a full-width card. There is no parameter for it, and `SegmentedButton` cannot be used
+ * outside that row's scope, so filling the width means not using the component.
  */
 @Composable
-internal fun SettingsSegmentedRow(
+internal fun SettingsChoiceRow(
     label: String,
     values: List<Int>,
     selected: Int,
@@ -643,7 +642,7 @@ internal fun SettingsSegmentedRow(
     summary: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = SettingsInset, vertical = 10.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
         if (!summary.isNullOrEmpty()) {
             Text(
                 summary,
@@ -652,12 +651,25 @@ internal fun SettingsSegmentedRow(
             )
         }
         Spacer(Modifier.height(8.dp))
-        SingleChoiceSegmentedButtonRow {
-            values.forEachIndexed { index, value ->
-                SegmentedButton(
-                    selected = value == selected,
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            values.forEach { value ->
+                val chosen = value == selected
+                OutlinedButton(
                     onClick = { onSelect(value) },
-                    shape = SegmentedButtonDefaults.itemShape(index, values.size),
+                    colors = if (chosen) {
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    } else {
+                        ButtonDefaults.outlinedButtonColors()
+                    },
+                    // `weight` hands each button a fixed width, which is also what stops
+                    // ButtonDefaults.MinWidth from expanding them past their share.
+                    modifier = Modifier.weight(1f),
                 ) { Text("$value") }
             }
         }
@@ -711,7 +723,10 @@ internal fun SettingsSliderRow(
     Column(modifier.fillMaxWidth().padding(horizontal = SettingsInset, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.bodyLarge)
+                // bodyMedium, matching the switch and radio rows. A slider label set a size larger
+                // than the switch beside it in the same card is the loudest thing in the group for
+                // no reason — the control below it already says which is which.
+                Text(label, style = MaterialTheme.typography.bodyMedium)
                 if (!summary.isNullOrEmpty()) {
                     Text(
                         summary,
@@ -764,7 +779,9 @@ internal fun SettingsSwitchRow(
             .then(if (fullBleed) Modifier.fullBleedRow() else Modifier)
             .clickable { onCheckedChange(!checked) }
             .fillMaxWidth()
-            .padding(horizontal = SettingsInset, vertical = 8.dp),
+            // 12dp, not 8. This was the shallowest row in the family, which showed up as a first
+            // row sitting almost against the top edge of its card.
+            .padding(horizontal = SettingsInset, vertical = 12.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
@@ -776,7 +793,9 @@ internal fun SettingsSwitchRow(
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
+        // A clear gap rather than the 12dp the text used to run right up to. The switch is the
+        // thing being pointed at; text crowding it made the row read as one block.
+        Spacer(Modifier.width(24.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

@@ -203,7 +203,6 @@ object GumshoosConfig {
      */
     fun animationsEnabled(systemScale: Float): Boolean = when (animationMode) {
         AnimationMode.ALWAYS_OFF -> false
-        AnimationMode.ALWAYS_ON -> true
         AnimationMode.FOLLOW_SYSTEM -> systemScale != 0f
     }
 
@@ -817,4 +816,11 @@ object GumshoosConfig {
 }
 
 /** How the overlay's animations relate to the system-wide accessibility setting. */
-enum class AnimationMode { FOLLOW_SYSTEM, ALWAYS_ON, ALWAYS_OFF }
+/**
+ * There is no "always on". It could never mean what it said: Compose's animation clock honours the
+ * system scale and nothing in the app sits above it, so the option promised something it could not
+ * deliver on exactly the phones where someone would reach for it. A stored `ALWAYS_ON` from an
+ * older build falls through the name lookup in [GumshoosConfig.load] to [FOLLOW_SYSTEM], which is
+ * what it effectively already was.
+ */
+enum class AnimationMode { FOLLOW_SYSTEM, ALWAYS_OFF }

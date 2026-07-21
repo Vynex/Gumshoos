@@ -336,15 +336,20 @@ the sources jar, which is the only place it is written down.
   should have been: a stack of full-width buttons is a form, and six down the Advanced screen gave
   equal maximum weight to six things of very unequal importance. No trailing chevron, because
   nothing opens. A real `Button` is then free to mean "this is the action here".
-- `SettingsSegmentedRow` — a short exclusive set as M3 segmented buttons, for ranges where every
-  option fits on screen (grid rows and columns run three to six). It sizes to its content and
-  ignores a `fillMaxWidth`: `SingleChoiceSegmentedButtonRow` applies `width(IntrinsicSize.Min)`
-  *after* the caller's modifier.
+- `SettingsChoiceRow` — a short exclusive set as a row of equal-width buttons, for ranges where
+  every option fits on screen (grid rows and columns run three each). It is **not** M3's
+  `SingleChoiceSegmentedButtonRow`, which was tried and reverted: that applies
+  `width(IntrinsicSize.Min)` *after* the caller's modifier, so it sizes to its content and silently
+  ignores a `fillMaxWidth`, leaving three one-digit buttons huddled at the left edge of a full-width
+  card. There is no parameter for it and `SegmentedButton` cannot be used outside that row's scope,
+  so filling the width means not using the component.
 - `SettingsSliderRow` — title, value read off the row, slider beneath. Five near-identical copies of
   this existed, each pairing a bare `Slider` with a note reading "Icon size: 42dp", which puts the
   value in prose above the control you are currently dragging. `valueText` formats it because a
   value is not always a number — a zero corner radius reads "square". The readout has a floor width
-  so the title beside it doesn't shift as digits are gained. It holds local state for the drag but
+  so the title beside it doesn't shift as digits are gained. **Every control row's title is
+  `bodyMedium`** — switch, radio, slider, choice — because they share cards; only `CategoryRow`, a
+  destination rather than a control, is `bodyLarge`. It holds local state for the drag but
   still has to follow the value when a "Reset to defaults" moves it, and `remember(value)` is the
   wrong way to do that: it also re-seeds mid-drag from the write the row itself just made. That is
   harmless only while `Slider` snaps to ticks and hands back exactly the integer we reported, which

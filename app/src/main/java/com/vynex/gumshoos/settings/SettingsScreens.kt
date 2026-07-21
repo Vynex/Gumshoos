@@ -617,17 +617,10 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val systemDisabled = GumshoosConfig.systemAnimationScale(context) == 0f
 
     SettingsScaffold(title = "Appearance", onBack = onBack) {
-        // One group, not a "Widgets" pair and a "Search" single. All three are the same kind of
-        // thing — somewhere to go and restyle a surface — and their own titles already say which
-        // surface, so the headings were labelling what the rows had already said.
-        SettingsGroup {
-            CategoryRow(
-                title = "Search window",
-                summary = searchWindowSummary(),
-                onClick = { onOpen(Screen.SearchWindow) },
-                fullBleed = false,
-            )
-            SettingsGroupDivider()
+        // Two groups, because they are two places. The widgets are drawn on the home screen by the
+        // launcher; the window is drawn over whatever is already there. Merging them into one list
+        // of "things to restyle" lost that.
+        SettingsGroup(title = "Home screen") {
             CategoryRow(
                 title = "Search bar widget",
                 summary = widgetBarSummary(),
@@ -648,6 +641,15 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             )
         }
 
+        SettingsGroup(title = "Overlay") {
+            CategoryRow(
+                title = "Search window",
+                summary = searchWindowSummary(),
+                onClick = { onOpen(Screen.SearchWindow) },
+                fullBleed = false,
+            )
+        }
+
         SettingsGroup(
             title = "Animations",
             note = "The search window opens in about 20ms. The animation is what makes that " +
@@ -657,7 +659,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 SettingsRadioRow(
                     title = when (option) {
                         AnimationMode.FOLLOW_SYSTEM -> "Follow system setting"
-                        AnimationMode.ALWAYS_ON -> "Always on"
                         AnimationMode.ALWAYS_OFF -> "Always off"
                     },
                     description = when (option) {
@@ -667,11 +668,6 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                             } else {
                                 "Your phone has animations on."
                             }
-                        // The reason it cannot override the system setting is a Compose one, and
-                        // belongs in a source comment rather than on screen: the animation clock
-                        // honours the system scale and nothing in the app sits above it.
-                        AnimationMode.ALWAYS_ON ->
-                            "Unless the phone has them off system-wide, which can't be overridden."
                         AnimationMode.ALWAYS_OFF -> "The window and its sections appear instantly."
                     },
                     selected = mode == option,
