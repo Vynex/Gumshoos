@@ -42,9 +42,15 @@ the Expressive components, and Compose UI 1.11.4. Two things to know before touc
   in the catalog. Ten stock icons are used across the app; the BOM still pins the artifact, so it
   can't drift on its own. The library itself is frozen at 1.7.8 and no longer developed — if it is
   ever dropped from the BOM, hand-author the ten as drawables rather than chasing a version.
-- Not everything the spec describes has shipped. Check the **sources jar** before building on a
-  component you read about in the M3 docs — several Expressive app bars are present in 1.4.0's
-  binary but declared `internal`. See the app bar notes under Settings UI.
+- **1.4.0 is Expressive in tokens only.** `MaterialExpressiveTheme` is `internal`, so is every
+  flexible app bar, and the headline Expressive components — `ButtonGroup`, `LoadingIndicator`,
+  `FloatingToolbar`, `SplitButton`, wavy progress — have no source file at all, only design tokens.
+  `Slider.kt`, `Tab.kt` and `TabRow.kt` are the classic implementations. **The bump changed nothing
+  visually and could not have.** Adopting the Expressive look is a separate, deliberate pass once
+  1.5.0 is stable and the theme entry point is public.
+- That fact was got wrong here first, by reading the M3 docs and assuming the release matched them.
+  Check the **sources jar** — the spec runs ahead of what Compose ships, and `internal` in a stable
+  release is not something any documentation mentions.
 
 ## The latency architecture
 
