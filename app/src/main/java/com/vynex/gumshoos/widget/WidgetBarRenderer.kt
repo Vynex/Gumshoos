@@ -5,8 +5,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
+import android.graphics.Path
 import android.graphics.RectF
 import androidx.annotation.ColorInt
 import androidx.core.content.ContextCompat
@@ -26,38 +25,21 @@ import androidx.core.content.ContextCompat
 object WidgetBarRenderer {
 
     /**
-     * Shadow, transcribed from a CSS box-shadow:
+     * Skia's radius-to-sigma constant, inverted.
      *
-     *     rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px
-     *
-     * The offsets and alpha carry across directly — CSS px is read as dp, which is what the value
-     * means on a phone. The blur does not, and copying 2.6 straight into [Paint.setShadowLayer]
-     * would give a noticeably softer shadow than the one specified.
-     *
-     * CSS defines blur-radius as twice the Gaussian sigma. Android takes a BlurMaskFilter radius,
-     * which Skia converts as `sigma = 0.57735 * radius + 0.5`, in **pixels**. So the conversion has
-     * to happen after the density multiply, not before — see [blurRadiusPx]. At 3x, 2.6dp means
-     * sigma 3.9; passing 2.6dp through as a radius would land near sigma 5.0.
+     * The shadow's own numbers — blur, offsets, alpha, and the room it needs — are in
+     * [WidgetBarMetrics], because the bar's geometry depends on them and can be tested there. What
+     * is left here is the part that needs a Paint.
      */
-    private const val SHADOW_CSS_BLUR_DP = 2.6f
-    private const val SHADOW_DX_DP = 1.95f
-    private const val SHADOW_DY_DP = 1.95f
-
-    /** 0.15 alpha, as eight-bit. */
-    private const val SHADOW_ALPHA = 0x26
-
-    /** Skia's radius-to-sigma constant, inverted. */
     private const val SIGMA_PER_RADIUS = 0.57735f
     private const val SIGMA_BASE = 0.5f
 
     /**
      * Border width, in dp.
      *
-     * Outline mode gets a heavier one. On a filled bar the border is the fill colour and therefore
-     * invisible, so a hairline costs nothing there — but in outline mode it is the entire widget,
-     * and 1dp reads as a scratch rather than as a deliberate edge.
+     * Only outline mode has a border at all — see [WidgetBarMetrics.strokeColor] — and there it is
+     * the entire widget, so 1dp would read as a scratch rather than as a deliberate edge.
      */
-    private const val STROKE_DP = 1f
     private const val OUTLINE_STROKE_DP = 3f
 
     /**
@@ -82,15 +64,14 @@ object WidgetBarRenderer {
         }
     }
 
-    private fun strokeWidthPx(style: WidgetBarStyle, density: Float): Float =
-        (if (style.wireframe) OUTLINE_STROKE_DP else STROKE_DP) * density
-
     /**
      * The BlurMaskFilter radius that reproduces a CSS blur-radius of [cssBlurDp].
      *
      * Both conversions are in play: CSS blur is 2x sigma, and Skia's radius is sigma with its own
      * affine mapping. Done in pixels because Skia's constant is a pixel quantity — the same dp
-     * value produces a different radius at a different density.
+     * value produces a different radius at a different density. At 3x, 2.6dp means sigma 3.9;
+     * passing 2.6dp straight through as a radius would land near sigma 5.0 and give a noticeably
+     * softer shadow than the one specified.
      */
     private fun blurRadiusPx(cssBlurDp: Float, density: Float): Float {
         val sigma = (cssBlurDp * density) / 2f
@@ -128,11 +109,9 @@ object WidgetBarRenderer {
     /**
      * The one drawing implementation.
      *
-     * The bar's rectangle comes from the configured padding and **nothing else**. The shadow is
-     * drawn into whatever margin that padding leaves, and is clipped by the bitmap edge if there
-     * isn't any — so switching the shadow on never changes the bar's size. An earlier version inset
-     * the rect to make room for the blur, which meant the shadow toggle silently doubled as a
-     * height control and neither could be set without disturbing the other.
+     * The bar's rectangle comes from [WidgetBarMetrics.insetHDp] and [WidgetBarMetrics.insetVDp] —
+     * the configured margin, widened to hold the shadow where the margin alone would let the bitmap
+     * edge cut it off.
      */
     fun draw(
         canvas: Canvas,
@@ -142,42 +121,52 @@ object WidgetBarRenderer {
         height: Float,
         density: Float,
     ) {
-        val blur = blurRadiusPx(SHADOW_CSS_BLUR_DP, density)
-        val dx = SHADOW_DX_DP * density
-        val dy = SHADOW_DY_DP * density
-        val padH = style.paddingHDp * density
-        val padV = style.paddingVDp * density
+        val blur = blurRadiusPx(WidgetBarMetrics.SHADOW_CSS_BLUR_DP, density)
+        val dx = WidgetBarMetrics.SHADOW_DX_DP * density
+        val dy = WidgetBarMetrics.SHADOW_DY_DP * density
+        val insetH = WidgetBarMetrics.insetHDp(style) * density
+        val insetV = WidgetBarMetrics.insetVDp(style) * density
 
-        val rect = RectF(padH, padV, width - padH, height - padV)
+        val rect = RectF(insetH, insetV, width - insetH, height - insetV)
         if (rect.width() <= 0f || rect.height() <= 0f) return
 
         val radius = WidgetBarMetrics.cornerRadiusPx(style.cornerPercent, rect.height())
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val fill = WidgetBarMetrics.fillColor(resolvedRgb, style)
-        val strokeWidth = strokeWidthPx(style, density)
+        val strokeWidth = OUTLINE_STROKE_DP * density
         val stroke = WidgetBarMetrics.strokeColor(resolvedRgb, style)
 
         // The shadow is drawn from the shape itself, not carried by whatever else happens to be
-        // painted, so it survives a fill and border that are both fully transparent.
+        // painted, so it survives a fill and border that are both fully transparent. It used to
+        // ride on the fill, and on the border in outline mode, which meant taking opacity to zero
+        // silently took the shadow with it.
         //
         // Skia derives a shadow from the alpha actually drawn — a transparent paint casts nothing —
-        // so the shape goes down opaque to produce one, then is cleared straight back out. What
-        // remains is the part of the shadow that fell outside the shape, which is all a drop shadow
+        // so the shape goes down opaque and the shape's own area is clipped away instead. What
+        // remains is the part of the blur that fell outside the shape, which is all a drop shadow
         // ever shows: the rest would sit under the fill.
         //
-        // This used to ride on the fill, and on the border in outline mode, which meant taking
-        // opacity to zero silently took the shadow with it.
+        // The clip is why this isn't drawn and then erased with a CLEAR xfermode, which is what it
+        // did before. Both passes were antialiased, so along the whole rounded edge the erase
+        // removed only `coverage` of a pixel that held `coverage` of black, leaving `c * (1 - c)`
+        // behind — a ring of dark speckle peaking where coverage was half, which is exactly the
+        // hard, crawling edge you see at 0% opacity with nothing painted over it. Clipping applies
+        // the same coverage as a multiply on the way in and leaves nothing to subtract.
         if (style.shadow) {
+            val shape = Path().apply {
+                addRoundRect(rect, radius, radius, Path.Direction.CW)
+            }
+            canvas.save()
+            canvas.clipOutPath(shape)
             paint.style = Paint.Style.FILL
             paint.color = WidgetBarMetrics.argb(0xFF, 0, 0, 0)
-            paint.setShadowLayer(blur, dx, dy, WidgetBarMetrics.argb(SHADOW_ALPHA, 0, 0, 0))
+            paint.setShadowLayer(
+                blur, dx, dy, WidgetBarMetrics.argb(WidgetBarMetrics.SHADOW_ALPHA, 0, 0, 0),
+            )
             canvas.drawRoundRect(rect, radius, radius, paint)
             paint.clearShadowLayer()
-
-            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-            canvas.drawRoundRect(rect, radius, radius, paint)
-            paint.xfermode = null
+            canvas.restore()
         }
 
         if (WidgetBarMetrics.alphaOf(fill) > 0) {

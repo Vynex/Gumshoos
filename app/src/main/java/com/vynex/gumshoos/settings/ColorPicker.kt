@@ -162,10 +162,6 @@ internal fun ColorPickerAccordion(
                 SwatchGrid(systemPalette(), selected, onPick)
 
                 Spacer(Modifier.height(16.dp))
-                PaletteLabel("Fixed colours")
-                SwatchGrid(FIXED, selected, onPick)
-
-                Spacer(Modifier.height(16.dp))
                 PaletteLabel("Custom")
                 HexField(selected, onPick)
                 Spacer(Modifier.height(8.dp))
@@ -320,13 +316,3 @@ private fun systemPalette(): List<Color> = listOf(
     android.R.color.system_neutral2_300, android.R.color.system_neutral2_600,
     android.R.color.system_neutral2_800, android.R.color.system_neutral2_900,
 ).map { colorResource(it) }
-
-/** Greys first, then saturated colours — the two things a wallpaper palette tends not to offer. */
-private val FIXED = listOf(
-    Color(0xFFFFFFFF), Color(0xFFE8E8E8), Color(0xFFCFCFCF),
-    Color(0xFF9E9E9E), Color(0xFF6E6E6E), Color(0xFF3C3C3C),
-    Color(0xFF1B1B1B), Color(0xFF000000), Color(0xFFD93025),
-    Color(0xFFE8710A), Color(0xFFF9AB00), Color(0xFF1E8E3E),
-    Color(0xFF12B5CB), Color(0xFF1A73E8), Color(0xFF3F51B5),
-    Color(0xFF9334E6), Color(0xFFD01884), Color(0xFF5F6368),
-)

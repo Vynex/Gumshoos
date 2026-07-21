@@ -71,9 +71,6 @@ private val DefaultPreviewHeight = 60.dp
 private val MinPreviewHeight = 48.dp
 private val MaxPreviewHeight = 140.dp
 
-/** Rasterisation ceiling for the preview only — see the note in WidgetBarPreview. */
-private const val PreviewMaxDensity = 2f
-
 /**
  * Styling for the wide search bar.
  *
@@ -135,8 +132,8 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         )
         SettingsSwitchRow(
             title = "Shadow",
-            description = "A short drop shadow. Draws into the margins, so it doesn't change the " +
-                "bar's size.",
+            description = "A short drop shadow. It needs a little room to fall into, so the bar " +
+                "pulls in where the margins below are smaller than that.",
             checked = style.shadow,
             onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
         )
@@ -153,6 +150,9 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 label = "Side margin",
                 value = GumshoosConfig.widgetBarPaddingH,
                 max = WidgetBarMetrics.MAX_PADDING_H_DP,
+                // Coarser than the vertical one. It runs to 32dp, where single steps are more
+                // notches than the eye can tell apart and a drag that has to cross all of them.
+                step = 2,
                 hint = "0 makes the bar span the whole cell.",
                 onValue = { GumshoosConfig.setWidgetBarPaddingH(context, it) },
                 onChanged = ::push,
@@ -263,16 +263,25 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
             .padding(horizontal = PreviewPadding)
             .height(previewHeight),
     ) {
-        // Rasterised at a capped density, then scaled back up to fill.
+        // Rasterised at the exact pixel size this box occupies, so the bitmap lands 1:1 on the
+        // screen and nothing resamples it.
         //
-        // A slider writes config on every frame, so a full-resolution bitmap here would allocate
-        // roughly a megabyte per frame while one is being dragged. Both the pixel size and the
-        // density fall together, which makes this a uniform scale of the very same drawing rather
-        // than a different one — the shadow and border stay in proportion because they are derived
-        // from the density that is passed in.
-        val previewDensity = density.coerceAtMost(PreviewMaxDensity)
-        val wPx = (maxWidth.value * previewDensity).toInt()
-        val hPx = (previewHeight.value * previewDensity).toInt()
+        // It used to cap the density at 2x and let ContentScale stretch the result back up, to hold
+        // down the allocation while a slider is dragged. That is a 1.5x bilinear upscale on a 3x
+        // phone, and the shadow is the one part of the drawing fine enough to show it: its gradient
+        // is a few pixels wide, so the interpolation facets it and the rounded corners come out
+        // visibly stepped. The widget itself never looked like that — it rasterises at full density
+        // — so the preview was showing a defect that only the preview had, which is the one thing a
+        // preview must not do. Every slider here is stepped and the bitmap is remembered against the
+        // style, so the cost is one bitmap per notch crossed, not one per frame.
+        //
+        // Past the area budget both the pixel size and the density fall together, which keeps it a
+        // uniform scale of the very same drawing rather than a different one — the shadow and the
+        // margins stay in proportion because they are derived from the density passed in.
+        val scale = WidgetBarMetrics.rasterScale(constraints.maxWidth, constraints.maxHeight)
+        val previewDensity = density * scale
+        val wPx = (constraints.maxWidth * scale).roundToInt()
+        val hPx = (constraints.maxHeight * scale).roundToInt()
 
         // Keyed on everything that changes the pixels, so typing in the hex field redraws but
         // scrolling the screen doesn't re-rasterise on every frame.
@@ -291,7 +300,9 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = inset + style.paddingHDp.dp),
+                // The bar's real edge, not the configured margin: a shadow widens it, and the logo
+                // has to sit inside whatever the renderer drew — the same read the widget makes.
+                .padding(horizontal = inset + WidgetBarMetrics.insetHDp(style).dp),
         ) {
             Image(
                 painter = painterResource(style.logo.icon),
@@ -367,7 +378,12 @@ private fun OpacitySlider(onChanged: () -> Unit) {
     )
 }
 
-/** Shared shape for the two margin sliders — one dp step per notch. */
+/**
+ * Shared shape for the two margin sliders, [step] dp per notch.
+ *
+ * The notch count is derived rather than passed, so a slider cannot end up with stops that don't
+ * land on its own maximum.
+ */
 @Composable
 private fun PaddingSlider(
     label: String,
@@ -376,6 +392,7 @@ private fun PaddingSlider(
     hint: String,
     onValue: (Int) -> Unit,
     onChanged: () -> Unit,
+    step: Int = 1,
 ) {
     var current by remember(value) { mutableStateOf(value.toFloat()) }
     SettingsNote("$label: ${current.roundToInt()}dp — $hint")
@@ -387,7 +404,8 @@ private fun PaddingSlider(
         },
         onValueChangeFinished = onChanged,
         valueRange = 0f..max.toFloat(),
-        steps = max - 1,
+        // steps counts the stops *between* the ends, so a step of 2dp over 0..32 is 15 of them.
+        steps = (max / step) - 1,
         modifier = Modifier.fillMaxWidth(),
     )
 }

@@ -107,45 +107,80 @@ class WidgetBarStyleTest {
     }
 
     @Test
-    fun `a filled bar borders itself in its own colour`() {
-        // Not a fixed white hairline: that showed as a pale rim against any fill that wasn't
-        // near-white, and read as a rendering fault rather than a border.
-        val fill = 0xFF3366CC.toInt()
+    fun `a filled bar draws no border at all`() {
+        // The stroke is painted over the fill, so an edge in the fill colour is not invisible: the
+        // two antialiased coverages composite along the whole rounded edge and every opacity below
+        // 100% shows the seam as a darker rim.
+        for (alpha in listOf(0, 25, 60, 100)) {
+            val stroke = WidgetBarMetrics.strokeColor(0xFF3366CC.toInt(), style(alpha = alpha))
+            assertEquals("alpha=$alpha", 0, WidgetBarMetrics.alphaOf(stroke))
+        }
+    }
+
+    @Test
+    fun `the border follows opacity in outline mode, where it is the whole bar`() {
+        val outline = style(alpha = 40, wireframe = true)
         assertEquals(
-            WidgetBarMetrics.fillColor(fill, style()),
-            WidgetBarMetrics.strokeColor(fill, style()),
+            WidgetBarMetrics.alphaOf(WidgetBarMetrics.applyAlpha(0xFF3366CC.toInt(), 40)),
+            WidgetBarMetrics.alphaOf(WidgetBarMetrics.strokeColor(0xFF3366CC.toInt(), outline)),
         )
     }
 
+    // --- the room the shadow needs ---------------------------------------------------------------
+
     @Test
-    fun `the border follows opacity as the fill does`() {
-        val stroke = WidgetBarMetrics.strokeColor(0xFF3366CC.toInt(), style(alpha = 40))
-        assertEquals(WidgetBarMetrics.alphaOf(WidgetBarMetrics.applyAlpha(0xFF3366CC.toInt(), 40)),
-            WidgetBarMetrics.alphaOf(stroke))
+    fun `no shadow reserves nothing`() {
+        val plain = style(shadow = false, padH = 0, padV = 0)
+        assertEquals(0f, WidgetBarMetrics.insetHDp(plain), 0.001f)
+        assertEquals(0f, WidgetBarMetrics.insetVDp(plain), 0.001f)
     }
 
-    // --- padding is independent of the shadow ----------------------------------------------------
+    @Test
+    fun `a shadow at a zero margin makes its own room`() {
+        // Otherwise the blur runs past the bitmap and is cut off square by its edge, which reads as
+        // a torn bar rather than as a shadow.
+        val tight = style(shadow = true, padH = 0, padV = 0)
+        assertEquals(WidgetBarMetrics.SHADOW_EXTENT_H_DP, WidgetBarMetrics.insetHDp(tight), 0.001f)
+        assertEquals(WidgetBarMetrics.SHADOW_EXTENT_V_DP, WidgetBarMetrics.insetVDp(tight), 0.001f)
+    }
 
     @Test
-    fun `the shadow does not change the bar geometry`() {
-        // These were coupled once: the shadow reserved room by insetting the bar, so turning it on
-        // silently made the bar shorter and neither could be set without disturbing the other.
-        val withShadow = style(shadow = true, padV = 8)
-        val without = style(shadow = false, padV = 8)
-        assertEquals(withShadow.paddingVDp, without.paddingVDp)
+    fun `a margin wider than the shadow decides the size on its own`() {
+        // The floor, not a sum: past the shadow's reach the toggle stops moving anything, so the
+        // two controls are only coupled where they have to be.
+        val roomy = style(shadow = true, padH = 20, padV = 12)
+        assertEquals(20f, WidgetBarMetrics.insetHDp(roomy), 0.001f)
+        assertEquals(12f, WidgetBarMetrics.insetVDp(roomy), 0.001f)
         assertEquals(
-            WidgetBarMetrics.cornerRadiusPx(100, 100f - 2 * withShadow.paddingVDp),
-            WidgetBarMetrics.cornerRadiusPx(100, 100f - 2 * without.paddingVDp),
+            WidgetBarMetrics.insetVDp(roomy),
+            WidgetBarMetrics.insetVDp(style(shadow = false, padH = 20, padV = 12)),
             0.001f,
         )
     }
 
     @Test
+    fun `the shadow always fits inside the room it asks for`() {
+        // Three sigma of blur plus the offset, on the far side. The near side is smaller and gets
+        // the same inset anyway, which is what keeps the bar centred in its cell.
+        val reach = 3f * (WidgetBarMetrics.SHADOW_CSS_BLUR_DP / 2f)
+        assertTrue(WidgetBarMetrics.SHADOW_EXTENT_H_DP >= reach + WidgetBarMetrics.SHADOW_DX_DP)
+        assertTrue(WidgetBarMetrics.SHADOW_EXTENT_V_DP >= reach + WidgetBarMetrics.SHADOW_DY_DP)
+    }
+
+    @Test
+    fun `the vertical margin cannot squeeze out the bar's own contents`() {
+        // Both margins come out of the bar, and the vertical one comes out of a single row's
+        // height: the 22dp icons overflow the bar before the slider's end if it runs much further.
+        assertTrue(2 * WidgetBarMetrics.MAX_PADDING_V_DP + 22 <= 56)
+        assertTrue(WidgetBarMetrics.MAX_PADDING_V_DP >= WidgetBarMetrics.SHADOW_EXTENT_V_DP)
+    }
+
+    @Test
     fun `a fully transparent bar still has a shape to cast a shadow from`() {
         // At 0% opacity nothing is painted, and Skia derives a shadow from the alpha actually
-        // drawn — so the shadow used to disappear with the fill. The renderer now draws the shape
-        // opaque and clears it back out, which is only correct if the geometry survives; guard the
-        // inputs that would make it degenerate.
+        // drawn — so the shadow used to disappear with the fill. The renderer draws the shape
+        // opaque and clips its own area away, which is only correct if the geometry survives;
+        // guard the inputs that would make it degenerate.
         val invisible = style(alpha = 0, shadow = true, padV = 8)
         assertEquals(0, WidgetBarMetrics.alphaOf(WidgetBarMetrics.fillColor(white, invisible)))
         assertEquals(0, WidgetBarMetrics.alphaOf(WidgetBarMetrics.strokeColor(white, invisible)))
@@ -222,6 +257,21 @@ class WidgetBarStyleTest {
         val sourceRatio = wideDp.toFloat() / tallDp
         val renderedRatio = w.toFloat() / h
         assertEquals(sourceRatio, renderedRatio, 0.05f)
+    }
+
+    @Test
+    fun `a preview that fits the budget is rasterised one to one`() {
+        // The whole point: anything less than 1 is a resample, and the shadow's gradient is a few
+        // pixels wide, so a resample facets it. A phone-width bar at 3x is nowhere near the budget.
+        assertEquals(1f, WidgetBarMetrics.rasterScale(1179, 180), 0.0001f)
+    }
+
+    @Test
+    fun `an oversized preview scales down to the budget`() {
+        val scale = WidgetBarMetrics.rasterScale(2400, 420)
+        assertTrue("scale=$scale", scale < 1f)
+        val area = (2400 * scale).toLong() * (420 * scale).toLong()
+        assertTrue("area=$area", area <= WidgetBarMetrics.MAX_AREA_PX)
     }
 
     @Test

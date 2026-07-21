@@ -25,8 +25,9 @@ data class WidgetBarStyle(
     /**
      * Gap between the bar and the edge of the widget's cell, in dp.
      *
-     * The bar's size depends on these and on nothing else — in particular not on [shadow], which
-     * draws into whatever margin these leave rather than reserving any of its own.
+     * What the user asked for; what is actually left is [WidgetBarMetrics.insetHDp], which floors
+     * these at the room a [shadow] needs to land inside the widget rather than be cut off at its
+     * edge.
      */
     val paddingHDp: Int = 0,
     val paddingVDp: Int = 0,
@@ -81,9 +82,72 @@ object WidgetBarMetrics {
     /** Below this, the fill is see-through enough that the wallpaper decides contrast, not us. */
     private const val OPAQUE_ENOUGH_PERCENT = 50
 
-    /** Bounds for the padding sliders, in dp. */
+    /**
+     * Bounds for the padding sliders, in dp.
+     *
+     * The vertical one is the tighter of the two because it fights the bar's own contents: the
+     * margin comes out of the bar's height, and past roughly this much the 22dp logo and action
+     * icons are taller than the bar they sit in on a single-row cell.
+     */
     const val MAX_PADDING_H_DP = 32
-    const val MAX_PADDING_V_DP = 24
+    const val MAX_PADDING_V_DP = 12
+
+    /**
+     * The drop shadow, transcribed from a CSS box-shadow:
+     *
+     *     rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px
+     *
+     * The offsets and the alpha carry across directly — CSS px is read as dp, which is what the
+     * value means on a phone. The blur does not: CSS defines blur-radius as twice the Gaussian
+     * sigma, and Skia wants a mask radius in pixels, which is [WidgetBarRenderer]'s business.
+     *
+     * They live here rather than with the drawing because the bar's geometry depends on them. How
+     * much room a shadow needs is arithmetic, and arithmetic can be tested.
+     */
+    const val SHADOW_CSS_BLUR_DP = 2.6f
+    const val SHADOW_DX_DP = 1.95f
+    const val SHADOW_DY_DP = 1.95f
+
+    /** 0.15 alpha, as eight-bit. */
+    const val SHADOW_ALPHA = 0x26
+
+    /** Sigma, in dp. */
+    private const val SHADOW_SIGMA_DP = SHADOW_CSS_BLUR_DP / 2f
+
+    /**
+     * How far the shadow reaches past the bar, in dp, on each axis.
+     *
+     * A Gaussian never quite ends; Skia's mask stops carrying anything visible at about three sigma,
+     * which is where the reach is taken from. Symmetric per axis even though the offset is not — an
+     * inset of `reach - dy` at the top against `reach + dy` at the bottom would hold the shadow just
+     * as well and leave the bar visibly off-centre in its cell.
+     */
+    const val SHADOW_EXTENT_H_DP = 3f * SHADOW_SIGMA_DP + SHADOW_DX_DP
+    const val SHADOW_EXTENT_V_DP = 3f * SHADOW_SIGMA_DP + SHADOW_DY_DP
+
+    /**
+     * The gap actually left between the widget's cell and the bar, in dp.
+     *
+     * The configured margin, floored at what the shadow needs when there is one. The shadow used to
+     * draw into whatever margin happened to be there and be sliced off square by the bitmap's edge
+     * where there wasn't enough — which reads as a torn bar rather than as a shadow, and at a zero
+     * margin is most of it.
+     *
+     * The floor rather than a sum: a margin already wider than the shadow needs nothing added, so
+     * anything past [SHADOW_EXTENT_H_DP] sets the bar's size on its own and the shadow toggle stops
+     * moving anything at all. The cost is that at a small margin the toggle *does* change the bar's
+     * size, which is the honest trade — the alternative is a shadow that is drawn and then cut off.
+     */
+    fun insetHDp(style: WidgetBarStyle): Float =
+        insetDp(style.paddingHDp, style.shadow, SHADOW_EXTENT_H_DP)
+
+    fun insetVDp(style: WidgetBarStyle): Float =
+        insetDp(style.paddingVDp, style.shadow, SHADOW_EXTENT_V_DP)
+
+    private fun insetDp(paddingDp: Int, shadow: Boolean, extentDp: Float): Float {
+        val padding = paddingDp.coerceAtLeast(0).toFloat()
+        return if (shadow) maxOf(padding, extentDp) else padding
+    }
 
     /** Widest and tallest we will ever rasterise, in dp. */
     const val MAX_WIDTH_DP = 1200
@@ -142,16 +206,17 @@ object WidgetBarMetrics {
         if (style.wireframe) 0 else applyAlpha(resolvedRgb, style.fillAlphaPercent)
 
     /**
-     * The border — always the fill colour, filled or not.
+     * The border. Wireframe mode only — a filled bar has none.
      *
-     * It used to be a fixed white hairline on a filled bar, which showed as a pale rim against any
-     * fill that wasn't near-white and read as a rendering fault rather than a border. Matching the
-     * fill makes it vanish into a filled bar and carry the colour in wireframe mode, where it is
-     * the only thing drawn, so one rule covers both.
+     * A filled bar used to draw one too, in the fill colour, on the theory that a border the same
+     * colour as the fill is invisible. It isn't: the stroke is painted *over* the fill, so along the
+     * whole rounded edge two antialiased coverages composite one on top of the other, and every
+     * opacity below 100% shows that seam as a darker rim. It was most of the way to invisible at
+     * full opacity, which is where it was looked at.
      */
     @ColorInt
     fun strokeColor(@ColorInt resolvedRgb: Int, style: WidgetBarStyle): Int =
-        applyAlpha(resolvedRgb, style.fillAlphaPercent)
+        if (style.wireframe) applyAlpha(resolvedRgb, style.fillAlphaPercent) else 0
 
     /**
      * Colour for the hint text and any tintable icon.
@@ -176,6 +241,20 @@ object WidgetBarMetrics {
         (0.299f * redOf(color) + 0.587f * greenOf(color) + 0.114f * blueOf(color)) / 255f
 
     fun isLight(@ColorInt color: Int): Boolean = luminance(color) > 0.5f
+
+    /**
+     * How far a [wPx] x [hPx] drawing has to shrink to fit [MAX_AREA_PX]. 1 when it already does.
+     *
+     * For the settings preview, which knows its size in pixels directly and wants them 1:1 — the
+     * widget goes through [renderSizePx] instead, because a launcher reports dp. Anything drawn at
+     * this scale must be handed a density scaled by it too, or the margins and the shadow would be
+     * drawn for a bitmap of a different size.
+     */
+    fun rasterScale(wPx: Int, hPx: Int): Float {
+        val area = wPx.toLong() * hPx.toLong()
+        if (area <= MAX_AREA_PX) return 1f
+        return Math.sqrt(MAX_AREA_PX.toDouble() / area.toDouble()).toFloat()
+    }
 
     /**
      * Pixel size to rasterise at, from the size the launcher reports.

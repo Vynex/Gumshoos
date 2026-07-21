@@ -195,9 +195,11 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
         val content = WidgetBarMetrics.contentColor(resolved, style)
 
-        // The content sits inside the bar, so it has to move with the bar's own padding — otherwise
-        // dropping the horizontal padding to zero leaves the logo hanging off the left edge.
-        val edge = ((style.paddingHDp + CONTENT_INSET_DP) * density).toInt()
+        // The content sits inside the bar, so it has to move with the bar's own margin — otherwise
+        // dropping the horizontal margin to zero leaves the logo hanging off the left edge. Read
+        // through insetHDp rather than off the style, because a shadow widens that margin and the
+        // logo has to follow the edge it actually produced.
+        val edge = ((WidgetBarMetrics.insetHDp(style) + CONTENT_INSET_DP) * density).toInt()
         views.setViewPadding(R.id.widget_content, edge, 0, edge, 0)
 
         val logoPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_logo_size)
