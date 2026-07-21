@@ -158,7 +158,15 @@ class OverlayService :
 
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
             EventLog.record("app index removed $packageName")
-            lifecycleScope.launch { runCatching { AppRepository.removePackage(packageName) } }
+            lifecycleScope.launch {
+                runCatching { AppRepository.removePackage(packageName) }
+                // Only here, not in onPackagesUnavailable: a genuine uninstall's settings can never
+                // be reached again to clear them by hand, so prune them rather than leave a count
+                // no row explains. removePackage runs first so the pruned aliases index nothing.
+                if (GumshoosConfig.forgetPackage(this@OverlayService, packageName)) {
+                    EventLog.record("settings forgotten for $packageName")
+                }
+            }
         }
 
         // Fired when a package becomes reachable or not without being installed or uninstalled —

@@ -2,6 +2,7 @@ package com.vynex.gumshoos.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,10 +20,11 @@ internal sealed interface Screen {
     data object Launching : Screen
     data object Behaviour : Screen
     data object Appearance : Screen
-    data object HiddenApps : Screen
+
+    /** [highlightKey] is a component key to scroll to and pulse, set only on the Edit deep link. */
+    data class ManageApps(val highlightKey: String? = null) : Screen
     data object HiddenContacts : Screen
     data object Matching : Screen
-    data object CustomNames : Screen
     data object Providers : Screen
     data object Setup : Screen
     data object WidgetBar : Screen
@@ -34,6 +36,14 @@ internal sealed interface Screen {
 }
 
 /**
+ * A request from the search window's Edit action to open Manage apps on one app.
+ *
+ * [nonce] distinguishes two requests for the *same* app, so tapping Edit on it twice re-fires the
+ * scroll and pulse rather than being coalesced away by an unchanged key.
+ */
+data class ManageAppsRequest(val componentKey: String, val nonce: Long)
+
+/**
  * Navigation for the settings app.
  *
  * A list used as a back stack, rather than navigation-compose. The project has added no Gradle
@@ -41,7 +51,7 @@ internal sealed interface Screen {
  * arguments, no deep links and no transitions is not the case that justifies one.
  */
 @Composable
-fun SettingsHost() {
+fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
     val context = LocalContext.current
 
     // Decided once per launch, not continuously. Re-reading it live would yank the screen away
@@ -65,17 +75,23 @@ fun SettingsHost() {
     fun push(screen: Screen) { stack = stack + screen }
     fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
 
+    // Keyed on the nonce so a repeat request for the same app still re-navigates. Resets to
+    // Home → ManageApps rather than pushing, so Back always lands on Home from a deep link.
+    LaunchedEffect(manageAppsRequest?.nonce) {
+        val key = manageAppsRequest?.componentKey ?: return@LaunchedEffect
+        stack = listOf(Screen.Home, Screen.ManageApps(key))
+    }
+
     // Only intercepts Back while somewhere to go back to; at Home the activity handles it and exits.
     BackHandler(enabled = stack.size > 1) { pop() }
 
-    when (stack.last()) {
+    when (val current = stack.last()) {
         Screen.Home -> SettingsHome(onOpen = ::push)
         Screen.Apps -> AppsScreen(onBack = ::pop, onOpen = ::push)
         Screen.Contacts -> ContactsScreen(onBack = ::pop, onOpen = ::push)
-        Screen.HiddenApps -> HiddenAppsScreen(onBack = ::pop)
+        is Screen.ManageApps -> ManageAppsScreen(onBack = ::pop, highlightKey = current.highlightKey)
         Screen.HiddenContacts -> HiddenContactsScreen(onBack = ::pop)
         Screen.Matching -> MatchingScreen(onBack = ::pop)
-        Screen.CustomNames -> CustomNamesScreen(onBack = ::pop)
         Screen.Providers -> ProvidersScreen(onBack = ::pop)
         Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
         Screen.WidgetIcon -> WidgetIconScreen(onBack = ::pop)

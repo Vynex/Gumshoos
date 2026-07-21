@@ -947,8 +947,12 @@ private fun SearchPanel(
                                 AppRepository.openAppInfo(context, entry)
                                 onDismiss()
                             }
-                            // Placeholder: leaves the overlay open so it's obvious nothing ran.
-                            ContextAction.EDIT -> Unit
+                            ContextAction.EDIT -> {
+                                context.startActivity(
+                                    MainActivity.manageAppsIntent(context, entry.componentKey),
+                                )
+                                onDismiss()
+                            }
                         }
                     },
                 )
@@ -1078,13 +1082,13 @@ private fun BoxScope.AppContextMenu(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
 
-            ContextMenuItem("Edit", R.drawable.ic_edit, enabled = false) {
+            ContextMenuItem("Edit", R.drawable.ic_provider_edit_app) {
                 onAction(ContextAction.EDIT)
             }
-            ContextMenuItem("App info", R.drawable.ic_app_info) {
+            ContextMenuItem("App info", R.drawable.ic_provider_info) {
                 onAction(ContextAction.APP_INFO)
             }
-            ContextMenuItem("Uninstall", R.drawable.ic_uninstall) {
+            ContextMenuItem("Uninstall", R.drawable.ic_provider_trash) {
                 onAction(ContextAction.UNINSTALL)
             }
         }

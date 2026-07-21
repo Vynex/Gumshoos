@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -203,17 +205,11 @@ internal fun UsageSourcePicker() {
     var source by remember { mutableStateOf(GumshoosConfig.usageSource) }
     val tracked = LaunchHistory.stats.size
 
+    var confirmReset by remember { mutableStateOf(false) }
+
     Column {
         UsageSourceRow(
-            label = "System-wide usage",
-            description = "How much every app is used across the phone. Needs usage access below.",
-            selected = source == UsageSource.SYSTEM,
-        ) {
-            source = UsageSource.SYSTEM
-            GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
-        }
-        UsageSourceRow(
-            label = "Launches from Gumshoos only",
+            label = "Launches from Gumshoos (Recommended)",
             description = if (tracked == 0) {
                 "Counts only apps opened from this search window. No permission needed; " +
                     "nothing recorded yet, so ordering stays alphabetical until you open something."
@@ -226,13 +222,45 @@ internal fun UsageSourcePicker() {
             source = UsageSource.GUMSHOOS
             GumshoosConfig.setUsageSource(context, UsageSource.GUMSHOOS)
         }
+        UsageSourceRow(
+            label = "System-wide usage",
+            description = "How much every app is used across the phone. Needs usage access below.",
+            selected = source == UsageSource.SYSTEM,
+        ) {
+            source = UsageSource.SYSTEM
+            GumshoosConfig.setUsageSource(context, UsageSource.SYSTEM)
+        }
 
         if (source == UsageSource.GUMSHOOS && tracked > 0) {
+            Spacer(Modifier.height(16.dp))
             OutlinedButton(
-                onClick = { LaunchHistory.clear(context) },
+                onClick = { confirmReset = true },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Reset launch history") }
         }
+    }
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Reset launch history?") },
+            text = {
+                Text(
+                    "Launch counts for $tracked app${if (tracked == 1) "" else "s"} will be " +
+                        "cleared. Frequent and Recent go back to alphabetical until you open " +
+                        "something. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    LaunchHistory.clear(context)
+                    confirmReset = false
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

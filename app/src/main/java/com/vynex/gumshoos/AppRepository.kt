@@ -36,6 +36,15 @@ data class AppEntry(
     val aliases: List<AppMatcher.Indexed> = emptyList(),
 ) {
     val packageName: String get() = component.packageName
+
+    /**
+     * Settings key for this one launcher activity, computed once at index time.
+     *
+     * [visible] tests it against the hidden set on every access, which is the type-ahead path, so
+     * this is a stored value rather than a getter — flattening per app per keystroke would put a
+     * string allocation there for the same reason [indexed] exists.
+     */
+    val componentKey: String = component.flattenToShortString()
 }
 
 /**
@@ -97,7 +106,7 @@ object AppRepository {
                     firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
                     lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,
                     indexed = AppMatcher.index(label),
-                    aliases = aliasesFor(activity.packageName),
+                    aliases = aliasesFor(ComponentName(activity.packageName, activity.name)),
                 )
             }.getOrNull()
         }
@@ -126,10 +135,47 @@ object AppRepository {
         apps = apps.filterNot { it.packageName == packageName }
     }
 
-    private fun aliasesFor(packageName: String): List<AppMatcher.Indexed> =
-        GumshoosConfig.appAliases[packageName]
+    /**
+     * Aliases for one launcher activity, falling back to a value stored against the whole package.
+     *
+     * Both settings used to be keyed by package alone. Reading the package key as a fallback is
+     * what lets settings saved by those builds keep working without a migration — [GumshoosConfig]
+     * loads in `GumshoosApp.onCreate`, before this index exists, so there is nowhere to expand an
+     * old key into component ones at load time.
+     */
+    private fun aliasesFor(entry: ComponentName): List<AppMatcher.Indexed> =
+        (GumshoosConfig.appAliases[entry.flattenToShortString()]
+            ?: GumshoosConfig.appAliases[entry.packageName])
             ?.let { AppMatcher.indexAliases(it) }
             .orEmpty()
+
+    /** The other launcher activities of the same app. Empty for all but a handful of packages. */
+    private fun siblingsOf(entry: AppEntry): List<AppEntry> =
+        apps.filter { it.packageName == entry.packageName && it.componentKey != entry.componentKey }
+
+    /**
+     * Hides or shows one launcher activity.
+     *
+     * A package-wide value has to be expanded onto the siblings before this component can diverge
+     * from it, since the fallback in [visible] would otherwise keep applying it here: unchecking a
+     * row of a package hidden as a whole would appear to do nothing at all.
+     */
+    fun setHidden(context: Context, entry: AppEntry, hide: Boolean) {
+        if (entry.packageName in GumshoosConfig.hiddenApps) {
+            GumshoosConfig.setAppHidden(context, entry.packageName, false)
+            siblingsOf(entry).forEach { GumshoosConfig.setAppHidden(context, it.componentKey, true) }
+        }
+        GumshoosConfig.setAppHidden(context, entry.componentKey, hide)
+    }
+
+    /** Sets one launcher activity's aliases, expanding a package-wide value for the same reason. */
+    fun setAliases(context: Context, entry: AppEntry, text: String) {
+        GumshoosConfig.appAliases[entry.packageName]?.let { shared ->
+            GumshoosConfig.setAppAliases(context, entry.packageName, "")
+            siblingsOf(entry).forEach { GumshoosConfig.setAppAliases(context, it.componentKey, shared) }
+        }
+        GumshoosConfig.setAppAliases(context, entry.componentKey, text)
+    }
 
     /**
      * Re-indexes aliases against the current config, without touching icons.
@@ -138,7 +184,7 @@ object AppRepository {
      * is the hundreds of milliseconds the warm-time load exists to keep off this path.
      */
     fun reindexAliases() {
-        apps = apps.map { it.copy(aliases = aliasesFor(it.packageName)) }
+        apps = apps.map { it.copy(aliases = aliasesFor(it.component)) }
     }
 
     /**
@@ -155,7 +201,10 @@ object AppRepository {
         get() = if (GumshoosConfig.hiddenApps.isEmpty()) {
             apps
         } else {
-            apps.filterNot { it.packageName in GumshoosConfig.hiddenApps }
+            apps.filterNot {
+                it.componentKey in GumshoosConfig.hiddenApps ||
+                    it.packageName in GumshoosConfig.hiddenApps
+            }
         }
 
     private fun baseOrder(tab: SearchTab): List<AppEntry> = when (tab) {

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lucide "eye". Stroke icon: hand-authored, since the convert pipeline is built for filled logos
+     and drops the root-level stroke these carry. 24dp canvas, tintable via android:tint. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M2.062,12.348 a1,1 0 0,1 0,-0.696 10.75,10.75 0 0,1 19.876,0 1,1 0 0,1 0,0.696 10.75,10.75 0 0,1 -19.876,0 M15,12 A3,3 0 1,1 9,12 A3,3 0 1,1 15,12" />
+</vector>

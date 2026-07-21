@@ -256,14 +256,15 @@ object GumshoosConfig {
     var matchOptions by mutableStateOf(AppMatcher.MatchOptions.ALL)
         private set
 
-    fun setAppAliases(context: Context, packageName: String, text: String) {
+    /** [id] is a component key, or a package name from a build that stored them that way. */
+    fun setAppAliases(context: Context, id: String, text: String) {
         val trimmed = text.trim()
         appAliases = if (trimmed.isEmpty()) {
-            appAliases - packageName
+            appAliases - id
         } else {
-            appAliases + (packageName to trimmed)
+            appAliases + (id to trimmed)
         }
-        putOrRemove(context, KEY_APP_ALIASES + packageName, trimmed.ifEmpty { null })
+        putOrRemove(context, KEY_APP_ALIASES + id, trimmed.ifEmpty { null })
         // Aliases are indexed once and matched on every keystroke, so the index is rebuilt here
         // rather than folded on the type-ahead path. Same reason AnswerProviders is pushed to.
         AppRepository.reindexAliases()
@@ -503,9 +504,39 @@ object GumshoosConfig {
         prefs(context).edit().putString(KEY_PROVIDER_ORDER, ids.joinToString(",")).apply()
     }
 
-    fun setAppHidden(context: Context, packageName: String, hidden: Boolean) {
-        hiddenApps = if (hidden) hiddenApps + packageName else hiddenApps - packageName
+    /** [id] is a component key, or a package name from a build that stored them that way. */
+    fun setAppHidden(context: Context, id: String, hidden: Boolean) {
+        hiddenApps = if (hidden) hiddenApps + id else hiddenApps - id
         prefs(context).edit().putStringSet(KEY_HIDDEN_APPS, hiddenApps).apply()
+    }
+
+    /**
+     * Drops every hidden-app and custom-name setting belonging to an uninstalled package.
+     *
+     * Both stores are keyed by component now, so this matches a bare package key (older builds) or
+     * any `pkg/class` component key under it. The trailing slash bounds the prefix — `com.foo/` can
+     * never match `com.foobar/…`. Returns whether anything was removed, for the log.
+     *
+     * Must be called only on a genuine uninstall, never on the temporary unavailability (storage
+     * unmounted, work profile off) that shares `AppRepository.removePackage`: those apps are coming
+     * back and would expect their settings intact. The counts on the Apps screen read these maps'
+     * sizes directly, so an orphan left here inflates a count no row can account for.
+     */
+    fun forgetPackage(context: Context, packageName: String): Boolean {
+        val prefix = "$packageName/"
+        fun belongs(id: String) = id == packageName || id.startsWith(prefix)
+
+        val hidden = hiddenApps.filter(::belongs)
+        val aliased = appAliases.keys.filter(::belongs)
+        if (hidden.isEmpty() && aliased.isEmpty()) return false
+
+        hiddenApps = hiddenApps - hidden.toSet()
+        appAliases = appAliases - aliased.toSet()
+        prefs(context).edit().apply {
+            putStringSet(KEY_HIDDEN_APPS, hiddenApps)
+            aliased.forEach { remove(KEY_APP_ALIASES + it) }
+        }.apply()
+        return true
     }
 
     fun setContactHidden(context: Context, lookupKey: String, hidden: Boolean) {

@@ -100,6 +100,11 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 onClick = { onOpen(Screen.Apps) },
             )
             CategoryRow(
+                title = "Manage apps",
+                summary = manageAppsSummary(),
+                onClick = { onOpen(Screen.ManageApps()) },
+            )
+            CategoryRow(
                 title = "Instant answers",
                 summary = answersSummary(),
                 onClick = { onOpen(Screen.Answers) },
@@ -138,6 +143,17 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** Renamed and hidden counts, the two things this screen changes, on one line. */
+private fun manageAppsSummary(): String {
+    val renamed = GumshoosConfig.appAliases.size
+    val hidden = GumshoosConfig.hiddenApps.size
+    val parts = buildList {
+        if (renamed > 0) add("$renamed renamed")
+        if (hidden > 0) add("$hidden hidden")
+    }
+    return if (parts.isEmpty()) "Rename or hide any app" else parts.joinToString(" · ")
 }
 
 private fun appsSummary(hasUsage: Boolean): String {

@@ -102,9 +102,11 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
         ) { Text("Grant usage access") }
 
         SettingsDivider()
-        SettingsSection("NEW/UPDATED tab")
+        SettingsSection("New apps tab")
+        // The slider stops on 3, 6, 9 and 12 only; a value saved by an older build can sit outside
+        // that, so snap it in for display rather than showing the thumb pinned at an end.
         var windowHours by remember {
-            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat())
+            mutableStateOf(GumshoosConfig.newUpdatedWindowHours.toFloat().coerceIn(3f, 12f))
         }
         SettingsNote(
             "How recently an app must have been installed or updated to appear there: " +
@@ -116,7 +118,8 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             onValueChangeFinished = {
                 GumshoosConfig.setNewUpdatedWindowHours(context, windowHours.roundToInt().toLong())
             },
-            valueRange = 1f..168f,
+            valueRange = 3f..12f,
+            steps = 2,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -133,20 +136,6 @@ internal fun AppsScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     }
                 },
             onClick = { onOpen(Screen.Matching) },
-        )
-        CategoryRow(
-            title = "Custom names",
-            summary = GumshoosConfig.appAliases.size.let {
-                if (it == 0) "None set" else "$it app${if (it == 1) "" else "s"} renamed"
-            },
-            onClick = { onOpen(Screen.CustomNames) },
-        )
-        CategoryRow(
-            title = "Hidden apps",
-            summary = GumshoosConfig.hiddenApps.size.let {
-                if (it == 0) "None hidden" else "$it hidden"
-            },
-            onClick = { onOpen(Screen.HiddenApps) },
         )
     }
 }
@@ -245,51 +234,8 @@ internal fun MatchingScreen(onBack: () -> Unit) {
     }
 }
 
-/**
- * Per-app extra names.
- *
- * Presented over the whole app list rather than as a list of the ones already renamed, because the
- * task always starts from "this app" — the alternative is an add button that opens a second picker.
- */
 @Composable
-internal fun CustomNamesScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    var editing by remember { mutableStateOf<AppEntry?>(null) }
-
-    editing?.let { entry ->
-        AliasDialog(
-            label = entry.label,
-            initial = GumshoosConfig.appAliases[entry.packageName].orEmpty(),
-            onDismiss = { editing = null },
-            onConfirm = { text ->
-                GumshoosConfig.setAppAliases(context, entry.packageName, text)
-                editing = null
-            },
-        )
-    }
-
-    AppListPicker(
-        title = "Custom names",
-        header = "Extra names an app answers to, on top of its real one. Separate several with " +
-            "commas. Results still show the app's real name.",
-        emptyNote = "No apps indexed yet. Open search once and come back.",
-        items = AppRepository.apps.sortedBy { it.label.lowercase() }.map { entry ->
-            PickerItem(
-                id = entry.packageName,
-                title = entry.label,
-                subtitle = GumshoosConfig.appAliases[entry.packageName],
-                icon = entry.icon,
-            )
-        },
-        onClick = { packageName ->
-            editing = AppRepository.apps.firstOrNull { it.packageName == packageName }
-        },
-        onBack = onBack,
-    )
-}
-
-@Composable
-private fun AliasDialog(
+internal fun AliasDialog(
     label: String,
     initial: String,
     onDismiss: () -> Unit,
@@ -316,24 +262,6 @@ private fun AliasDialog(
         },
         confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-internal fun HiddenAppsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val hidden = GumshoosConfig.hiddenApps
-
-    MultiSelectPicker(
-        title = "Hidden apps",
-        header = "Checked apps never appear in results, in search or the tabs.",
-        emptyNote = "No apps indexed yet. Open search once and come back.",
-        items = AppRepository.apps.map {
-            PickerItem(id = it.packageName, title = it.label, subtitle = it.packageName, icon = it.icon)
-        },
-        selected = hidden,
-        onToggle = { packageName, hide -> GumshoosConfig.setAppHidden(context, packageName, hide) },
-        onBack = onBack,
     )
 }
 
