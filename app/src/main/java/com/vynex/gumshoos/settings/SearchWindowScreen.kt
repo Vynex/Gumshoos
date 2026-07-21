@@ -1,49 +1,27 @@
 package com.vynex.gumshoos.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.OverlayCardTopMargin
@@ -51,16 +29,7 @@ import com.vynex.gumshoos.OverlayContent
 import com.vynex.gumshoos.overlaySettledHeight
 import com.vynex.gumshoos.SEARCH_WINDOW_MAX_CORNER_DP
 import com.vynex.gumshoos.SearchWindowStyle
-import com.vynex.gumshoos.searchWindowCorner
-import com.vynex.gumshoos.searchWindowSurface
-import kotlin.math.roundToInt
 
-/**
- * The size the overlay is laid out at before scaling.
- *
- * A typical phone width, and enough height for the settled card plus its top margin. The card's
- * geometry is fixed dp, so it has to be laid out at something realistic and then scaled.
- */
 /** Notch size for the corner slider, in dp. */
 private const val CORNER_STEP_DP = 2
 
@@ -76,9 +45,6 @@ private const val ICON_STEP_DP = 2
  */
 private val PreviewBottomSlack: Dp
     @Composable get() = OverlayCardTopMargin
-
-private val NominalWidth = 380.dp
-private val NominalHeight = 330.dp
 
 /**
  * How the search window itself looks.
@@ -102,7 +68,6 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
                 "opacity decides how much of that shows through.",
         )
 
-        SettingsSection("Window")
         ColorPickerAccordion(
             // The overlay is hard-coded to the dark theme, so adaptive has to be resolved under it
             // rather than under the settings theme — otherwise the swatch shown here is a colour
@@ -114,128 +79,85 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             expanded = paletteOpen,
             onExpandedChange = { paletteOpen = it },
             onPick = { GumshoosConfig.setSearchWindowColor(context, it) },
+            // It draws its own card, so it takes the margin a SettingsGroup would have given it
+            // rather than being wrapped in one and ending up a card inside a card.
+            modifier = Modifier.padding(vertical = 8.dp),
         )
 
-        Spacer(Modifier.height(8.dp))
-        SettingsSwitchRow(
-            title = "Transparent",
-            description = "Let a little of what's behind the window show through",
-            checked = style.alphaPercent < GumshoosConfig.WINDOW_ALPHA_OPAQUE,
-            onCheckedChange = { transparent ->
-                GumshoosConfig.setSearchWindowAlpha(
-                    context,
-                    if (transparent) {
-                        GumshoosConfig.WINDOW_ALPHA_TRANSPARENT
-                    } else {
-                        GumshoosConfig.WINDOW_ALPHA_OPAQUE
-                    },
-                )
-            },
-        )
-
-
-        Spacer(Modifier.height(8.dp))
-        var corner by remember(style.cornerRadiusDp) {
-            mutableStateOf(style.cornerRadiusDp.toFloat())
-        }
-        SettingsNote(cornerLabel(corner.roundToInt()))
-        Slider(
-            value = corner,
-            onValueChange = {
-                corner = it
-                GumshoosConfig.setSearchWindowCorner(context, it.roundToInt())
-            },
-            valueRange = 0f..SEARCH_WINDOW_MAX_CORNER_DP.toFloat(),
-            // 2dp notches. Single-dp steps gave forty positions to distinguish between, and a
-            // corner radius is not a measurement anyone reads off a slider — it is a look.
-            steps = SEARCH_WINDOW_MAX_CORNER_DP / CORNER_STEP_DP - 1,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        SettingsDivider()
-        SettingsSection("Apps")
-        SettingsNote(
-            "The grid of results. More columns means a narrower cell, so a large icon and six " +
-                "columns leave little room for the label.",
-        )
-
-        Spacer(Modifier.height(4.dp))
-        CountSelector(
-            label = "Rows",
-            range = GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS,
-            selected = GumshoosConfig.overlayGridRows,
-            onSelect = { GumshoosConfig.setOverlayGridRows(context, it) },
-        )
-
-        CountSelector(
-            label = "Columns",
-            range = GumshoosConfig.MIN_GRID_COLUMNS..GumshoosConfig.MAX_GRID_COLUMNS,
-            selected = GumshoosConfig.overlayGridColumns,
-            onSelect = { GumshoosConfig.setOverlayGridColumns(context, it) },
-        )
-
-        Spacer(Modifier.height(8.dp))
-        StepSlider(
-            label = "Icon size",
-            value = GumshoosConfig.overlayIconSize,
-            min = GumshoosConfig.MIN_ICON_SIZE_DP,
-            max = GumshoosConfig.MAX_ICON_SIZE_DP,
-            step = ICON_STEP_DP,
-            unit = "dp",
-            onValue = { GumshoosConfig.setOverlayIconSize(context, it) },
-        )
-
-        Spacer(Modifier.height(8.dp))
-        StepSlider(
-            label = "Label size",
-            value = GumshoosConfig.overlayLabelSize,
-            min = GumshoosConfig.MIN_LABEL_SIZE_SP,
-            max = GumshoosConfig.MAX_LABEL_SIZE_SP,
-            step = 1,
-            unit = "sp",
-            onValue = { GumshoosConfig.setOverlayLabelSize(context, it) },
-        )
-
-        SettingsDivider()
-        OutlinedButton(
-            onClick = { GumshoosConfig.resetSearchWindow(context) },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Reset to defaults") }
-    }
-}
-
-/**
- * A labelled row of exclusive count buttons, as rows and columns both want.
- *
- * The ranges are small enough that buttons beat a slider: every option is visible and one tap away,
- * and the preview above updates as each is pressed.
- */
-@Composable
-private fun CountSelector(
-    label: String,
-    range: IntRange,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-) {
-    Text(label, style = MaterialTheme.typography.bodyMedium)
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-    ) {
-        range.forEach { count ->
-            val chosen = selected == count
-            OutlinedButton(
-                onClick = { onSelect(count) },
-                colors = if (chosen) {
-                    ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        SettingsGroup(title = "Window") {
+            SettingsSwitchRow(
+                title = "Transparent",
+                description = "Lets a little of what's behind the window show through.",
+                checked = style.alphaPercent < GumshoosConfig.WINDOW_ALPHA_OPAQUE,
+                onCheckedChange = { transparent ->
+                    GumshoosConfig.setSearchWindowAlpha(
+                        context,
+                        if (transparent) {
+                            GumshoosConfig.WINDOW_ALPHA_TRANSPARENT
+                        } else {
+                            GumshoosConfig.WINDOW_ALPHA_OPAQUE
+                        },
                     )
-                } else {
-                    ButtonDefaults.outlinedButtonColors()
                 },
-                modifier = Modifier.weight(1f),
-            ) { Text("$count") }
+                fullBleed = false,
+            )
+            SettingsSliderRow(
+                label = "Corners",
+                value = style.cornerRadiusDp,
+                min = 0,
+                max = SEARCH_WINDOW_MAX_CORNER_DP,
+                // 2dp notches. Single-dp steps gave forty positions to distinguish between, and a
+                // corner radius is not a measurement anyone reads off a slider — it is a look.
+                step = CORNER_STEP_DP,
+                valueText = { if (it == 0) "Square" else "${it}dp" },
+                onValue = { GumshoosConfig.setSearchWindowCorner(context, it) },
+            )
+        }
+
+        SettingsGroup(
+            title = "Apps",
+            note = "More columns means a narrower cell, so a large icon and six columns leave " +
+                "little room for the label.",
+        ) {
+            SettingsSegmentedRow(
+                label = "Rows",
+                values = (GumshoosConfig.MIN_GRID_ROWS..GumshoosConfig.MAX_GRID_ROWS).toList(),
+                selected = GumshoosConfig.overlayGridRows,
+                onSelect = { GumshoosConfig.setOverlayGridRows(context, it) },
+            )
+            SettingsSegmentedRow(
+                label = "Columns",
+                values = (GumshoosConfig.MIN_GRID_COLUMNS..GumshoosConfig.MAX_GRID_COLUMNS)
+                    .toList(),
+                selected = GumshoosConfig.overlayGridColumns,
+                onSelect = { GumshoosConfig.setOverlayGridColumns(context, it) },
+            )
+            SettingsSliderRow(
+                label = "Icon size",
+                value = GumshoosConfig.overlayIconSize,
+                min = GumshoosConfig.MIN_ICON_SIZE_DP,
+                max = GumshoosConfig.MAX_ICON_SIZE_DP,
+                step = ICON_STEP_DP,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setOverlayIconSize(context, it) },
+            )
+            SettingsSliderRow(
+                label = "Label size",
+                value = GumshoosConfig.overlayLabelSize,
+                min = GumshoosConfig.MIN_LABEL_SIZE_SP,
+                max = GumshoosConfig.MAX_LABEL_SIZE_SP,
+                valueText = { "${it}sp" },
+                onValue = { GumshoosConfig.setOverlayLabelSize(context, it) },
+            )
+        }
+
+        SettingsGroup {
+            SettingsActionRow(
+                title = "Reset to defaults",
+                summary = "Colour, shape and grid go back to how they started.",
+                imageVector = Icons.Filled.Refresh,
+                onClick = { GumshoosConfig.resetSearchWindow(context) },
+            )
         }
     }
 }
@@ -255,41 +177,6 @@ private fun windowSwatch(style: SearchWindowStyle): Int {
     } else {
         style.color
     }
-}
-
-/**
- * A slider over whole units, reporting its value in the label.
- *
- * Local state so the label tracks the drag; config is written on every change because the preview
- * above is the point of the screen, and it is reading config rather than the slider.
- */
-@Composable
-private fun StepSlider(
-    label: String,
-    value: Int,
-    min: Int,
-    max: Int,
-    step: Int,
-    unit: String,
-    onValue: (Int) -> Unit,
-) {
-    var current by remember(value) { mutableStateOf(value.toFloat()) }
-    SettingsNote("$label: ${current.roundToInt()}$unit")
-    Slider(
-        value = current,
-        onValueChange = {
-            current = it
-            onValue(it.roundToInt())
-        },
-        valueRange = min.toFloat()..max.toFloat(),
-        steps = ((max - min) / step) - 1,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-private fun cornerLabel(dp: Int): String = when (dp) {
-    0 -> "Corners: square"
-    else -> "Corners: ${dp}dp"
 }
 
 /**

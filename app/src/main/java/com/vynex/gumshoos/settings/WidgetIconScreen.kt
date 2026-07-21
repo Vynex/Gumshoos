@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -23,12 +21,18 @@ import androidx.compose.ui.unit.dp
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchWidgetSmallProvider
-import kotlin.math.roundToInt
 
 /** Fallback cell size, used when none is placed to measure. Close to a typical launcher cell. */
 private val DefaultCellSize = 88.dp
 private val MinCellSize = 64.dp
 private val MaxCellSize = 140.dp
+
+/** The icon's own range, in dp. Below 32 it is lost in the cell; above 64 it fills it. */
+private const val MIN_ICON_DP = 32
+private const val MAX_ICON_DP = 64
+
+/** How far the icon may be shifted from centre, either way. */
+private const val MAX_OFFSET_DP = 16
 
 /**
  * Size and position of the single-cell widget.
@@ -40,64 +44,67 @@ private val MaxCellSize = 140.dp
 @Composable
 internal fun WidgetIconScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var size by remember { mutableStateOf(GumshoosConfig.widgetIconSizeDp.toFloat()) }
-    var offset by remember { mutableStateOf(GumshoosConfig.widgetIconOffsetDp.toFloat()) }
 
     fun push() = SearchWidgetSmallProvider.refreshAll(context)
 
     SettingsScaffoldWithHeader(
         title = "App icon widget",
         onBack = onBack,
-        header = { WidgetIconPreview(size.roundToInt(), offset.roundToInt()) },
+        // Read straight from config rather than from screen-local state. Config is observable and
+        // the sliders write to it as they move, so the preview tracks a drag without a second copy
+        // of the value to keep in step — which is what the reset button used to have to remember.
+        header = {
+            WidgetIconPreview(
+                GumshoosConfig.widgetIconSizeDp,
+                GumshoosConfig.widgetIconOffsetDp,
+            )
+        },
     ) {
         SettingsNote(
             "How the icon sits in its launcher cell. Cells are much larger than an app icon, so " +
                 "filling one is what makes a widget read as oversized next to real icons.",
         )
 
-        SettingsSection("Size")
-        SettingsNote("Icon size: ${size.roundToInt()}dp")
-        Slider(
-            value = size,
-            onValueChange = {
-                size = it
+        SettingsGroup {
+            SettingsSliderRow(
+                label = "Icon size",
+                value = GumshoosConfig.widgetIconSizeDp,
+                min = MIN_ICON_DP,
+                max = MAX_ICON_DP,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetIconSizeDp(context, it) },
                 // Written as it moves so the preview tracks the drag; the widget itself is only
                 // re-pushed on release, since that crosses to the launcher.
-                GumshoosConfig.setWidgetIconSizeDp(context, it.roundToInt())
-            },
-            onValueChangeFinished = { push() },
-            valueRange = 32f..64f,
-            steps = 31,
-            modifier = Modifier.fillMaxWidth(),
-        )
+                onValueFinished = { push() },
+            )
+            SettingsSliderRow(
+                label = "Vertical offset",
+                summary = "Positive moves it down.",
+                value = GumshoosConfig.widgetIconOffsetDp,
+                min = -MAX_OFFSET_DP,
+                max = MAX_OFFSET_DP,
+                valueText = { if (it == 0) "Centred" else "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetIconOffsetDp(context, it) },
+                onValueFinished = { push() },
+            )
+        }
 
-        SettingsSection("Position")
-        SettingsNote(
-            "Vertical offset: ${offset.roundToInt()}dp — 0 centres the icon, positive moves it down.",
-        )
-        Slider(
-            value = offset,
-            onValueChange = {
-                offset = it
-                GumshoosConfig.setWidgetIconOffsetDp(context, it.roundToInt())
-            },
-            onValueChangeFinished = { push() },
-            valueRange = -16f..16f,
-            steps = 31,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        SettingsDivider()
-        OutlinedButton(
-            onClick = {
-                size = GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP.toFloat()
-                offset = GumshoosConfig.DEFAULT_WIDGET_ICON_OFFSET_DP.toFloat()
-                GumshoosConfig.setWidgetIconSizeDp(context, size.roundToInt())
-                GumshoosConfig.setWidgetIconOffsetDp(context, offset.roundToInt())
-                push()
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Reset to defaults") }
+        SettingsGroup {
+            SettingsActionRow(
+                title = "Reset to defaults",
+                summary = "Back to ${GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP}dp and centred.",
+                imageVector = Icons.Filled.Refresh,
+                onClick = {
+                    GumshoosConfig.setWidgetIconSizeDp(
+                        context, GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP,
+                    )
+                    GumshoosConfig.setWidgetIconOffsetDp(
+                        context, GumshoosConfig.DEFAULT_WIDGET_ICON_OFFSET_DP,
+                    )
+                    push()
+                },
+            )
+        }
     }
 }
 

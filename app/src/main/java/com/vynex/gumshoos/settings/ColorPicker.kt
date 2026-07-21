@@ -90,6 +90,11 @@ internal fun ColorPickerAccordion(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onPick: (Int) -> Unit,
+    /**
+     * Carries the vertical margin a [SettingsGroup] would have supplied. This draws its own card, so
+     * wrapping it in a group would put a card inside a card; it sits *as* a group instead.
+     */
+    modifier: Modifier = Modifier,
 ) {
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
 
@@ -100,7 +105,7 @@ internal fun ColorPickerAccordion(
     // Deliberately not fullBleedRow, unlike every other settings row: the ripple belongs inside the
     // card's rounded bounds, and a row that draws past them would break the shape it sits in.
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(SettingsCardShape)
             .background(settingsCardColour()),
@@ -110,7 +115,7 @@ internal fun ColorPickerAccordion(
             modifier = Modifier
                 .clickable { onExpandedChange(!expanded) }
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = SettingsInset, vertical = 12.dp),
         ) {
             Text(
                 "Colour",

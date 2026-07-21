@@ -617,65 +617,72 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     val systemDisabled = GumshoosConfig.systemAnimationScale(context) == 0f
 
     SettingsScaffold(title = "Appearance", onBack = onBack) {
-        SettingsSection("Widgets")
-        CategoryRow(
-            title = "Search bar widget",
-            summary = widgetBarSummary(),
-            onClick = { onOpen(Screen.WidgetBar) },
-        )
-        CategoryRow(
-            title = "App icon widget",
-            summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
-                if (GumshoosConfig.widgetIconOffsetDp == 0) {
-                    ""
-                } else {
-                    " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
-                },
-            onClick = { onOpen(Screen.WidgetIcon) },
-        )
-
-        SettingsDivider()
-        SettingsSection("Search")
-        CategoryRow(
-            title = "Search window",
-            summary = searchWindowSummary(),
-            onClick = { onOpen(Screen.SearchWindow) },
-        )
-
-        SettingsDivider()
-        SettingsSection("Animations")
-        SettingsNote(
-            "The search window opens in about 20ms; the animation is what makes that legible " +
-                "rather than abrupt. Turning it off makes the window appear instantly.",
-        )
-
-        AnimationMode.entries.forEach { option ->
-            SettingsRadioRow(
-                title = when (option) {
-                    AnimationMode.FOLLOW_SYSTEM -> "Follow system setting"
-                    AnimationMode.ALWAYS_ON -> "Always on"
-                    AnimationMode.ALWAYS_OFF -> "Always off"
-                },
-                description = when (option) {
-                    AnimationMode.FOLLOW_SYSTEM ->
-                        if (systemDisabled) {
-                            "Your phone currently has animations turned off, so this means off."
-                        } else {
-                            "Your phone currently has animations turned on."
-                        }
-                    AnimationMode.ALWAYS_ON ->
-                        "Except when the phone has animations disabled system-wide — Compose's own " +
-                            "clock honours that, and nothing here can override it."
-                    AnimationMode.ALWAYS_OFF -> "Window and sections appear instantly."
-                },
-                selected = mode == option,
-                onClick = {
-                    mode = option
-                    GumshoosConfig.setAnimationMode(context, option)
-                },
+        // One group, not a "Widgets" pair and a "Search" single. All three are the same kind of
+        // thing — somewhere to go and restyle a surface — and their own titles already say which
+        // surface, so the headings were labelling what the rows had already said.
+        SettingsGroup {
+            CategoryRow(
+                title = "Search window",
+                summary = searchWindowSummary(),
+                onClick = { onOpen(Screen.SearchWindow) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Search bar widget",
+                summary = widgetBarSummary(),
+                onClick = { onOpen(Screen.WidgetBar) },
+                fullBleed = false,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "App icon widget",
+                summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
+                    if (GumshoosConfig.widgetIconOffsetDp == 0) {
+                        ""
+                    } else {
+                        " · offset ${GumshoosConfig.widgetIconOffsetDp}dp"
+                    },
+                onClick = { onOpen(Screen.WidgetIcon) },
+                fullBleed = false,
             )
         }
 
+        SettingsGroup(
+            title = "Animations",
+            note = "The search window opens in about 20ms. The animation is what makes that " +
+                "legible rather than abrupt.",
+        ) {
+            AnimationMode.entries.forEach { option ->
+                SettingsRadioRow(
+                    title = when (option) {
+                        AnimationMode.FOLLOW_SYSTEM -> "Follow system setting"
+                        AnimationMode.ALWAYS_ON -> "Always on"
+                        AnimationMode.ALWAYS_OFF -> "Always off"
+                    },
+                    description = when (option) {
+                        AnimationMode.FOLLOW_SYSTEM ->
+                            if (systemDisabled) {
+                                "Your phone has animations off, so this means off."
+                            } else {
+                                "Your phone has animations on."
+                            }
+                        // The reason it cannot override the system setting is a Compose one, and
+                        // belongs in a source comment rather than on screen: the animation clock
+                        // honours the system scale and nothing in the app sits above it.
+                        AnimationMode.ALWAYS_ON ->
+                            "Unless the phone has them off system-wide, which can't be overridden."
+                        AnimationMode.ALWAYS_OFF -> "The window and its sections appear instantly."
+                    },
+                    selected = mode == option,
+                    onClick = {
+                        mode = option
+                        GumshoosConfig.setAnimationMode(context, option)
+                    },
+                    fullBleed = false,
+                )
+            }
+        }
     }
 }
 

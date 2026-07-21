@@ -336,6 +336,10 @@ the sources jar, which is the only place it is written down.
   should have been: a stack of full-width buttons is a form, and six down the Advanced screen gave
   equal maximum weight to six things of very unequal importance. No trailing chevron, because
   nothing opens. A real `Button` is then free to mean "this is the action here".
+- `SettingsSegmentedRow` — a short exclusive set as M3 segmented buttons, for ranges where every
+  option fits on screen (grid rows and columns run three to six). It sizes to its content and
+  ignores a `fillMaxWidth`: `SingleChoiceSegmentedButtonRow` applies `width(IntrinsicSize.Min)`
+  *after* the caller's modifier.
 - `SettingsSliderRow` — title, value read off the row, slider beneath. Five near-identical copies of
   this existed, each pairing a bare `Slider` with a note reading "Icon size: 42dp", which puts the
   value in prose above the control you are currently dragging. `valueText` formats it because a

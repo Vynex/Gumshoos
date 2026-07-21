@@ -37,6 +37,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -614,6 +617,48 @@ internal fun SettingsActionRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * A short exclusive set, as segmented buttons.
+ *
+ * For ranges where every option can be on screen at once — grid rows and columns run three to six —
+ * which a slider would hide behind a drag and a radio list would spend half a screen on. These were
+ * a hand-rolled row of `OutlinedButton`s with the selected one tinted, reinventing the component M3
+ * has for exactly this.
+ *
+ * It sizes to its content rather than filling the width, and that is not a choice made here:
+ * `SingleChoiceSegmentedButtonRow` applies `width(IntrinsicSize.Min)` *after* the caller's modifier,
+ * so a `fillMaxWidth` passed in would be overridden anyway.
+ */
+@Composable
+internal fun SettingsSegmentedRow(
+    label: String,
+    values: List<Int>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    summary: String? = null,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = SettingsInset, vertical = 10.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        if (!summary.isNullOrEmpty()) {
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        SingleChoiceSegmentedButtonRow {
+            values.forEachIndexed { index, value ->
+                SegmentedButton(
+                    selected = value == selected,
+                    onClick = { onSelect(value) },
+                    shape = SegmentedButtonDefaults.itemShape(index, values.size),
+                ) { Text("$value") }
             }
         }
     }
