@@ -155,8 +155,23 @@ Two providers share `SearchWidgetProviderBase`: the wide search bar and the app 
 - **No elevation, no `setBackgroundDrawable`, no shadow.** The bar's background is therefore a
   bitmap drawn on a *software* canvas, since `Paint.setShadowLayer` is the only remotable route to a
   drop shadow. Skia derives that shadow from the alpha actually drawn, so a transparent paint casts
-  nothing — the shape is drawn opaque and then cleared back out with a `CLEAR` xfermode, leaving the
-  part that fell outside it.
+  nothing — the shape goes down opaque and its own area is then **clipped out**, leaving the part of
+  the blur that fell outside it. Erasing it instead, with a `CLEAR` xfermode, is what shipped first
+  and it fringes: both passes are antialiased, so a pixel holding `c` of black loses only `c` of
+  itself and keeps `c(1-c)`, a ring of speckle peaking at half coverage that reads as a jagged edge
+  wherever nothing is painted over it. An antialiased clip applies the same coverage on the way in
+  and leaves nothing to subtract. **Any draw-then-erase pair has this bug**; reach for a clip.
+- **A drop shadow needs room reserved for it, and the reserve belongs in the geometry.** The blur
+  ran into whatever margin was there and was sliced off square by the bitmap's edge where there
+  wasn't enough — at a zero margin, most of it. `WidgetBarMetrics.insetHDp`/`insetVDp` floor the
+  configured margin at three sigma plus the offset, symmetric per axis so the bar stays centred, and
+  the floor is a `max` rather than a sum so a margin already wider than the shadow decides the size
+  by itself. Everything drawing inside the bar — the widget's content padding, the settings preview
+  — must read the bar's edge through those, never off `paddingHDp`, or the logo sits outside it.
+- **A border in the fill colour is not invisible.** The filled bar drew one for a long time on that
+  assumption; the stroke is painted *over* the fill, so the two antialiased coverages composite
+  along the whole rounded edge and every opacity below 100% shows the seam as a darker rim. Checked
+  at full opacity, where it very nearly is invisible. Only outline mode has a border now.
 - **Updates are per widget id.** The bar is resizable, so two placed copies differ in width and one
   shared bitmap stretched across both gives visibly elliptical corners.
 
@@ -182,6 +197,20 @@ tester**, next to it, fires one candidate at a time to be watched. It reads
 `WidgetActionTargets.candidates`, which the shipped chain filters with `inChain`, so a rung tested is
 the rung that ships rather than a copy that has drifted. Before it, each candidate cost a build, a
 sideload and a trace read; ten Lens candidates were settled in one sitting with it.
+
+Two things about diagnosing this cost a round trip each, and both generalise:
+
+- **A rung's number is not its name.** The chain is built with `listOfNotNull`, so a rung the device
+  lacks drops out and every rung behind it renumbers. A trace reading `rung1` was read here as the
+  launcher intent when on that phone it was the deeplink two places down, and the wrong conclusion
+  followed from it. Rungs are logged by action, data and component now. Anything logged by position
+  is only meaningful beside the source of the build that wrote it.
+- **Diagnose on the phone that has the bug.** "I can't reproduce it" was the most informative fact in
+  the report and was nearly discarded as noise: this phone had the standalone Lens app and theirs did
+  not. Get the probe and the trace from *their* device before theorising. Note also that reproducing
+  it here by uninstalling was not quite the same state — a preinstalled app that is "uninstalled"
+  stays present with its launcher activity disabled, which the probe shows as `1 of 2 declared match
+  / internal LensLauncherActivity` rather than as absent.
 
 That sitting closed Lens: on a phone without the standalone `com.google.ar.lens` app, **every** entry
 point the Google app exposes starts, returns success and draws nothing — both `MainActivity` forms,
@@ -226,13 +255,34 @@ Shared pieces live in `SettingsComponents.kt`:
 - `SettingsCard` / `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
 - `SettingsGroupCard` / `SettingsGroupDivider` — the home list's rounded groups. Rows inside pass
   `CategoryRow(fullBleed = false)`, which is the rule above rather than an exception to it.
+- `SettingsSection`, and `SettingsSubSection` for a heading *within* one. The sub-section drops both
+  things that make a heading loud — the accent colour and the title weight — because a sub-section
+  set in its parent's style just reads as the parent having ended, which is exactly how the widget
+  bar's Uninstalled group first shipped.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
+- `SettingsFilterField` and `ActionSquircle`, the filter input and the row-action tile of the long
+  list screens — Manage apps and Hidden contacts. Both started life private to Manage apps and were
+  hoisted when Hidden contacts was brought up to the same design; that screen had been left on an
+  `OutlinedTextField` and checkboxes, which read as a different app once the list beside it changed.
+
+**Write the copy for someone who has never seen the code.** The developer is not the audience even
+though he is currently the only user, and the drift is always the same: a note that explains the
+*mechanism* rather than the effect, or an identifier leaking into a label. The widget bar's
+Uninstalled group shipped with a three-line note about the Google app's silently-succeeding entry
+points and a row reading "Needs the com.google.ar.lens app" — both were rewritten to "These need an
+app that isn't on this phone" and, for the row, nothing at all. Reasoning belongs in the source
+comment, where it already was. Package names, class names and setting keys never appear on screen.
+
+A related trap in the same row: **don't dim what isn't disabled.** Its mark and label were drawn at
+the 0.38 alpha `ProviderRow` uses for a switched-off control, copied without noticing that the
+meaning didn't carry. An app you don't have yet is not a setting turned off, and greying the name of
+the thing a row exists to offer says the opposite of what the row is for.
 
 **The M3 `SearchBar` is not usable as an inline filter, and this was checked in its source rather
 than guessed.** `DockedSearchBar` hardcodes `.width(SearchBarMinWidth)` — 360dp — so it cannot fill a
 column, and `SearchBarDefaults.InputField` passes `container = {}`, painting no background of its own,
 so it is not usable standalone either. It is a search *destination* that expands to cover the screen.
-Manage apps' filter is therefore a `TextField` styled as a search input: pill shape, leading
+`SettingsFilterField` is therefore a `TextField` styled as a search input: pill shape, leading
 magnifier, `surfaceContainerHigh`, transparent indicator. Reference docs give the signature; only the
 source gives behaviour like a hardcoded width.
 
@@ -255,6 +305,16 @@ does. A hand-built imitation agrees on the day it is written and drifts on the f
 thinks to mirror — which is exactly what happened before the search window preview was replaced.
 `interactive = false` suppresses focus, keyboard, back interception, dismissal and animation; almost
 nothing about how the overlay *draws* depends on it, which is what makes the preview trustworthy.
+
+Calling the real renderer is not enough on its own: **a preview must also land on the pixels 1:1.**
+The widget bar preview rasterised at a capped 2x and let `ContentScale` stretch it back up, to keep
+the allocation down while a slider is dragged. On a 3x phone that is a 1.5x bilinear upscale, and the
+shadow is the one part fine enough to show it — a gradient a few pixels wide facets, and the corners
+come out visibly stepped. Two rounds were spent on the shadow *drawing* before the report came back
+that the jaggedness was only ever in the preview. It now rasterises at `constraints` and falls back
+to a scale only past `MAX_AREA_PX`, with the density scaled to match. **A preview showing a defect
+the real thing doesn't have costs more than no preview**, and the tell is that it can't be reproduced
+on the home screen.
 
 The single exception is the IME corner swap, and it earns it. The overlay window does not resize
 under the keyboard — it is `MATCH_PARENT` with no `softInputMode`, so the IME is just another window
@@ -339,6 +399,13 @@ The developer does not usually connect ADB — builds are sideloaded and tested 
 running lint, unit-testing pure logic, and **stating plainly which claims are unverified**. For
 animation problems, ask for a slowed screen recording; frames can be measured with `ffmpeg` and the
 current timings were derived that way.
+
+**When only a human eye can see the answer, build the instrument rather than shipping guesses.** Each
+Lens candidate cost a build, a sideload, a tap and a trace read, one candidate per cycle, and four
+were spent that way before anything was learned — because the failure is a component that starts,
+reports success and draws nothing, which no API distinguishes from a launch. The entry point tester
+turned the remaining ten into one sitting. The tell that it is time to build one: the next step is a
+guess, and the only way to grade it is to look.
 
 ## Icon pipeline
 
