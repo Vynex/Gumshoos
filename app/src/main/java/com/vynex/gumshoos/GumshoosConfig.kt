@@ -566,6 +566,10 @@ object GumshoosConfig {
     var searchWindowAdaptive by mutableStateOf(true)
         private set
 
+    /**
+     * A placeholder only. [load] replaces it before anything can read it — the real default needs a
+     * Context to resolve, and load runs in `GumshoosApp.onCreate` ahead of every screen.
+     */
     var searchWindowColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
         private set
 
@@ -582,6 +586,25 @@ object GumshoosConfig {
             alphaPercent = searchWindowAlpha,
             cornerRadiusDp = searchWindowCorner,
         )
+
+    /**
+     * What the window is coloured before anyone has picked anything.
+     *
+     * The deepest tone of the wallpaper's primary accent — the last swatch of the palette's first
+     * row — so switching Adaptive off lands on a colour the picker visibly offers, with its tick
+     * already on it, rather than on one that appears nowhere in the grid.
+     *
+     * It used to borrow the widget bar's white, which is the worst available answer here: the
+     * overlay is hard-coded to the dark theme, so a white card is drawn under content that assumes
+     * a dark surface, and switching Adaptive off jumped from a near-black surface straight to it.
+     *
+     * Resolved per launch rather than written to prefs, so it follows the wallpaper for as long as
+     * nobody has overridden it — a stored copy would go stale the first time the wallpaper changed.
+     * [KEY_WINDOW_COLOR] staying absent is what marks "never picked", which is also what makes
+     * [resetSearchWindow] able to get back here.
+     */
+    private fun defaultSearchWindowColor(context: Context): Int =
+        context.getColor(android.R.color.system_accent1_900)
 
     fun setSearchWindowAdaptive(context: Context, adaptive: Boolean) {
         searchWindowAdaptive = adaptive
@@ -753,7 +776,7 @@ object GumshoosConfig {
             p.getStringSet(KEY_ANSWER_PROVIDERS, null) ?: AnswerProviders.all.map { it.id }.toSet()
 
         searchWindowAdaptive = p.getBoolean(KEY_WINDOW_ADAPTIVE, true)
-        searchWindowColor = p.getInt(KEY_WINDOW_COLOR, DEFAULT_WIDGET_BAR_COLOR)
+        searchWindowColor = p.getInt(KEY_WINDOW_COLOR, defaultSearchWindowColor(context))
         searchWindowAlpha = p.getInt(KEY_WINDOW_ALPHA, DEFAULT_WINDOW_ALPHA).coerceIn(0, 100)
         searchWindowCorner = p.getInt(KEY_WINDOW_CORNER, DEFAULT_WINDOW_CORNER_DP)
             .coerceIn(0, SEARCH_WINDOW_MAX_CORNER_DP)
