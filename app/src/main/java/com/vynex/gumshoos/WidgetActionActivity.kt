@@ -22,8 +22,10 @@ import com.vynex.gumshoos.widget.WidgetAction
  * tried in order, with the rung that worked recorded. A silently-refused intent looks identical to
  * a working one otherwise, which is exactly the failure this project keeps running into.
  *
- * The chains below were ordered from [probeVoiceTargets] output on a real device. Three separate
- * attempts to reason out the right intent from its name were all wrong; the probe settled it in one.
+ * The chains live in [WidgetActionTargets], which the entry point tester reads from too — this class
+ * only walks one. Every order there was taken off a real device by [probeVoiceTargets] or
+ * [probeLensTargets]; four separate attempts to reason the right intent out from its name were all
+ * wrong, and Lens is still unsolved on a phone without the standalone app.
  *
  * Modelled on [LaunchSearchActivity]: translucent, no history, finished before it draws. It costs a
  * launch that the overlay path deliberately avoids, but these hand off to another app where a launch
@@ -59,9 +61,10 @@ class WidgetActionActivity : Activity() {
      * identical from outside, and only the resolved component tells them apart.
      */
     private fun run(action: WidgetAction) {
-        chainFor(action).forEachIndexed { index, intent ->
+        WidgetActionTargets.chain(this, action).forEach { intent ->
+            val rung = WidgetActionTargets.describe(intent)
             val target = runCatching { packageManager.resolveActivity(intent, 0) }.getOrNull()
-                ?: return@forEachIndexed
+                ?: return@forEach
             val info = target.activityInfo
             val name = "${info?.packageName}/${info?.name}"
 
@@ -70,86 +73,25 @@ class WidgetActionActivity : Activity() {
             // from. Skipping ourselves keeps the icon meaning "the other assistant" rather than
             // becoming a no-op that looks like one.
             if (info?.packageName == packageName) {
-                EventLog.record("widget-action ${action.id} rung${index + 1} $name is self, skipped")
-                return@forEachIndexed
+                EventLog.record("widget-action ${action.id} [$rung] $name is self, skipped")
+                return@forEach
             }
 
             val started = runCatching {
                 startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }.isSuccess
             if (started) {
-                EventLog.record("widget-action ${action.id} -> rung${index + 1} $name")
+                EventLog.record("widget-action ${action.id} -> [$rung] $name")
                 return
             }
-            EventLog.record("widget-action ${action.id} rung${index + 1} $name refused")
+            EventLog.record("widget-action ${action.id} [$rung] $name refused")
         }
         EventLog.record("widget-action ${action.id} -> nothing resolved")
         Toast.makeText(this, "${action.label} isn't available", Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * Ordered fallbacks per action, strongest first.
-     *
-     * Every order here came from probing a real device, not from what the component names suggest.
-     * Both Lens and voice search were wrong twice over precisely because a plausible-looking rung
-     * reported success while doing nothing useful, hiding the working one behind it.
-     */
-    private fun chainFor(action: WidgetAction): List<Intent> = when (action) {
-        WidgetAction.ASSISTANT -> listOfNotNull(
-            Intent(Intent.ACTION_VOICE_COMMAND),
-            launcherIntentFor(this, GEMINI_PACKAGE),
-            Intent(Intent.ACTION_ASSIST),
-        )
-
-        // Ordered from a probe of a real device rather than from what the names suggest.
-        //
-        // WEB_SEARCH, VOICE_SEARCH_HANDS_FREE and VOICE_COMMAND all resolve to the same
-        // com.google.android.voicesearch.handsfree.HandsFreeActivity, which hands off to whichever
-        // assistant is configured — so the obvious intent opens Gemini, and picking a different one
-        // of those three changes nothing. SEARCH_LONG_PRESS is the only action that lands somewhere
-        // else, on a purpose-named entry point of its own, so it leads.
-        WidgetAction.VOICE -> listOfNotNull(
-            Intent(Intent.ACTION_SEARCH_LONG_PRESS).setPackage(GSA_PACKAGE),
-            // Both known to reach the assistant on a phone with Gemini set as default. Kept only so
-            // the icon does something rather than nothing where the entry point above is absent.
-            Intent(RecognizerIntent.ACTION_WEB_SEARCH).setPackage(GSA_PACKAGE),
-            Intent(RecognizerIntent.ACTION_WEB_SEARCH),
-        )
-
-        // Ordered by what *cannot* fail silently, rather than by what looks purpose-built.
-        //
-        // Twice now the chain has been led by something that resolves, starts, reports success and
-        // shows nothing — LensExportedActivity, then the deeplink — each hiding every rung behind
-        // it. Nothing in the API distinguishes that from a real launch, so the order can't be
-        // reasoned out from names or from what resolves.
-        //
-        // A launcher intent can't fail that way. It is the app's own MAIN/LAUNCHER activity, the
-        // thing tapping the icon runs, and Lens is installed here as a standalone package. So it
-        // leads, and the entry points that can start-and-vanish come after it.
-        //
-        // No web fallback: lens.google.com resolves to a browser, and a browser is not what the
-        // icon promises.
-        WidgetAction.LENS -> listOfNotNull(
-            launcherIntentFor(this, LENS_PACKAGE),
-            Intent(Intent.ACTION_VIEW, "googleapp://lens".toUri()).setPackage(GSA_PACKAGE),
-            Intent(Intent.ACTION_VIEW, "google://lens".toUri()).setPackage(GSA_PACKAGE),
-            Intent(Intent.ACTION_VIEW).setClassName(GSA_PACKAGE, LENS_EXPORTED_ACTIVITY),
-        )
-    }
-
-    private fun launcherIntentFor(context: Context, packageName: String): Intent? =
-        runCatching { context.packageManager.getLaunchIntentForPackage(packageName) }.getOrNull()
-
     companion object {
         private const val EXTRA_ACTION = "action"
-        private const val GSA_PACKAGE = "com.google.android.googlequicksearchbox"
-        private const val GEMINI_PACKAGE = "com.google.android.apps.bard"
-
-        /** Lens has had a standalone app, and Photos hosts an entry point of its own. */
-        private const val LENS_PACKAGE = "com.google.ar.lens"
-        private const val LENS_EXPORTED_ACTIVITY =
-            "com.google.android.apps.search.lens.LensExportedActivity"
-        private const val PHOTOS_PACKAGE = "com.google.android.apps.photos"
 
         /**
          * Writes every plausible voice-search entry point on this device to the event trace.
@@ -194,6 +136,12 @@ class WidgetActionActivity : Activity() {
          * Wider than the voice probe in one respect: Lens does not necessarily live in the Google
          * app. It has had a standalone package, and Photos hosts its own Lens entry point, so all
          * three are inspected.
+         *
+         * The resolution table is what settled it, and the declared list could not have: the winning
+         * activity is `com.google.android.apps.lens.MainActivity`, and the keywords match on the
+         * class name alone, so nothing about "MainActivity" ever brought it into view. Read the
+         * table first. Photos, meanwhile, matched 0 of 328 — its Lens entry point is not an activity
+         * we can name.
          */
         fun probeLensTargets(context: Context) {
             probe(

@@ -33,6 +33,7 @@ internal sealed interface Screen {
     data object CurrencyPicker : Screen
     data object ZonePicker : Screen
     data object Advanced : Screen
+    data object EntryPoints : Screen
 }
 
 /**
@@ -104,5 +105,6 @@ fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
         Screen.CurrencyPicker -> CurrencyPickerScreen(onBack = ::pop)
         Screen.ZonePicker -> ZonePickerScreen(onBack = ::pop)
         Screen.Advanced -> AdvancedScreen(onBack = ::pop, onOpen = ::push)
+        Screen.EntryPoints -> EntryPointsScreen(onBack = ::pop)
     }
 }

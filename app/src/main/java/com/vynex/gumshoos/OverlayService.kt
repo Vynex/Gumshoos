@@ -40,6 +40,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.vynex.gumshoos.answers.AnswerContextFactory
 import com.vynex.gumshoos.answers.CurrencyRates
+import com.vynex.gumshoos.widget.WidgetAction
 import kotlinx.coroutines.launch
 
 /**
@@ -158,6 +159,7 @@ class OverlayService :
 
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
             EventLog.record("app index removed $packageName")
+            refreshWidgetsIfActionPackage(packageName)
             lifecycleScope.launch {
                 runCatching { AppRepository.removePackage(packageName) }
                 // Only here, not in onPackagesUnavailable: a genuine uninstall's settings can never
@@ -187,8 +189,27 @@ class OverlayService :
             }
         }
 
+        /**
+         * Re-pushes the bar when an app one of its icons depends on comes or goes.
+         *
+         * A placed widget holds whatever RemoteViews it was last given, so uninstalling Lens would
+         * otherwise leave its icon on the bar until some unrelated change re-pushed it — tappable,
+         * and by then able to do nothing at all. The reverse matters as much: installing the app has
+         * to bring an icon that is already switched on back into view.
+         *
+         * Cheap enough to run unconditionally on the packages that matter: [WidgetAction] names two
+         * at most, and the comparison is a string.
+         */
+        private fun refreshWidgetsIfActionPackage(packageName: String) {
+            if (WidgetAction.entries.none { it.requiredPackage == packageName }) return
+            EventLog.record("widget action package $packageName changed, re-pushing bar")
+            runCatching { SearchWidgetProvider.refreshAll(this@OverlayService) }
+                .onFailure { EventLog.record("bar re-push FAILED ${it.javaClass.simpleName}") }
+        }
+
         private fun reindex(packageName: String, reason: String) {
             EventLog.record("app index $reason $packageName")
+            refreshWidgetsIfActionPackage(packageName)
             lifecycleScope.launch {
                 runCatching { AppRepository.reindexPackage(this@OverlayService, packageName) }
                     .onFailure { Log.w(TAG, "reindex $packageName failed", it) }

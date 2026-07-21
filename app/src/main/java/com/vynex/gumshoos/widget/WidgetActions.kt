@@ -1,6 +1,7 @@
 package com.vynex.gumshoos.widget
 
 import androidx.annotation.DrawableRes
+import com.vynex.gumshoos.LENS_PACKAGE
 import com.vynex.gumshoos.R
 
 /**
@@ -13,6 +14,10 @@ import com.vynex.gumshoos.R
  *
  * [tintable] marks the icons that follow the bar's contrast colour. The brand marks must not: a
  * tinted Gemini or Lens mark is flattened to one tone.
+ *
+ * [requiredPackage] is the app the action cannot work without. Null for the ones that go through
+ * whatever the phone already has — voice search and the assistant both end on an unscoped intent, so
+ * they land somewhere on any device. Lens does not: see [com.vynex.gumshoos.WidgetActionTargets].
  */
 enum class WidgetAction(
     val id: String,
@@ -21,6 +26,7 @@ enum class WidgetAction(
     val requestCode: Int,
     val tintable: Boolean,
     val description: String,
+    val requiredPackage: String? = null,
 ) {
     ASSISTANT(
         id = "assistant",
@@ -46,6 +52,11 @@ enum class WidgetAction(
         requestCode = 112,
         tintable = false,
         description = "Google Lens camera search",
+        // The standalone app, and nothing else. Every entry point the Google app exposes was tested
+        // one by one on a phone without it: all of them start, report success and draw nothing,
+        // except a YouTube-specific activity that opens the wrong thing. So this action is only
+        // honest where the app is present, and it hides itself where it is not.
+        requiredPackage = LENS_PACKAGE,
     ),
     ;
 

@@ -48,6 +48,24 @@ class MainActivity : ComponentActivity() {
         readRequest(intent)
     }
 
+    /**
+     * Re-pushes the widgets every time settings comes to the front.
+     *
+     * A placed widget keeps whatever RemoteViews it was last handed, and part of what it draws now
+     * depends on which apps are installed — an action whose app is gone must stop appearing, and one
+     * whose app arrives must start. `OverlayService`'s package callback does that the instant it
+     * happens, but only while the service is alive, and it is the first thing an aggressive OEM
+     * reaps. That left the observed failure: install Lens, come back, and the bar still has no Lens
+     * icon until some unrelated setting is toggled.
+     *
+     * So this is the backstop rather than the mechanism. Opening the app is exactly when someone is
+     * looking to fix such a thing, and it costs what dragging a style slider one notch costs.
+     */
+    override fun onResume() {
+        super.onResume()
+        refreshAllWidgets(this)
+    }
+
     private fun readRequest(intent: Intent?) {
         val key = intent?.getStringExtra(EXTRA_MANAGE_APP_KEY) ?: return
         // Cleared so a later configuration-change recreate doesn't re-jump to the app.

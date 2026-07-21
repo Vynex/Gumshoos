@@ -53,6 +53,18 @@ class WidgetActionsTest {
     }
 
     @Test
+    fun `only Lens is gated on an app being installed`() {
+        // An action carrying a requiredPackage disappears from the bar wherever that app is absent.
+        // That is right for Lens — every other entry point the Google app exposes was fired by hand
+        // and drew nothing — and wrong for the other two, which end on an unscoped intent and land
+        // somewhere on any phone. Gating one of those would silently empty the bar for everyone.
+        assertEquals(
+            listOf(WidgetAction.LENS),
+            WidgetAction.entries.filter { it.requiredPackage != null },
+        )
+    }
+
+    @Test
     fun `the shipped defaults fit in the slots and name real actions`() {
         assertTrue(WidgetAction.DEFAULT_ENABLED.size <= WidgetAction.SLOT_COUNT)
         WidgetAction.DEFAULT_ENABLED.forEach { id ->

@@ -603,6 +603,19 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
         ) { Text("Probe Lens targets") }
 
         SettingsDivider()
+        SettingsNote(
+            "The probes say what exists and where an intent resolves. Neither can say whether " +
+                "anything appeared — a component that opens and closes itself again reports " +
+                "success — and that is what four wrong Lens entry points have had in common. The " +
+                "tester fires one candidate at a time so it can be watched.",
+        )
+        CategoryRow(
+            title = "Entry point tester",
+            summary = "Fire one Lens or voice target at a time",
+            onClick = { onOpen(Screen.EntryPoints) },
+        )
+
+        SettingsDivider()
         SettingsSection("Compare launch paths")
         SettingsNote(
             "Opens the overlay from here, which goes through an activity and is deliberately the " +

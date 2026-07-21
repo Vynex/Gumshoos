@@ -269,6 +269,19 @@
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
+            <!--
+              PACKAGE_FULLY_REMOVED, so an action whose app is uninstalled stops being drawn even if
+              nothing of ours is running. It is on the implicit-broadcast exception list where
+              PACKAGE_ADDED and PACKAGE_REMOVED are not, which is why only the uninstall direction is
+              covered here; the install direction is handled when settings next resumes.
+
+              Belt and braces, not the mechanism — the receiver only re-pushes RemoteViews and must
+              never warm the service, which would be a background foreground-service start.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
         </receiver>
 
     </application>

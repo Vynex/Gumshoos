@@ -281,6 +281,24 @@ internal fun SettingsSection(title: String) {
     Spacer(Modifier.height(4.dp))
 }
 
+/**
+ * A heading *within* a section.
+ *
+ * Deliberately quieter than [SettingsSection] on both counts a heading is read by — it drops the
+ * accent colour and the title weight — because a sub-section set in the same style as its parent
+ * just looks like the parent ended.
+ */
+@Composable
+internal fun SettingsSubSection(title: String) {
+    Spacer(Modifier.height(16.dp))
+    Text(
+        title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(2.dp))
+}
+
 /** Explanatory text under a heading or control. */
 @Composable
 internal fun SettingsNote(text: String, isWarning: Boolean = false) {

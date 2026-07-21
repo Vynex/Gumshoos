@@ -3,6 +3,7 @@ package com.vynex.gumshoos
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.vynex.gumshoos.widget.WidgetAction
 
 /**
  * Re-pushes every placed widget after the app is upgraded.
@@ -27,9 +28,22 @@ import android.content.Intent
  */
 class WidgetRefreshReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        EventLog.record("package replaced; refreshing widgets")
-        refreshAllWidgets(context)
+        when (intent.action) {
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                EventLog.record("package replaced; refreshing widgets")
+                refreshAllWidgets(context)
+            }
+
+            // An action's app being uninstalled changes what the bar may draw. Filtered to the
+            // packages that matter: this fires for every uninstall on the device, and rebuilding two
+            // widgets each time would be work done for nothing.
+            Intent.ACTION_PACKAGE_FULLY_REMOVED -> {
+                val removed = intent.data?.schemeSpecificPart ?: return
+                if (WidgetAction.entries.none { it.requiredPackage == removed }) return
+                EventLog.record("$removed uninstalled; refreshing widgets")
+                refreshAllWidgets(context)
+            }
+        }
     }
 }
 

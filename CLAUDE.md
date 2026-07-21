@@ -143,6 +143,15 @@ Two providers share `SearchWidgetProviderBase`: the wide search bar and the app 
   breaks widgets already on the home screen while a freshly added one works. `WidgetRefreshReceiver`
   re-pushes everything on `MY_PACKAGE_REPLACED` — one of the few broadcasts still allowed a manifest
   receiver. It must not warm the service: that would be a background FGS start.
+- **Icons go in as bitmaps, never as resource ids.** `R.drawable` is a *separate* id space from
+  `R.id`, so adding a drawable leaves view ids alone but renumbers every drawable sorting after it.
+  `setImageViewResource` hands the launcher a bare integer, and the launcher re-resolves that integer
+  against *its own* cached copy of our resources — stale after an update, so the id that meant Google
+  lands on the magnifier, Lens on Spotify, Voice on nothing. Re-pushing correct ids does **not** heal
+  it: the resolution happens on their side, which is why "refresh widgets" appeared to do nothing.
+  `rasterizeIcon` draws the drawable into a bitmap that travels inside the RemoteViews, where there
+  is no id left to go stale. Fit each drawable's own aspect ratio centred in the square rather than
+  forcing the bounds — Voice Search is a 300×429 mark and stretches wide otherwise.
 - **No elevation, no `setBackgroundDrawable`, no shadow.** The bar's background is therefore a
   bitmap drawn on a *software* canvas, since `Paint.setShadowLayer` is the only remotable route to a
   drop shadow. Skia derives that shadow from the alpha actually drawn, so a transparent paint casts
@@ -168,10 +177,45 @@ each candidate intent really resolves. Use it before changing a chain, and order
 cannot fail silently** — a launcher intent is the app's own MAIN/LAUNCHER activity and cannot
 start-and-vanish, so it leads; deeplinks and exported trampolines go last.
 
+The probe cannot answer the question that actually matters — *did anything appear* — so **Entry point
+tester**, next to it, fires one candidate at a time to be watched. It reads
+`WidgetActionTargets.candidates`, which the shipped chain filters with `inChain`, so a rung tested is
+the rung that ships rather than a copy that has drifted. Before it, each candidate cost a build, a
+sideload and a trace read; ten Lens candidates were settled in one sitting with it.
+
+That sitting closed Lens: on a phone without the standalone `com.google.ar.lens` app, **every** entry
+point the Google app exposes starts, returns success and draws nothing — both `MainActivity` forms,
+both `LensExportedActivity` forms, both deeplinks, the share and image ones — except
+`DirectLensYoutubeActivity`, which opens Lens onto YouTube rather than the camera. So Lens has no
+fallback: `WidgetAction.requiredPackage` names the app it cannot work without, `isAvailable` asks for
+a *launch intent* rather than mere installation (uninstalling a preinstalled Lens leaves the package
+present with its launcher activity disabled), and the widget skips an unavailable action at render
+time without touching its saved state. The settings screen moves it to an **Uninstalled** group with
+a Play Store link instead of a checkbox that could not do anything.
+
+**Anything the widget draws from a device fact needs three ways to converge, not one.** A placed
+widget keeps the RemoteViews it was last handed, so an install or uninstall has to push new ones, and
+the first attempt pushed them only from `OverlayService`'s package callback — which is dead whenever
+the service is, so installing Lens left the bar without its icon until an unrelated setting was
+toggled. The service callback is the fast path; `MainActivity.onResume` re-pushes unconditionally as
+the backstop, because opening the app is when someone is looking to fix exactly this; and
+`WidgetRefreshReceiver` also takes `PACKAGE_FULLY_REMOVED`, which is on the implicit-broadcast
+exception list where `PACKAGE_ADDED` is not, so the uninstall direction works with nothing of ours
+running. Settings reads availability through `rememberOnResume` for the same reason a permission does
+— the Play Store is somewhere we send the user and get no result back from, and a plain read taken
+during composition leaves the Uninstalled group surviving the install made from it.
+
 ## Settings UI
 
 Screens are a hand-rolled back stack in `SettingsHost`; adding one touches three places (the `Screen`
-sealed interface, the `when`, and a `CategoryRow`). Shared pieces live in `SettingsComponents.kt`:
+sealed interface, the `when`, and a `CategoryRow`). A `Screen` may carry arguments — `ManageApps` is
+a `data class` holding the component key to highlight — so the `when` matches it with `is`.
+
+The home list is Permissions, Appearance, Manage apps, Search, Behaviour and Advanced, each with a
+leading icon. **Search is a hub**, not a screen of controls: Matching, Instant answers, Contacts and
+Providers hang off it. Manage apps is the merge of what were Custom names and Hidden apps.
+
+Shared pieces live in `SettingsComponents.kt`:
 
 - `SettingsScaffold`, and `SettingsScaffoldWithHeader` for screens whose preview must stay put while
   the controls scroll under it.
@@ -180,7 +224,30 @@ sealed interface, the `when`, and a `CategoryRow`). Shared pieces live in `Setti
   reports the original width. Safe only because both lists pad *inside* `verticalScroll`. Rows inside
   a card must **not** use it; the ripple belongs within the rounded bounds.
 - `SettingsCard` / `SettingsCardShape` / `settingsCardColour`, shared so cards don't drift apart.
+- `SettingsGroupCard` / `SettingsGroupDivider` — the home list's rounded groups. Rows inside pass
+  `CategoryRow(fullBleed = false)`, which is the rule above rather than an exception to it.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
+
+**The M3 `SearchBar` is not usable as an inline filter, and this was checked in its source rather
+than guessed.** `DockedSearchBar` hardcodes `.width(SearchBarMinWidth)` — 360dp — so it cannot fill a
+column, and `SearchBarDefaults.InputField` passes `container = {}`, painting no background of its own,
+so it is not usable standalone either. It is a search *destination* that expands to cover the screen.
+Manage apps' filter is therefore a `TextField` styled as a search input: pill shape, leading
+magnifier, `surfaceContainerHigh`, transparent indicator. Reference docs give the signature; only the
+source gives behaviour like a hardcoded width.
+
+The search window's **Edit** action deep-links into Manage apps. Settings is `singleTask`, so an
+already-open instance receives it through `onNewIntent`, never a second `onCreate` — the request is
+Compose state read inside `setContent`, not a one-shot. It carries a nonce so tapping Edit twice on
+the *same* app re-fires instead of being coalesced away by an unchanged key, and the extra is cleared
+once read so a configuration-change recreate doesn't re-jump.
+
+**`animateScrollToItem` composes every row it passes**, so scrolling to an app far down Manage apps
+crawled. Jump with `scrollToItem` to a few rows above the target, then animate the remainder: the
+landing still reads as a glide and never measures more than a screenful. The highlight that follows
+is a real ripple — a `PressInteraction` emitted on a hoisted `MutableInteractionSource` wired to that
+one row — and it has to come *after* the scroll settles, because a `LazyColumn` only composes what is
+on screen and an unseen row cannot show one.
 
 **Previews render the real thing.** The search window preview calls `OverlayContent` itself with
 `interactive = false`; the widget bar preview calls the same `WidgetBarRenderer.toBitmap` the widget
@@ -238,6 +305,28 @@ icon for every installed app, so reacting to a Play Store batch that way would b
 records its own cost to the trace. Settings → Advanced has manual rebuilds for both the index and the
 widgets.
 
+**An `AppEntry` is a launcher activity, not an app.** A few packages — Amazon among them — declare
+several, so `AppRepository.apps` holds more than one entry sharing a package name, routinely with the
+same label. Custom names and hidden apps are keyed by `componentKey`
+(`ComponentName.flattenToShortString()`) so those entries stay separately addressable; keying either
+list by package put a duplicate key in a `LazyColumn` and crashed the moment the list scrolled far
+enough to compose both. Two rules hold that together:
+
+- Reads fall back to a bare **package** key. `GumshoosConfig` loads in `GumshoosApp.onCreate`, before
+  the index exists, so there is nowhere to migrate values saved by the builds that keyed by package.
+- Writes **expand** a package-wide value onto the siblings before letting one component diverge.
+  Without that, the read fallback keeps applying and unchecking one row of a package hidden as a
+  whole appears to do nothing at all.
+
+`componentKey` is a stored `val`, not a getter: `visible` recomputes on every access and sits on the
+type-ahead path, so flattening per app per keystroke would put a string allocation there.
+
+Uninstalling prunes that package's alias and hidden keys (`GumshoosConfig.forgetPackage`) — an orphan
+is unreachable, since no row exists to clear it, and it inflates a count nothing on screen explains.
+It hangs off `onPackageRemoved` **only**: `onPackagesUnavailable` shares `AppRepository.removePackage`
+and fires when a work profile is switched off, whose apps are coming back and expect their settings
+intact. The cost is that settings no longer survive an uninstall/reinstall round trip.
+
 ## Testing reality
 
 Unit tests cover the pure logic: `AppMatcher`, and every answer provider against a pinned
@@ -259,3 +348,16 @@ names as black, and leaves a fill-less path undrawn where SVG would paint it bla
 failures produce a successful build and a wrong icon. `verify-icons.py` renders the generated
 drawable back to SVG and compares it against the source, which is the only check that exercises the
 converter rather than the preprocessing.
+
+**The pipeline handles filled brand logos only.** Feather and Lucide outline icons carry
+`stroke="currentColor"` on the root `<svg>` rather than on each path, and `make_fills_explicit` only
+inspects the `<path>` — so it sees neither a fill nor a stroke there, defaults the path to black, and
+emits a filled blob with no `android:tint`. It says so, quietly, as `WARNING path had no fill`.
+
+Every UI icon is therefore **hand-authored** as a stroke drawable — `fillColor="#00000000"`,
+`strokeColor`, `strokeWidth="2"`, round caps and joins, `android:tint` — and *re-running
+`convert-icons.sh` clobbers them all*, because their SVGs still sit in `design/icons/`. The set:
+`ic_provider_at_sign`, `_edit`, `_edit_app`, `_eye_on`, `_eye_off`, `_info`, `_trash`, `_moon`,
+`_search_code`, `_terminal`, `_text_search`, `_wrench`, `_hat_glasses`. Teaching `prepare-svg.py` to
+propagate a root-level stroke down to its paths would fix this properly; until then, regenerate the
+brand logos by hand-picking files rather than running the script over the whole directory.

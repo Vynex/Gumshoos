@@ -214,8 +214,15 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         views.setViewVisibility(R.id.widget_hint, if (style.showHint) View.VISIBLE else View.GONE)
         views.setTextColor(R.id.widget_hint, content)
 
+        // Availability is checked at render, not stored. An action whose app is missing is skipped
+        // here and keeps its saved on/off state, so installing the app puts the icon back in the
+        // slot it had rather than requiring the bar to be set up again. Skipping also closes the
+        // gap: the slots pack up, so a hidden Lens doesn't leave a hole in the middle of the bar.
         val enabled = SearchProviders.inConfiguredOrder(
-            WidgetAction.entries.filter { it.id in GumshoosConfig.widgetBarActions },
+            WidgetAction.entries.filter {
+                it.id in GumshoosConfig.widgetBarActions &&
+                    WidgetActionTargets.isAvailable(context, it)
+            },
             GumshoosConfig.widgetBarActionOrder,
             WidgetAction::id,
         )

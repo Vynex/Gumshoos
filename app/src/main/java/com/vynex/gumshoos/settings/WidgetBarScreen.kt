@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
@@ -44,10 +47,15 @@ import androidx.compose.ui.unit.sp
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.widget.Toast
+import androidx.core.net.toUri
+import com.vynex.gumshoos.EventLog
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchWidgetProvider
+import com.vynex.gumshoos.WidgetActionTargets
 import com.vynex.gumshoos.widget.WidgetAction
 import com.vynex.gumshoos.widget.WidgetBarFill
 import com.vynex.gumshoos.widget.WidgetBarLogo
@@ -78,6 +86,20 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val style = GumshoosConfig.widgetBarStyle
 
+    // Which actions this phone can run, re-read whenever the screen comes back to the front.
+    //
+    // Installing an app happens in the Play Store, which we send the user to and get no result back
+    // from — the same shape as a permission granted in system settings, so it uses the same helper.
+    // A plain read during composition is taken once and never again: the Uninstalled group then
+    // survives the install that was made from it, which is exactly how this was first shipped.
+    //
+    // Threaded down rather than read again inside the preview and the rows. Two independent reads
+    // would drift apart for one recomposition, and the preview would promise an icon the list says
+    // is unavailable.
+    val available = rememberOnResume {
+        WidgetAction.entries.filter { WidgetActionTargets.isAvailable(context, it) }.toSet()
+    }
+
     fun push() = SearchWidgetProvider.refreshAll(context)
 
     var paletteOpen by remember { mutableStateOf(false) }
@@ -85,7 +107,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
     SettingsScaffoldWithHeader(
         title = "Search bar widget",
         onBack = onBack,
-        header = { WidgetBarPreview(style) },
+        header = { WidgetBarPreview(style, available) },
     ) {
         SettingsSection("Style")
         ColorPickerAccordion(
@@ -178,7 +200,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
             "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
                 "rest of the bar still opens search.",
         )
-        ActionRows(onChanged = ::push)
+        ActionRows(available = available, onChanged = ::push)
 
         SettingsDivider()
         OutlinedButton(
@@ -202,7 +224,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
  * The content layer is laid out in Compose against the same dimens the RemoteViews layout uses.
  */
 @Composable
-private fun WidgetBarPreview(style: WidgetBarStyle) {
+private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>) {
     val context = LocalContext.current
     // Drawn at the height of a bar you have actually placed, rather than a guess. Margins are in
     // dp, so their effect depends entirely on how tall the cell is — a fixed-height preview makes
@@ -221,8 +243,10 @@ private fun WidgetBarPreview(style: WidgetBarStyle) {
     val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
     val content = Color(WidgetBarMetrics.contentColor(resolved, style))
 
+    // Filtered by availability exactly as the widget filters it, or the preview would promise an
+    // icon the bar on the home screen doesn't draw.
     val actions = SearchProviders.inConfiguredOrder(
-        WidgetAction.entries.filter { it.id in GumshoosConfig.widgetBarActions },
+        WidgetAction.entries.filter { it.id in GumshoosConfig.widgetBarActions && it in available },
         GumshoosConfig.widgetBarActionOrder,
         WidgetAction::id,
     )
@@ -369,16 +393,21 @@ private fun PaddingSlider(
 }
 
 @Composable
-private fun ActionRows(onChanged: () -> Unit) {
+private fun ActionRows(available: Set<WidgetAction>, onChanged: () -> Unit) {
     val context = LocalContext.current
-    val ordered = SearchProviders.inConfiguredOrder(
+    val all = SearchProviders.inConfiguredOrder(
         WidgetAction.entries.toList(),
         GumshoosConfig.widgetBarActionOrder,
         WidgetAction::id,
     )
-    val enabledCount = ordered.count { it.id in GumshoosConfig.widgetBarActions }
 
-    ordered.forEachIndexed { index, action ->
+    // Split rather than dimmed in place. An action whose app is missing isn't a choice the bar can
+    // offer — there is no fallback behind Lens, so a greyed checkbox would be inviting a tap that
+    // could never do anything. It moves to its own group with the one action that helps: install it.
+    val (installed, missing) = all.partition { it in available }
+    val enabledCount = installed.count { it.id in GumshoosConfig.widgetBarActions }
+
+    installed.forEachIndexed { index, action ->
         val checked = action.id in GumshoosConfig.widgetBarActions
         ProviderRow(
             label = action.label,
@@ -389,24 +418,98 @@ private fun ActionRows(onChanged: () -> Unit) {
             // rather than accepting a tap that silently does nothing.
             enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
             canMoveUp = index > 0,
-            canMoveDown = index < ordered.lastIndex,
+            canMoveDown = index < installed.lastIndex,
             onCheckedChange = {
                 GumshoosConfig.setWidgetBarActionEnabled(context, action.id, it)
                 onChanged()
             },
+            // Reordering moves the action within the *whole* saved order, not within the visible
+            // subset. A missing action still holds its place in that list, so installing its app
+            // returns it to where it was rather than to the end.
             onMoveUp = {
                 GumshoosConfig.setWidgetBarActionOrder(
-                    context, SearchProviders.reorder(ordered.map { it.id }, action.id, -1),
+                    context, SearchProviders.reorder(all.map { it.id }, action.id, -1),
                 )
                 onChanged()
             },
             onMoveDown = {
                 GumshoosConfig.setWidgetBarActionOrder(
-                    context, SearchProviders.reorder(ordered.map { it.id }, action.id, 1),
+                    context, SearchProviders.reorder(all.map { it.id }, action.id, 1),
                 )
                 onChanged()
             },
             control = RowControl.CHECKBOX,
         )
     }
+
+    if (missing.isNotEmpty()) {
+        SettingsSubSection("Uninstalled")
+        SettingsNote("These need an app that isn't on this phone.")
+        missing.forEach { MissingActionRow(it) }
+    }
+}
+
+/**
+ * An action whose app isn't installed: the mark, the name, and a way to get it.
+ *
+ * No checkbox and no arrows. Both would be controls over something that cannot appear in the bar,
+ * and a disabled control reads as "not now" when the honest message is "not without the app".
+ *
+ * Nothing here is dimmed. The row isn't a switched-off setting, it is an app you don't have — and
+ * greying the name says "unavailable to you" where the row's whole purpose is to offer it. The
+ * package name is deliberately absent for the same reason: it explains nothing to anyone who
+ * wouldn't already know.
+ */
+@Composable
+private fun MissingActionRow(action: WidgetAction) {
+    val context = LocalContext.current
+    val packageName = action.requiredPackage ?: return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(SettingsCardShape)
+            .clickable { openStorePage(context, packageName) }
+            .padding(vertical = 8.dp),
+    ) {
+        Image(
+            painter = painterResource(action.icon),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            action.label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { openStorePage(context, packageName) }) { Text("Install") }
+    }
+}
+
+/**
+ * Opens the Play listing, falling back to the web page.
+ *
+ * `market://` is in the manifest's `<queries>`, so it resolves where Play is present; the https form
+ * covers a phone without it and lands in a browser. Both are recorded, because a listing that has
+ * been withdrawn will open and show "item not found" — which looks from here exactly like a listing
+ * that worked.
+ */
+private fun openStorePage(context: Context, packageName: String) {
+    val market = Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri())
+    val web = Intent(
+        Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri(),
+    )
+    listOf(market, web).forEach { intent ->
+        val started = runCatching {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+        if (started) {
+            EventLog.record("store page $packageName -> ${intent.data?.scheme}")
+            return
+        }
+    }
+    EventLog.record("store page $packageName -> nothing handled it")
+    Toast.makeText(context, "No app store on this phone", Toast.LENGTH_SHORT).show()
 }
