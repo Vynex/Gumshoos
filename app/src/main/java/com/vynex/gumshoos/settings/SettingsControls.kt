@@ -360,9 +360,8 @@ internal fun CurrencyRatesSettings() {
         SettingsActionRow(
             title = if (CurrencyRates.refreshing) "Refreshing…" else "Refresh rates now",
             summary = when {
-                table == null -> "No rates yet. Conversions stay hidden until some are fetched — " +
-                    "an invented exchange rate would be worse than no answer."
-                else -> "${table.rates.size} currencies, based on ${table.base}. Updated " +
+                table == null -> "Not fetched rates yet."
+                else -> "${table.rates.size} currencies, based on ${table.base}. Data from " +
                     AnswerFormat.relativeTime(table.fetchedAtMillis, System.currentTimeMillis()) +
                     "."
             },

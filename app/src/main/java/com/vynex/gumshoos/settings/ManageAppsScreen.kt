@@ -152,13 +152,6 @@ internal fun ManageAppsScreen(onBack: () -> Unit, highlightKey: String? = null) 
                     detectTapGestures(onTap = { focusManager.clearFocus() })
                 },
         ) {
-            Text(
-                "Rename an app to make it answer to extra words, or hide it from results entirely.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = SettingsInset),
-            )
-
             SettingsFilterField(
                 query = query,
                 onQueryChange = { query = it },

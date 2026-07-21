@@ -114,10 +114,13 @@ private fun manageAppsSummary(): String {
     val renamed = GumshoosConfig.appAliases.size
     val hidden = GumshoosConfig.hiddenApps.size
     val parts = buildList {
-        if (renamed > 0) add("$renamed renamed")
+        if (renamed > 0) {
+            if (renamed == 1) add("$renamed alias")
+            else add("$renamed aliases")
+        }
         if (hidden > 0) add("$hidden hidden")
     }
-    return if (parts.isEmpty()) "Rename or hide any app" else parts.joinToString(" · ")
+    return if (parts.isEmpty()) "Add aliases or hide any app" else parts.joinToString(" · ")
 }
 
 /** Ordering and the new-apps window, the two levers this screen now carries. */

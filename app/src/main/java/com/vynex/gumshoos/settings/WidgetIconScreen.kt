@@ -79,7 +79,6 @@ internal fun WidgetIconScreen(onBack: () -> Unit) {
             )
             SettingsSliderRow(
                 label = "Vertical offset",
-                summary = "Positive moves it down.",
                 value = GumshoosConfig.widgetIconOffsetDp,
                 min = -MAX_OFFSET_DP,
                 max = MAX_OFFSET_DP,

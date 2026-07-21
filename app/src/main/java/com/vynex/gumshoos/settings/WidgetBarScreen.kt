@@ -126,14 +126,13 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
             )
             SettingsSwitchRow(
                 title = "Outline only",
-                description = "Draws just the border, in the fill colour, with nothing behind it.",
+                description = "Draws just a border without filling it.",
                 checked = style.wireframe,
                 onCheckedChange = { GumshoosConfig.setWidgetBarWireframe(context, it); push() },
             )
             SettingsSwitchRow(
                 title = "Shadow",
-                description = "A short drop shadow. It needs a little room to fall into, so the " +
-                    "bar pulls in where the margins below are smaller than that.",
+                description = "A short drop shadow. This also slightly reduces the widget size.",
                 checked = style.shadow,
                 onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
             )
@@ -156,8 +155,8 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         // bar's size, expressed as what is left around it.
         SettingsGroup(title = "Spacing") {
             SettingsSliderRow(
-                label = "Side margin",
-                summary = "0 makes the bar span the whole cell.",
+                label = "Horizontal margin",
+//                summary = "0 makes the bar span the whole cell.",
                 value = GumshoosConfig.widgetBarPaddingH,
                 min = 0,
                 max = WidgetBarMetrics.MAX_PADDING_H_DP,
@@ -169,8 +168,8 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 onValueFinished = ::push,
             )
             SettingsSliderRow(
-                label = "Top and bottom margin",
-                summary = "How thick the bar is within its row.",
+                label = "Vertical margin",
+//                summary = "How thick the bar is within its row.",
                 value = GumshoosConfig.widgetBarPaddingV,
                 min = 0,
                 max = WidgetBarMetrics.MAX_PADDING_V_DP,
@@ -364,8 +363,7 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
 
     SettingsGroup(
         title = "Actions",
-        note = "Tappable icons at the right of the bar. Up to ${WidgetAction.SLOT_COUNT} fit; the " +
-            "rest of the bar still opens search.",
+        note = "Tappable actions at the right of the widget. Rest of the bar still opens search.",
     ) {
         installed.forEachIndexed { index, action ->
             val checked = action.id in GumshoosConfig.widgetBarActions

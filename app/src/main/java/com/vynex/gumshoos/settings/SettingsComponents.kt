@@ -740,7 +740,7 @@ internal fun ProviderRow(
             painter = painterResource(icon),
             contentDescription = null,
             alpha = if (enabled) 1f else 0.38f,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(24.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

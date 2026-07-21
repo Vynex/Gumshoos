@@ -167,15 +167,14 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
 
     SettingsScaffold(title = "Providers", onBack = onBack) {
         SettingsNote(
-            "The row of marks under \"Search using\", shown once a query matches no installed " +
-                "app. The first one is also where Enter goes when nothing matched.",
+            "Manage visibility and order of external search providers. " +
+                "Pressing Enter launches the first one when no other results are found.",
         )
 
         // Undividered: this is one ordered list being arranged, and a line between each row would
         // cut the sequence the arrows exist to change into six unrelated entries.
         SettingsGroup(
-            note = "Spotify and ChatGPT appear only when their app is installed — searching " +
-                "either on the web lands on a login wall rather than a result.",
+            note = "Spotify and ChatGPT appear only when their app is installed.",
         ) {
             ordered.forEachIndexed { index, provider ->
                 val isMissing = provider.id in SearchProviders.missing
@@ -322,10 +321,7 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     var unitSystem by remember { mutableStateOf(GumshoosConfig.unitSystemOverride) }
 
     SettingsScaffold(title = "Instant answers", onBack = onBack) {
-        SettingsNote(
-            "Some queries answer themselves. Typing 2+2, 5ft, 0x1F, \$5 or \"time in tokyo\" " +
-                "shows a result above the contacts section.",
-        )
+        SettingsNote("Some queries answer themselves.")
 
         SettingsGroup(title = "Modules") {
             AnswerProviders.all.forEach { provider ->
@@ -341,46 +337,43 @@ internal fun AnswersScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             }
         }
 
-        SettingsGroup(title = "Measurements") {
-            listOf(
-                null to "Follow device",
-                MeasurementSystem.SI to "Metric",
-                MeasurementSystem.US to "Imperial",
-            ).forEach { (option, label) ->
-                SettingsRadioRow(
-                    title = label,
-                    description = when (option) {
-                        null -> "Whatever your phone's region implies."
-                        MeasurementSystem.SI -> "5ft answers in metres."
-                        else -> "5m answers in feet."
-                    },
-                    selected = unitSystem == option,
-                    onClick = {
-                        unitSystem = option
-                        GumshoosConfig.setUnitSystemOverride(context, option)
-                    },
-                )
-            }
-        }
-
-        // The note lands after the last of the three defaults rather than ahead of the first,
-        // because it is one statement about all of them.
-        SettingsGroup(
-            note = "These are what a conversion becomes when the query doesn't say. Writing the " +
-                "target explicitly — \"5ft to inches\", \"\$5 to CAD\" — always wins over them.",
-        ) {
-            CategoryRow(
-                title = "Currency",
-                summary = GumshoosConfig.preferredCurrency ?: "Follow device",
-                onClick = { onOpen(Screen.CurrencyPicker) },
-            )
-            SettingsGroupDivider()
-            CategoryRow(
-                title = "Time zone",
-                summary = GumshoosConfig.preferredZone ?: "Follow device",
-                onClick = { onOpen(Screen.ZonePicker) },
-            )
-        }
+//        SettingsGroup(title = "Measurements") {
+//            listOf(
+//                null to "Follow device",
+//                MeasurementSystem.SI to "Metric",
+//                MeasurementSystem.US to "Imperial",
+//            ).forEach { (option, label) ->
+//                SettingsRadioRow(
+//                    title = label,
+//                    description = when (option) {
+//                        null -> "Whatever your phone's region implies."
+//                        MeasurementSystem.SI -> "5ft answers in metres."
+//                        else -> "5m answers in feet."
+//                    },
+//                    selected = unitSystem == option,
+//                    onClick = {
+//                        unitSystem = option
+//                        GumshoosConfig.setUnitSystemOverride(context, option)
+//                    },
+//                )
+//            }
+//        }
+//
+//        // The note lands after the last of the three defaults rather than ahead of the first,
+//        // because it is one statement about all of them.
+//        SettingsGroup {
+//            CategoryRow(
+//                title = "Currency",
+//                summary = GumshoosConfig.preferredCurrency ?: "Follow device",
+//                onClick = { onOpen(Screen.CurrencyPicker) },
+//            )
+//            SettingsGroupDivider()
+//            CategoryRow(
+//                title = "Time zone",
+//                summary = GumshoosConfig.preferredZone ?: "Follow device",
+//                onClick = { onOpen(Screen.ZonePicker) },
+//            )
+//        }
 
         CurrencyRatesSettings()
     }
@@ -620,8 +613,7 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
 
         SettingsGroup(
             title = "Animations",
-            note = "The search window opens in about 20ms. The animation is what makes that " +
-                "legible rather than abrupt.",
+            note = "If you prefer an even snappier experience; recommended for lower-end phones.",
         ) {
             AnimationMode.entries.forEach { option ->
                 SettingsRadioRow(
@@ -632,9 +624,9 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     description = when (option) {
                         AnimationMode.FOLLOW_SYSTEM ->
                             if (systemDisabled) {
-                                "Your phone has animations off, so this means off."
+                                "Animations are disabled system-wide currently."
                             } else {
-                                "Your phone has animations on."
+                                "Animations are enabled system-wide currently."
                             }
                         AnimationMode.ALWAYS_OFF -> "The window and its sections appear instantly."
                     },

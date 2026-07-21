@@ -34,7 +34,7 @@ enum class WidgetAction(
         icon = R.drawable.ic_provider_gemini,
         requestCode = 110,
         tintable = false,
-        description = "Opens the assistant your phone is set to use",
+        description = "Opens your phone's assistant app",
     ),
     VOICE(
         id = "voice",
@@ -43,7 +43,7 @@ enum class WidgetAction(
         requestCode = 111,
         // The supplied mark is Google's four-colour mic, not a mono glyph.
         tintable = false,
-        description = "Speak a query, get Google results",
+        description = "Opens Google's Voice Search screen",
     ),
     LENS(
         id = "lens",
@@ -51,7 +51,7 @@ enum class WidgetAction(
         icon = R.drawable.ic_provider_lens,
         requestCode = 112,
         tintable = false,
-        description = "Google Lens camera search",
+        description = "Opens Google Lens camera search",
         // The standalone app, and nothing else. Every entry point the Google app exposes was tested
         // one by one on a phone without it: all of them start, report success and draw nothing,
         // except a YouTube-specific activity that opens the wrong thing. So this action is only

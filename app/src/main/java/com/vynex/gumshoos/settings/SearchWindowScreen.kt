@@ -63,11 +63,6 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
         onBack = onBack,
         header = { SearchWindowPreview() },
     ) {
-        SettingsNote(
-            "The card the search window is drawn on. It appears over whatever is on screen, so " +
-                "opacity decides how much of that shows through.",
-        )
-
         ColorPickerAccordion(
             // The overlay is hard-coded to the dark theme, so adaptive has to be resolved under it
             // rather than under the settings theme — otherwise the swatch shown here is a colour
@@ -115,8 +110,6 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
 
         SettingsGroup(
             title = "Apps",
-            note = "More columns means a narrower cell, so a large icon and six columns leave " +
-                "little room for the label.",
         ) {
             SettingsChoiceRow(
                 label = "Rows",

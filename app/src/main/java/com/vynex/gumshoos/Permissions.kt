@@ -26,9 +26,8 @@ enum class AppPermission(
 ) {
     OVERLAY(
         title = "Draw over other apps",
-        why = "The search window is drawn on top of whatever is already on screen. That is what " +
-            "lets it open from anywhere, and why it appears in about 20ms instead of launching " +
-            "an app first.",
+        why = "The search window is drawn on top of whatever is already on screen. This is what " +
+            "allows the app to be so fast.",
         withoutIt = "",
         required = true,
     ),
@@ -37,13 +36,12 @@ enum class AppPermission(
         why = "Orders the Frequent and Recent tabs by the apps you actually open, including ones " +
             "you used before installing Gumshoos.",
         withoutIt = "Those tabs fall back to alphabetical order. Gumshoos can also count launches " +
-            "itself instead — see Apps in settings.",
+            "itself instead — see Behaviour in settings.",
         required = false,
     ),
     CONTACTS(
         title = "Contacts",
-        why = "Lets a search match people as well as apps, so typing a name offers to call, " +
-            "message or email them directly.",
+        why = "Lets you search through your phone's contacts as well.",
         withoutIt = "The contacts section simply doesn't appear. Nothing else changes.",
         required = false,
     ),
