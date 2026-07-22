@@ -18,6 +18,7 @@ architectural decision below follows from it.
 ./gradlew lintDebug                     # see warning below
 ./gradlew testDebugUnitTest             # JVM unit tests
 ./gradlew installDebug                  # requires a connected device
+./gradlew assembleRelease               # unsigned, see below
 
 # a single class, or a single method
 ./gradlew testDebugUnitTest --tests "com.vynex.gumshoos.AppMatcherTest"
@@ -30,6 +31,14 @@ python3 design/verify-icons.py           # needs cairosvg, numpy, pillow
 
 **`assembleDebug` does not run lint.** Two `NewApi` crashes have shipped because of this. Always run
 `assembleDebug lintDebug testDebugUnitTest` together before claiming a change is good.
+
+**There is no release signing config yet.** `assembleRelease` succeeds and emits
+`app-release-unsigned.apk`, which cannot be sideloaded: no `signingConfigs` block, no keystore
+anywhere in the tree, and `versionCode`/`versionName` are still the template's `1` / `"1.0"`, so a
+second release would not install over a first. `lintVitalRelease` *does* run as part of
+`assembleRelease`, so the `NewApi` class of crash is covered on that path. `isMinifyEnabled = false`
+and `proguard-rules.pro` is untouched template comments — which means **nothing is stripped from a
+release build**, including code behind a false `BuildConfig.DEBUG` branch.
 
 `minSdk 31`, `targetSdk 36`, Java 11. **One third-party Gradle dependency** — five instant-answer
 modules and an HTTP client were built without any, using `HttpURLConnection`, `org.json` and a
@@ -50,9 +59,13 @@ Compose comes from the BOM, currently `2026.06.01` — **Material3 1.4.0**, the 
 the Expressive components, and Compose UI 1.11.4. Two things to know before touching it:
 
 - Material3 1.4 **stopped pulling in `material-icons-core` transitively**, so it is named explicitly
-  in the catalog. Ten stock icons are used across the app; the BOM still pins the artifact, so it
-  can't drift on its own. The library itself is frozen at 1.7.8 and no longer developed — if it is
-  ever dropped from the BOM, hand-author the ten as drawables rather than chasing a version.
+  in the catalog. Eight distinct stock icons are left — `ArrowBack`, `KeyboardArrowRight`,
+  `KeyboardArrowDown`, `Search`, `Close`, `Check`, `CheckCircle`, `Warning` — and the BOM still pins
+  the artifact, so it can't drift on its own. The library is frozen at 1.7.8 and no longer developed;
+  if it is ever dropped from the BOM, hand-author the eight rather than chasing a version. `Refresh`
+  was a ninth until every reset and rebuild action moved to the Lucide `ic_provider_rotate_ccw`, and
+  that is the direction to keep going in — the pipeline below makes a drawable cheaper than a
+  dependency.
 - **What 1.4.0 exposes is uneven, and the only way to know is to read it.** Not usable: the theme
   entry point `MaterialExpressiveTheme`, every flexible app bar, and the subtitle-bearing
   `TopAppBar` are all `internal`; the brand-new components — `ButtonGroup`, `LoadingIndicator`,
@@ -217,16 +230,20 @@ cleanly, start, return success — and show nothing. At the head of a fallback c
 every working rung behind it. This cost four iterations on Lens and three on voice search, every one
 of them an attempt to reason the right component out from its name.
 
-Settings → Advanced has a probe that lists what each package declares, with exported flags, and where
-each candidate intent really resolves. Use it before changing a chain, and order chains by **what
-cannot fail silently** — a launcher intent is the app's own MAIN/LAUNCHER activity and cannot
-start-and-vanish, so it leads; deeplinks and exported trampolines go last.
+Order chains by **what cannot fail silently** — a launcher intent is the app's own MAIN/LAUNCHER
+activity and cannot start-and-vanish, so it leads; deeplinks and exported trampolines go last.
 
-The probe cannot answer the question that actually matters — *did anything appear* — so **Entry point
-tester**, next to it, fires one candidate at a time to be watched. It reads
-`WidgetActionTargets.candidates`, which the shipped chain filters with `inChain`, so a rung tested is
-the rung that ships rather than a copy that has drifted. Before it, each candidate cost a build, a
-sideload and a trace read; ten Lens candidates were settled in one sitting with it.
+Two instruments established that and **have since been deleted**: a probe that listed what each
+package declares with exported flags and where each candidate intent really resolves, and an *entry
+point tester* that fired one candidate at a time to be watched — because the probe cannot answer the
+question that actually matters, *did anything appear*. Both lived in Settings → Advanced and went in
+the pass that cut that screen back to what ships.
+
+**Their findings survive as `WidgetActionTargets.candidates`.** That list deliberately keeps every
+rung already ruled out by watching a screen, not only the ones that work, and `chain()` filters it by
+`inChain`. It is the record, and it is why a chain must never be re-derived from class names: doing
+that is what cost four iterations on Lens in the first place. If a chain genuinely needs changing,
+rebuild an instrument — git history has both — rather than reasoning from a component name.
 
 Two things about diagnosing this cost a round trip each, and both generalise:
 
@@ -237,10 +254,11 @@ Two things about diagnosing this cost a round trip each, and both generalise:
   is only meaningful beside the source of the build that wrote it.
 - **Diagnose on the phone that has the bug.** "I can't reproduce it" was the most informative fact in
   the report and was nearly discarded as noise: this phone had the standalone Lens app and theirs did
-  not. Get the probe and the trace from *their* device before theorising. Note also that reproducing
-  it here by uninstalling was not quite the same state — a preinstalled app that is "uninstalled"
-  stays present with its launcher activity disabled, which the probe shows as `1 of 2 declared match
-  / internal LensLauncherActivity` rather than as absent.
+  not. Get evidence off *their* device before theorising. Note also that reproducing it here by
+  uninstalling was not quite the same state — a preinstalled app that is "uninstalled" stays present
+  with its launcher activity disabled, which the probe reported as `1 of 2 declared match / internal
+  LensLauncherActivity` rather than as absent. With the probe gone, an install/uninstall difference
+  like that is no longer visible from inside the app at all, which is the cost of having removed it.
 
 That sitting closed Lens: on a phone without the standalone `com.google.ar.lens` app, **every** entry
 point the Google app exposes starts, returns success and draws nothing — both `MainActivity` forms,
@@ -270,16 +288,55 @@ Screens are a hand-rolled back stack in `SettingsHost`; adding one touches three
 sealed interface, the `when`, and a `CategoryRow`). A `Screen` may carry arguments — `ManageApps` is
 a `data class` holding the component key to highlight — so the `when` matches it with `is`.
 
-The home list is Permissions, Appearance, Manage apps, Search, Behaviour and Advanced, each with a
-leading icon. **Search is a hub**, not a screen of controls: Matching, Instant answers, Contacts and
-Providers hang off it. Manage apps is the merge of what were Custom names and Hidden apps.
+The home list is Permissions, Launching, Appearance, Manage apps, Search and Behaviour, with Advanced
+in a card of its own below them; every row carries a leading icon. **Search is a hub**, not a screen
+of controls: Matching, Instant answers, Contacts and Providers hang off it. Manage apps is the merge
+of what were Custom names and Hidden apps.
+
+**Launching is a top-level destination, not a corner of Advanced**, which is where it began. The
+launcher icon deliberately opens settings rather than search, so *how do I bring this up* is the
+question a fresh install arrives with — and the answer was three levels down, under Advanced →
+Launching Gumshoos. It holds the drawer icon, the assistant gesture, and an **Add to home screen**
+group that pins the search shortcut or either widget.
+
+Pinning goes through `SearchShortcuts`, and two things about it generalise:
+
+- **Shortcut and widget pinning are separate capabilities.** `isRequestPinShortcutSupported` and
+  `isRequestPinAppWidgetSupported` are asked separately because a launcher can support one and refuse
+  the other; a single combined check greys out a control that would have worked.
+- **A pin request's outcome is surfaced, never assumed.** Both calls return a boolean, both record to
+  `EventLog`, and a refusal raises a warning. A refused pin and an accepted one look identical from
+  the settings screen, and the innocent reading — that it landed on a home-screen page nobody is
+  looking at — is exactly what a silent failure hides behind. Acceptance is still all we can see:
+  where it lands, and whether the launcher then drops it, is the launcher's business.
+
+The drawer icon and the pinned shortcut are **independent**, and were nearly coupled on the
+assumption that one *was* the other. The pin builds an intent straight at `LaunchSearchActivity`,
+which is enabled by default; the drawer switch toggles the separate `.SearchShortcut` activity-alias.
+A pinned icon therefore works with the drawer icon off, and disabling one alongside the other would
+have been a dead control justified by a fact that isn't true.
+
+**Advanced holds only what a user has any business touching**: Opening apps, Maintenance, then the
+two window settings, then the crash card and (in debug only) the event trace. What was removed is
+worth recording so it isn't rebuilt by accident — the entry-point probes and tester (above), *Compare
+launch paths* (a deliberately slow show, for timing against the widget), and *Start & pre-warm*,
+which the boot receiver and placing a widget both do already, making a manual button a recovery
+action for a state that recovers itself.
+
+`LaunchMethod` is down to `STANDARD` and `LAUNCHER_API`. `NO_TASK_RESET` and `NO_ANIMATION` were
+levers on the widget-relaunch problem, which was settled launcher-side, and an unreachable enum
+branch is worse than a deleted one. Dropping entries is safe because load falls back to `STANDARD` on
+an unknown saved id. What remains is a real choice rather than a diagnostic: `LAUNCHER_API` is the
+only path that opens a work-profile app correctly.
 
 Every screen is on one M3 vocabulary. **Grouping is a container, not a heading and a line** — the
 accent-heading-over-loose-rows idiom the screens started from is a Material 2 / preference-screen
 layout, and nothing uses it now. `SettingsSection`, `SettingsSubSection`, `SettingsCard` and
-`fullBleedRow` were all deleted once the last screen stopped needing them; `SettingsDivider`
-survives on exactly one call site, in `SearchablePicker`, where it separates the "follow device"
-row from the several hundred alternatives and is a real separator rather than a grouping device.
+`fullBleedRow` were all deleted once the last screen stopped needing them. `SettingsDivider` survives
+only where a line is a **real separator** rather than a grouping device: in `SearchablePicker`,
+between the "follow device" row and the several hundred alternatives, and on Advanced between its
+sections — the one screen whose groups are genuinely unrelated to each other rather than facets of a
+single thing. Nowhere else has lines between cards, and that difference is the point.
 
 **First-run setup and the Permissions screen are two composables, not one.** They were the same one,
 which is why opening Permissions from the root list arrived at a screen headed "Set up Gumshoos"
@@ -335,7 +392,11 @@ the sources jar, which is the only place it is written down.
   **Dividers inside a group are a judgement, not a default.** Separate destinations get them — the
   root list, the Search hub — because each row goes somewhere else. One set of related choices does
   not: Matching's four tiers and the Providers list are each a single thing being configured, and a
-  line between every row would cut them into unrelated entries.
+  line between every row would cut them into unrelated entries. The same judgement governs lines
+  *between* groups, which is why only Advanced has them.
+  A divider must also have something under it: on Advanced the one before the event trace sits
+  **inside** the `BuildConfig.DEBUG` branch, or a release build would close on a rule with nothing
+  beneath it, and the crash card gets none at all because it draws nothing in the usual case.
 - `SettingsGroupCard` / `SettingsGroupDivider` — the container itself. Rows inside pass
   `fullBleed = false`, which is the rule above rather than an exception to it.
 - `SettingsActionRow` — a row that *does* something. What every `OutlinedButton(fillMaxWidth())`
@@ -398,6 +459,21 @@ Uninstalled group shipped with a three-line note about the Google app's silently
 points and a row reading "Needs the com.google.ar.lens app" — both were rewritten to "These need an
 app that isn't on this phone" and, for the row, nothing at all. Reasoning belongs in the source
 comment, where it already was. Package names, class names and setting keys never appear on screen.
+
+**Length is the other half of that, and it fails later.** Copy here is written accurate first and
+shortened afterwards, and the shortening keeps removing the same thing: a second sentence explaining
+the mechanism that the first sentence's effect already implied. "Dismisses the search window when
+another app takes over — a notification, or the shade. This also covers the Home gesture." became
+"Closes search when you switch away or swipe home." Both are true; only one gets read. Two rules came
+out of that pass:
+
+- **A group's supporting note is optional and usually wrong.** "Your launcher asks before adding
+  anything, and decides where it goes" was deleted outright — the launcher's own confirmation dialog
+  says it better a second later. Keep a note only for the state the user cannot otherwise discover,
+  which for that group is the launcher that refuses to add anything at all.
+- **A caveat that reads as an excuse goes in the source.** "Some phones only offer their own
+  assistant here, in which case this can't be set" is true and occasionally the real explanation, but
+  the reader's next action — open assistant settings and look — is identical either way.
 
 A related trap in the same row: **don't dim what isn't disabled.** Its mark and label were drawn at
 the 0.38 alpha `ProviderRow` uses for a switched-off control, copied without noticing that the
@@ -500,10 +576,19 @@ attempt. `getWallpaperColors` needs no permission and is what the preview backdr
 `GumshoosApp.onCreate` because the activity, the service and the widget provider can each be first to
 run in the process. Keys are stable and independent of labels, so settings survive renames.
 
-`EventLog` and `CrashLog` write to files that survive process death and surface in Settings →
-Advanced. Both exist because silent failures have repeatedly been indistinguishable from working
-code — `runCatching { startActivity(...) }` around a refused intent looks exactly like success.
-Prefer recording an outcome over swallowing it.
+`EventLog` and `CrashLog` write to files that survive process death. Both exist because silent
+failures have repeatedly been indistinguishable from working code — `runCatching { startActivity(...) }`
+around a refused intent looks exactly like success. Prefer recording an outcome over swallowing it.
+
+**They surface differently, and deliberately.** The crash card is always on Advanced: it draws
+nothing when there is no crash, and someone who can hit Copy and send a trace is worth a great deal
+given ADB is rarely attached. The event trace *viewer* is behind `if (BuildConfig.DEBUG)`, because a
+monospace log dump means nothing to anyone else — which is what `buildConfig = true` in
+`buildFeatures` is for, AGP 8 having stopped generating `BuildConfig` unless asked. **`EventLog`
+still records in a release build**; only the viewer goes away, and the recording is what makes a
+crash report readable when one arrives. Note that with `isMinifyEnabled = false` the gated code and
+its strings are still *in* the release APK — verified in the dex, not assumed. The branch folds away
+the day R8 is turned on.
 
 Two conventions that read as inconsistencies unless you know why:
 
@@ -559,9 +644,14 @@ current timings were derived that way.
 **When only a human eye can see the answer, build the instrument rather than shipping guesses.** Each
 Lens candidate cost a build, a sideload, a tap and a trace read, one candidate per cycle, and four
 were spent that way before anything was learned — because the failure is a component that starts,
-reports success and draws nothing, which no API distinguishes from a launch. The entry point tester
+reports success and draws nothing, which no API distinguishes from a launch. An entry point tester
 turned the remaining ten into one sitting. The tell that it is time to build one: the next step is a
 guess, and the only way to grade it is to look.
+
+**An instrument is allowed to be temporary.** That tester and the probe beside it shipped in Settings
+→ Advanced for exactly as long as they were earning their place, and were deleted when the screen was
+cut back for release. Build the next one freely and delete it the same way — what has to survive is
+the *finding*, which for Lens is `WidgetActionTargets.candidates` and not the tool that produced it.
 
 ## Icon pipeline
 
@@ -598,6 +688,12 @@ is the arrangement the hand-authored ones used. Three things about it are worth 
 
 The converter has a `--tint` option. It accepts any value, including a valid hex, and emits nothing
 — which is why the attribute is written in afterwards.
+
+**The SVG's filename becomes the resource name**, via `basename` in `convert-icons.sh`, so it must be
+a legal Android resource id — lowercase, digits and underscores only. Lucide downloads arrive
+hyphenated (`rotate-ccw.svg`), and a hyphen produces a drawable the build rejects outright. That one
+is loud rather than silent, unlike the rest of this pipeline's failure modes, but rename on the way
+in.
 
 `verify-icons.py` **could not grade an outline icon at all** before this. It rendered the drawable's
 stored white against a source that resolves `currentColor` to black, so all thirteen sat permanently
