@@ -32,13 +32,28 @@ python3 design/verify-icons.py           # needs cairosvg, numpy, pillow
 **`assembleDebug` does not run lint.** Two `NewApi` crashes have shipped because of this. Always run
 `assembleDebug lintDebug testDebugUnitTest` together before claiming a change is good.
 
-**There is no release signing config yet.** `assembleRelease` succeeds and emits
-`app-release-unsigned.apk`, which cannot be sideloaded: no `signingConfigs` block, no keystore
-anywhere in the tree, and `versionCode`/`versionName` are still the template's `1` / `"1.0"`, so a
-second release would not install over a first. `lintVitalRelease` *does* run as part of
-`assembleRelease`, so the `NewApi` class of crash is covered on that path. `isMinifyEnabled = false`
-and `proguard-rules.pro` is untouched template comments — which means **nothing is stripped from a
-release build**, including code behind a false `BuildConfig.DEBUG` branch.
+**Release builds are signed and minified.** `assembleRelease` emits `app-release.apk` — if it ever
+emits `app-release-*unsigned*.apk`, signing silently degraded and the build printed a warning saying
+so at configure time. `lintVitalRelease` runs as part of it, so the `NewApi` class of crash is
+covered on that path too.
+
+Signing reads `app/keystore.properties`, which is **gitignored**; the keystore itself lives outside
+the working tree, at `~/keystores/gumshoos-release.jks`. `keystore.properties.template` is committed
+and documents both, including the `keytool` invocation. A properties file rather than environment
+variables because Android Studio's Build menu does not inherit a shell's exports, so GUI release
+builds would fail in a way that looks like broken config. If the file or the keystore is missing the
+build **degrades to unsigned rather than failing**, which keeps a fresh clone buildable — the
+configure-time warning is what stops that being silent, since an unsigned APK looks identical until
+install refuses it.
+
+`versionCode`/`versionName` are still `1` / `"1.0"` and **nothing bumps them**. A second release will
+not install over a first until that is dealt with.
+
+Debug builds carry `applicationIdSuffix = ".debug"` so a release build can sit on the phone beside a
+test one. This is safe because the manifest's `.SearchShortcut` and `.AssistTrigger` aliases expand
+against `namespace`, not `applicationId`, and both are addressed as
+`ComponentName(context.packageName, <absolute class name>)`. Nothing else hardcodes the app's own id
+— check that before adding anything that does.
 
 `minSdk 31`, `targetSdk 36`, Java 11. **One third-party Gradle dependency** — five instant-answer
 modules and an HTTP client were built without any, using `HttpURLConnection`, `org.json` and a
@@ -586,9 +601,18 @@ given ADB is rarely attached. The event trace *viewer* is behind `if (BuildConfi
 monospace log dump means nothing to anyone else — which is what `buildConfig = true` in
 `buildFeatures` is for, AGP 8 having stopped generating `BuildConfig` unless asked. **`EventLog`
 still records in a release build**; only the viewer goes away, and the recording is what makes a
-crash report readable when one arrives. Note that with `isMinifyEnabled = false` the gated code and
-its strings are still *in* the release APK — verified in the dex, not assumed. The branch folds away
-the day R8 is turned on.
+crash report readable when one arrives. With R8 on, the gate now removes the code rather than merely
+not calling it — the trace's own strings are absent from the release dex, checked rather than
+assumed.
+
+**R8 runs with `-dontobfuscate`, and that is deliberate.** Shrinking is what was wanted: 24MB to
+3.4MB, and dead code genuinely gone. Renaming adds nothing to that and would break the diagnostic
+this app leans on hardest — `mapping.txt` lands in `app/build/outputs/mapping/release/`, which is
+gitignored and destroyed by every clean build, so a trace copied off a phone weeks later would be
+permanently unreadable. If obfuscation is ever re-enabled, archive `mapping.txt` beside every APK
+that gets installed. `isShrinkResources` is off for a related reason, spelled out in
+`proguard-rules.pro`: widget drawables ought to survive it, but if that reasoning is wrong the
+failure is a blank icon rendered in the *launcher's* process where nothing of ours can observe it.
 
 Two conventions that read as inconsistencies unless you know why:
 

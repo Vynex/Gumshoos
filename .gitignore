@@ -13,3 +13,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Release signing. keystore.properties holds the signing password; the *.jks / *.keystore patterns
+# are a backstop in case a keystore is ever copied into the tree by mistake — the real one lives
+# outside it. keystore.properties.template IS committed and is the documentation for both.
+/app/keystore.properties
+*.jks
+*.keystore

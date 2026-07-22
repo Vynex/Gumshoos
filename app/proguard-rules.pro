@@ -1,21 +1,37 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# R8 rules for the release build.
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# The app uses no reflection, no serialization and no dynamic class loading — grepping for
+# Class.forName, getMethod and newInstance returns nothing — so almost nothing here needs a keep
+# rule. Everything reachable is reachable statically, and AGP already generates keeps for the
+# manifest's activities, services, receivers and activity-aliases.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# --- Diagnosability -----------------------------------------------------------------------------
+#
+# CrashLog exists so an unattended failure can be read later: it writes the last crash to a file and
+# Settings shows it with a Copy button, because ADB is rarely attached here. An obfuscated stack
+# trace defeats that entirely, and the mapping needed to undo it is written to
+# app/build/outputs/mapping/release/, which is gitignored and destroyed by every clean build — so a
+# trace copied off a phone weeks later would be permanently unreadable.
+#
+# Shrinking is what was actually wanted from R8: a smaller APK, and dead code genuinely removed
+# rather than merely unreachable, which is what finally strips the debug-gated event trace out of a
+# release build. Renaming contributes nothing to that and costs the one diagnostic this app leans on
+# hardest.
+-dontobfuscate
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Belt and braces. -dontobfuscate already preserves these, but they are what make a trace point at a
+# line rather than only a class, and an explicit rule survives someone re-enabling obfuscation.
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# --- Notes for anyone changing this --------------------------------------------------------------
+#
+# If obfuscation is ever turned back on, archive app/build/outputs/mapping/release/mapping.txt beside
+# every APK that gets installed, or CrashLog's output becomes noise — without it, retrace cannot
+# help.
+#
+# Resource shrinking (isShrinkResources) is deliberately NOT enabled. Widget drawables reach the
+# launcher as rasterised bitmaps rather than resource ids, and are referenced through R.drawable
+# normally, so they ought to survive — but if that reasoning is ever wrong the failure is a widget
+# rendering a blank icon in the launcher's process, where nothing of ours can observe it. That is the
+# exact class of silent failure this project keeps having to instrument its way out of, and it is not
+# worth a few hundred kilobytes.
