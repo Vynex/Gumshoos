@@ -142,6 +142,50 @@ Invoke paths, fastest first:
 `KEYCODE_BACK` into its own `OnBackPressedDispatcher` and observe focus loss. A service-hosted
 window gets none of an Activity's plumbing for free: all four ViewTree owners are set by hand.
 
+### Dismissal, and why the navigation gestures need their own path
+
+An overlay window floats above app windows, so nothing removes it when something else comes forward.
+Losing window focus covers most of that — a notification tap, the shade — and is switchable in
+settings.
+
+**It does not cover the navigation gestures, because on gesture navigation focus never moves.**
+Measured on Android 16: the window keeps focus through the whole swipe, keeps it while Recents
+animates in, and still holds it with Recents settled in front of it. Swiping Home is the same. In a
+four-minute capture, focus was lost exactly once — when the screen turned off. So the card sat on
+top of a screen it no longer belonged to until it was dismissed by hand. An earlier comment in the
+source described this as a signal arriving *late*; it does not arrive.
+
+The one thing the system tells us is `ACTION_CLOSE_SYSTEM_DIALOGS`, whose `reason` extra reads
+`recentapps` for the swipe-up gesture **whether it ends at Recents or at Home**. Android 12
+restricted *sending* it, not receiving. Measured from the finger landing: **256ms** for a flick home,
+**631ms** for a swipe-and-hold into Recents — it tracks the transition, not the touch, so a longer
+gesture reports later. That is visibly late, and it is the floor.
+
+**Everything else was measured and is worse. Do not re-derive these** — each cost a build, a
+sideload and a capture, and the list exists so the next idea can start from the end of it:
+
+| route | result |
+|---|---|
+| window focus, insets, touch, `onTrimMemory`, config change | nothing arrives during the gesture at all |
+| `AccessibilityService` (`notificationTimeout=0`) | first event **45–53ms *later*** than the broadcast |
+| immersive / `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` | accepted and silently ignored; insets never change |
+| `setSystemGestureExclusionRects` | back gesture only; the bottom is `mandatorySystemGestureInsets` |
+| an overlay window covering the gesture strip | receives taps, **never a swipe** |
+
+The last one is the one to know, because it is what everyone suggests — including a Reddit thread
+that appears to describe exactly this working. It doesn't. A strip window gets `DOWN` and `UP`
+**1–2ms apart**, which no finger can do: the events are buffered and replayed *after* the system has
+decided the touch was not a gesture. So such a window is only ever told about touches already ruled
+out, which means the gesture can be neither observed early **nor blocked**, at any size, with any
+flags. An app that appears to block the home swipe is re-asserting itself afterwards, not preventing
+it. The cost of trying is real, too: a strip that takes taps closes the window whenever anything near
+the bottom edge is touched, keyboard included.
+
+The exit stays **animated** on this path. Skipping it — the system is already animating, so ours is
+the only thing still moving — is sound in the abstract and wrong on the phone: cutting the card dead
+reads as a crash, where the animation reads as getting out of the way. It was tried both ways. Watch
+it before changing it.
+
 State resets when the card is **fully hidden**, via a `resetToken` the service bumps after the exit
 animation. Resetting at either end of an animation is visible as a stutter.
 
@@ -608,6 +652,12 @@ the mechanism that the first sentence's effect already implied. "Dismisses the s
 another app takes over — a notification, or the shade. This also covers the Home gesture." became
 "Closes search when you switch away or swipe home." Both are true; only one gets read. Two rules came
 out of that pass:
+
+That row later went further, and the way it was wrong is the more useful lesson: it was titled
+"Close search when focus is lost", which names the *mechanism* — and then the mechanism changed,
+because the navigation gestures stopped going through focus at all. A label written after the
+implementation goes stale when the implementation moves. It reads "Close when you switch away" now,
+which was true before that work and is still true after it. The setting key never changed.
 
 - **A group's supporting note is optional and usually wrong.** "Your launcher asks before adding
   anything, and decides where it goes" was deleted outright — the launcher's own confirmation dialog

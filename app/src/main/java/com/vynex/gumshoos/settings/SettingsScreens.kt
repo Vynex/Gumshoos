@@ -677,8 +677,10 @@ internal fun AdvancedScreen(onBack: () -> Unit) {
 
         SettingsGroup {
             SettingsSwitchRow(
-                title = "Close search when focus is lost",
-                description = "Closes the search window when you switch away or swipe to home.",
+                // "when focus is lost" was the mechanism, and it is no longer even the whole one —
+                // the navigation gestures are caught a different way. The setting key is unchanged.
+                title = "Close when you switch away",
+                description = "Closes search when you go home, open recents, or open another app.",
                 checked = hideOnFocusLoss,
                 onCheckedChange = {
                     hideOnFocusLoss = it

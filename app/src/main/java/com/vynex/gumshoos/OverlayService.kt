@@ -73,6 +73,30 @@ class OverlayService :
         /** How long the entrance takes to settle; focus changes before then are not dismissals. */
         private const val ENTRANCE_SETTLE_MILLIS = TotalEnterMillis.toLong()
 
+        /**
+         * Written out rather than taken from [Intent], where the constant is deprecated — for
+         * *senders*, which we are not. Receiving the system's own is still supported and is the
+         * only way this app learns that a navigation gesture happened.
+         */
+        private const val ACTION_CLOSE_SYSTEM_DIALOGS = "android.intent.action.CLOSE_SYSTEM_DIALOGS"
+
+        /** `PhoneWindowManager.SYSTEM_DIALOG_REASON_KEY`, which is not public. */
+        private const val EXTRA_CLOSE_REASON = "reason"
+
+        /**
+         * The reasons that mean the user asked to leave.
+         *
+         * `recentapps` is what the swipe-up gesture reports, and it reports it whether the gesture
+         * ends at Recents or at Home — both were captured. `homekey` is the Home button's, kept for
+         * three-button navigation, where nothing here has been measured.
+         *
+         * Deliberately not listed: `dream` and `lock`, which arrive alongside the screen turning
+         * off and are already handled by ACTION_SCREEN_OFF; and `assist`, because Gumshoos can be
+         * the assistant, and closing on the broadcast that announces our own launch is a race with
+         * no upside.
+         */
+        private val GESTURE_REASONS = setOf("recentapps", "homekey")
+
         /** Derived from the content's own exit timing so the two can't drift apart. */
         const val EXIT_ANIMATION_MILLIS = TotalExitMillis + 20L
 
@@ -125,15 +149,94 @@ class OverlayService :
     private var hideRunnable: Runnable? = null
 
     /**
-     * Screen-off only. Home and Recents detection was removed deliberately: neither is delivered to
-     * apps as a key event, and the available proxies (ACTION_CLOSE_SYSTEM_DIALOGS, window focus
-     * loss) both arrive late enough that dismissal felt sluggish rather than snappy.
+     * Screen off, and the navigation gestures.
+     *
+     * Window focus used to be the only signal that something else had taken over, and on gesture
+     * navigation it never arrives at all. Measured on Android 16: the overlay keeps window focus
+     * through the whole swipe-up gesture, keeps it while Recents animates in, and still holds it
+     * with Recents settled in front of it — so the card sat on top of a screen it no longer
+     * belonged to until it was dismissed by hand. Swiping Home behaves the same way. Focus loss was
+     * observed exactly once in a long capture, when the screen turned off. This was never the
+     * "sluggish" problem an earlier comment here described; it was no signal at all.
+     *
+     * ACTION_CLOSE_SYSTEM_DIALOGS is what the system does tell us. Android 12 restricted *sending*
+     * it, not receiving, so the system's own still reaches a runtime-registered receiver.
+     *
+     * It is not early, and nothing earlier exists: the window receives no touch, no insets change,
+     * no configuration change and no trim-memory during the gesture, which was watched for rather
+     * than assumed. Measured from the finger landing —
+     *
+     *   flick to Home                256ms
+     *   swipe and hold into Recents  631ms
+     *
+     * — because it tracks the transition rather than the touch, so a longer gesture reports later.
+     * That is late enough to be visible and early enough to matter: the alternative is a card that
+     * never leaves.
+     *
+     * **An AccessibilityService is slower than this, and was measured rather than argued about.**
+     * It is the obvious next idea — it watches the system's windows instead of our own, and the
+     * shell starts animating Recents at +70ms — so it is worth knowing that a probe service with
+     * `notificationTimeout=0` on `typeWindowsChanged|typeWindowStateChanged` got its first event
+     * **53ms after this broadcast on the Recents gesture and 45ms after it going Home**, on the same
+     * two gestures in the same capture. Nothing arrives during the swipe at all: the events land in
+     * a single burst at one timestamp, because that is when the window list is recomputed and
+     * published, which happens after the transition rather than as it starts. So it buys nothing,
+     * for a permission that reads "full control of your device" and, on a sideloaded build, a
+     * restricted-setting unblock as well. Don't rebuild it.
+     *
+     * **Immersive mode does nothing from here either**, and that was tried twice. Asking this
+     * window's `WindowInsetsController` to hide the navigation bars with
+     * `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` — the thing games use, whose gesture-blocking is a
+     * side effect of the bars being hidden rather than a gesture API — is accepted without
+     * complaint and changes nothing: the bars stay put, `onApplyWindowInsets` never fires, and the
+     * gesture behaves identically. The obvious objection to the first run was that this window lacks
+     * `FLAG_LAYOUT_NO_LIMITS` and so was never edge-to-edge, which is a precondition for hiding the
+     * bars — so it was rerun *with* that flag, genuinely edge-to-edge, and the result was identical:
+     * `requested HIDE navigationBars` logged, `onApplyWindowInsets` never fired once. A
+     * service-hosted overlay is simply not granted insets control, and no error says so.
+     * `setSystemGestureExclusionRects` is not an alternative: it reaches only the back gesture at
+     * the left and right edges, and the bottom strip is in `getMandatorySystemGestureInsets`, which
+     * is documented as not overridable.
+     *
+     * **A window covering the gesture strip never sees the swipe, and this is the one to know**,
+     * because it is what everyone suggests and it looks like it ought to work. A second overlay
+     * window over the bottom strip, `FLAG_LAYOUT_NO_LIMITS` so it genuinely covers the navigation
+     * area, receives *taps* there — and never once received a swipe that became a navigation
+     * gesture. Every real gesture in that capture still dismissed through the broadcast above.
+     *
+     * The tell is in the timestamps rather than the behaviour: on the taps it did receive, DOWN and
+     * UP arrived **1–2ms apart**, which no finger can do. The events were buffered and replayed
+     * after the fact. So the system defers the whole stream, decides whether it is a navigation
+     * gesture, and only releases it to the window below if it decided *no*. A window there can
+     * therefore only ever be told about touches that were already ruled out as gestures — which
+     * means the gesture cannot be observed early **or blocked**, at any strip size, with any flags.
+     * That also disposes of the "invisible overlay blocks the home swipe" claim: an app doing that
+     * is re-asserting itself after the gesture, not preventing it.
+     *
+     * The cost of trying was visible too — a strip that swallows taps closes the window whenever
+     * anything is touched near the bottom edge, keyboard included.
      */
-    private val screenOffReceiver = object : BroadcastReceiver() {
+    private val systemUiReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_SCREEN_OFF) {
-                EventLog.record("screen off")
-                hide()
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    EventLog.record("screen off")
+                    hide()
+                }
+
+                ACTION_CLOSE_SYSTEM_DIALOGS -> {
+                    val reason = intent.getStringExtra(EXTRA_CLOSE_REASON)
+                    if (reason !in GESTURE_REASONS) return
+                    if (!GumshoosConfig.hideOnFocusLoss) return
+                    if (SystemClock.uptimeMillis() - shownAt < ENTRANCE_SETTLE_MILLIS) return
+                    EventLog.record("system ui takeover ($reason) -> hide")
+                    // The ordinary animated exit, and that was tried both ways on the phone. The
+                    // argument for skipping it — the system is already animating, so ours would be
+                    // the only thing on screen still moving — is sound in the abstract and wrong in
+                    // practice: cutting the card dead reads as it having crashed out, where the
+                    // animation reads as it getting out of the way. Watch it before changing it.
+                    hide()
+                }
             }
         }
     }
@@ -226,8 +329,12 @@ class OverlayService :
 
         ContextCompat.registerReceiver(
             this,
-            screenOffReceiver,
-            IntentFilter(Intent.ACTION_SCREEN_OFF),
+            systemUiReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(ACTION_CLOSE_SYSTEM_DIALOGS)
+            },
+            // Both are protected system broadcasts, so this cannot be NOT_EXPORTED.
             ContextCompat.RECEIVER_EXPORTED,
         )
 
@@ -337,9 +444,15 @@ class OverlayService :
          * app comes forward — tapping a notification would leave the search card sitting on top of
          * whatever opened. Losing window focus is the signal that something else took over.
          *
-         * It cannot distinguish *what* took over: a notification tap, the shade opening and Home
-         * all look the same from here. The Home gesture reports late, which is why it felt sluggish
-         * before; that is the cost of covering the rest.
+         * It cannot distinguish *what* took over: a notification tap and the shade opening look the
+         * same from here, and that is fine, because the response to both is the same.
+         *
+         * What it does **not** cover is the navigation gestures, and an earlier version of this
+         * comment had that wrong — it claimed Home "reports late". It does not report at all. The
+         * window keeps focus through the whole swipe, keeps it while Recents animates in, and still
+         * holds it once Recents has settled in front of it; the same going Home. That is measured,
+         * on Android 16 with gesture navigation. [systemUiReceiver] is what covers those, and this
+         * is left for everything else — which is most of it.
          *
          * Changes during the entrance are ignored. The window is still settling then, and hiding on
          * one would mean the card slamming shut just as it opened.
@@ -559,7 +672,7 @@ class OverlayService :
     }
 
     override fun onDestroy() {
-        runCatching { unregisterReceiver(screenOffReceiver) }
+        runCatching { unregisterReceiver(systemUiReceiver) }
         runCatching {
             getSystemService(LauncherApps::class.java)?.unregisterCallback(packageCallback)
         }
