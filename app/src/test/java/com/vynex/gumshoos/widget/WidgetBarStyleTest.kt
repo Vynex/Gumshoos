@@ -22,7 +22,8 @@ class WidgetBarStyleTest {
         logo: WidgetBarLogo = WidgetBarLogo.GOOGLE,
         padH: Int = 0,
         padV: Int = 0,
-    ) = WidgetBarStyle(fill, alpha, wireframe, corner, shadow, hint, logo, padH, padV)
+        monochrome: Boolean = false,
+    ) = WidgetBarStyle(fill, alpha, wireframe, corner, shadow, hint, logo, padH, padV, monochrome)
 
     private val white = 0xFFFFFFFF.toInt()
     private val black = 0xFF000000.toInt()
@@ -169,9 +170,16 @@ class WidgetBarStyleTest {
 
     @Test
     fun `the vertical margin cannot squeeze out the bar's own contents`() {
-        // Both margins come out of the bar, and the vertical one comes out of a single row's
-        // height: the 22dp icons overflow the bar before the slider's end if it runs much further.
-        assertTrue(2 * WidgetBarMetrics.MAX_PADDING_V_DP + 22 <= 56)
+        // Both margins come out of the bar, and the vertical one comes out of a single row's height
+        // twice over. Past the point where it stops fitting, the logo overflows the bar it sits in.
+        //
+        // Written out rather than read from resources because neither is reachable from a JVM test:
+        // 56 is the widget's declared minHeight (res/xml/search_widget_info.xml) and 22 is
+        // widget_bar_logo_size, which is the binding one — the action marks are a dp shorter. Moving
+        // either resource without moving these is what this test exists to catch.
+        val cellHeightDp = 56
+        val tallestContentDp = 22
+        assertTrue(2 * WidgetBarMetrics.MAX_PADDING_V_DP + tallestContentDp <= cellHeightDp)
         assertTrue(WidgetBarMetrics.MAX_PADDING_V_DP >= WidgetBarMetrics.SHADOW_EXTENT_V_DP)
     }
 
@@ -221,6 +229,37 @@ class WidgetBarStyleTest {
     fun `a see-through bar assumes an unknown wallpaper and goes light`() {
         assertTrue(WidgetBarMetrics.isLight(WidgetBarMetrics.contentColor(white, style(alpha = 20))))
         assertTrue(WidgetBarMetrics.isLight(WidgetBarMetrics.contentColor(white, style(wireframe = true))))
+    }
+
+    // --- monochrome ------------------------------------------------------------------------------
+
+    @Test
+    fun `off, each icon decides for itself`() {
+        assertTrue(WidgetBarMetrics.tintsToContent(style(), tintable = true))
+        assertTrue(!WidgetBarMetrics.tintsToContent(style(), tintable = false))
+    }
+
+    @Test
+    fun `on, a brand mark is tinted too`() {
+        // The whole point of the setting: tintable is false for every brand mark, so if monochrome
+        // did not override it the toggle would change nothing on a bar carrying only brand icons —
+        // which is the default bar.
+        assertTrue(WidgetBarMetrics.tintsToContent(style(monochrome = true), tintable = false))
+    }
+
+    @Test
+    fun `on, an already-tintable icon is unaffected`() {
+        assertTrue(WidgetBarMetrics.tintsToContent(style(monochrome = true), tintable = true))
+    }
+
+    @Test
+    fun `every shipped bar icon is a brand mark, so monochrome moves all of them`() {
+        // Guards the reasoning above rather than the arithmetic: if a mono glyph is ever added with
+        // tintable = true, the setting still works, but the claim that it changes the whole bar
+        // stops being the reason it exists.
+        val marks = WidgetAction.entries.map { it.tintable } + WidgetBarLogo.GOOGLE.tintable
+        assertTrue(marks.none { it })
+        assertTrue(WidgetBarLogo.MAGNIFIER.tintable)
     }
 
     // --- render size -----------------------------------------------------------------------------

@@ -63,7 +63,11 @@ NAMED_COLOURS = {
     'crimson': '#dc143c', 'transparent': 'none', 'none': 'none',
 }
 
-PATH_TAG = re.compile(r'<path\b[^>]*/?>')
+# Every shape that can still be here, not just <path>. svgo's convertShapeToPath turns most of them
+# into paths before this runs, but it **skips a <rect> carrying rx or ry** — a rounded rectangle is
+# never converted, whatever convertArcs is set to. One reached the drawable carrying no stroke and
+# no fill and so drew nothing: the calendar icon shipped as three floating lines with no box.
+SHAPE_TAG = re.compile(r'<(path|rect|circle|ellipse|line|polygon|polyline)\b[^>]*/?>')
 SVG_TAG = re.compile(r'<svg\b[^>]*>')
 GROUP_TAG = re.compile(r'<g\b[^>]*>')
 
@@ -170,7 +174,7 @@ def normalise_colours(svg_text, warnings):
 
 
 def propagate_root_presentation(svg_text, warnings):
-    """Copy inherited presentation attributes off the root <svg> onto each path.
+    """Copy inherited presentation attributes off the root <svg> onto each shape.
 
     SVG resolves fill and stroke by inheritance; the converter looks only at the path in front of
     it. An outline icon carries all of it on the root — stroke="currentColor", stroke-width="2",
@@ -213,9 +217,10 @@ def propagate_root_presentation(svg_text, warnings):
         for name, value in inherited.items():
             if not re.search(rf'\b{name}="', tag) and not re.search(rf'\b{name}:', tag):
                 additions += f' {name}="{value}"'
-        return tag.replace('<path', f'<path{additions}', 1) if additions else tag
+        shape = match.group(1)
+        return tag.replace(f'<{shape}', f'<{shape}{additions}', 1) if additions else tag
 
-    result = svg_tag.group(0) + PATH_TAG.sub(replace, body)
+    result = svg_tag.group(0) + SHAPE_TAG.sub(replace, body)
 
     tinted = 'currentColor' in result
     if tinted:
@@ -244,7 +249,7 @@ def add_tint(drawable_path):
 
 
 def make_fills_explicit(svg_text, warnings):
-    """Give every path an explicit fill.
+    """Give every shape an explicit fill.
 
     SVG treats a missing fill as black; Android treats a missing fillColor as nothing at all, so
     the shape silently stops being drawn.
@@ -256,10 +261,11 @@ def make_fills_explicit(svg_text, warnings):
         # A path carrying only a stroke is intentionally unfilled — leave it be.
         if re.search(r'\bstroke="(?!none)', tag):
             return tag
-        warnings.append("path had no fill; defaulting to black as SVG does")
-        return tag.replace('<path', '<path fill="#000000"', 1)
+        warnings.append("shape had no fill; defaulting to black as SVG does")
+        shape = match.group(1)
+        return tag.replace(f'<{shape}', f'<{shape} fill="#000000"', 1)
 
-    return PATH_TAG.sub(replace, svg_text)
+    return SHAPE_TAG.sub(replace, svg_text)
 
 
 def numbers(text):

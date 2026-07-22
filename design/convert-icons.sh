@@ -18,9 +18,19 @@ OUT="../app/src/main/res/drawable"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Two sweeps. The top level is one icon per purpose, already named as its resource; weather/ is a
+# set keyed by OpenWeather's condition codes, kept together because they are meaningless apart and
+# are chosen at runtime rather than referenced by name from anywhere.
+#
+# Lucide's filenames are hyphenated and a hyphen is not legal in a resource id — the build rejects
+# it outright, which is at least loud. The prefix is added here rather than by renaming 11 files,
+# so the folder still matches what Lucide hands you.
 shopt -s nullglob
-for svg in "$SRC"/*.svg; do
-  name="$(basename "${svg%.svg}")"
+for svg in "$SRC"/*.svg "$SRC"/weather/*.svg; do
+  case "$svg" in
+    "$SRC"/weather/*) name="ic_weather_$(basename "${svg%.svg}" | tr '-' '_')" ;;
+    *) name="$(basename "${svg%.svg}")" ;;
+  esac
   # svgo first: it flattens shapes to paths and lifts style="" into attributes, which is what
   # prepare-svg.py then needs to see in order to normalise colours and fills.
   npx --yes svgo@latest --config svgo.config.mjs -i "$svg" -o "$TMP/$name.svgo.svg" >/dev/null

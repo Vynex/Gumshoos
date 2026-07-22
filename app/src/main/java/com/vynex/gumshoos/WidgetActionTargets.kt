@@ -2,6 +2,7 @@ package com.vynex.gumshoos
 
 import android.content.Context
 import android.content.Intent
+import android.provider.CalendarContract
 import android.speech.RecognizerIntent
 import androidx.core.net.toUri
 import com.vynex.gumshoos.widget.WidgetAction
@@ -70,7 +71,46 @@ internal object WidgetActionTargets {
         WidgetAction.ASSISTANT -> assistant(context)
         WidgetAction.VOICE -> voice()
         WidgetAction.LENS -> lens(context)
+        WidgetAction.DATE -> date()
+        // Weather has no chain: it falls through to the bar, which opens search.
+        WidgetAction.WEATHER -> emptyList()
     }
+
+    /**
+     * Opening the calendar, and this one is mercifully ordinary.
+     *
+     * Neither rung is a Google entry point of the kind that starts, reports success and draws
+     * nothing — both are documented platform contracts, and a phone with no calendar at all fails
+     * them *loudly* with ActivityNotFoundException rather than silently. So the usual rule about
+     * leading with a launcher intent does not buy anything here, and the more useful rung leads.
+     *
+     * The time URI is what opens the calendar **on today** rather than wherever it was last left,
+     * which is the whole point of tapping a date. CATEGORY_APP_CALENDAR is the platform's own
+     * "whatever the calendar app is" selector and covers anything that ignores the first.
+     */
+    private fun date() = listOf(
+        LaunchCandidate(
+            label = "CalendarContract time URI",
+            note = "Opens the default calendar on today's date",
+            intent = Intent(
+                Intent.ACTION_VIEW,
+                CalendarContract.CONTENT_URI.buildUpon()
+                    .appendPath("time")
+                    .appendPath(System.currentTimeMillis().toString())
+                    .build(),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            inChain = true,
+        ),
+        LaunchCandidate(
+            label = "MAIN / CATEGORY_APP_CALENDAR",
+            note = "The platform's calendar-app selector; opens wherever it was left",
+            intent = Intent.makeMainSelectorActivity(
+                Intent.ACTION_MAIN,
+                Intent.CATEGORY_APP_CALENDAR,
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            inChain = true,
+        ),
+    )
 
     private fun assistant(context: Context) = listOf(
         LaunchCandidate(

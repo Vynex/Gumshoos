@@ -20,3 +20,7 @@ local.properties
 /app/keystore.properties
 *.jks
 *.keystore
+
+# Byproduct of running the icon scripts; nothing here is source.
+__pycache__/
+*.pyc

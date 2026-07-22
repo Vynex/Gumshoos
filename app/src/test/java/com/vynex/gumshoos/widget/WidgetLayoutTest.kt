@@ -80,4 +80,52 @@ class WidgetLayoutTest {
             )
         }
     }
+
+    /**
+     * Every dimen the bar's layout names must also be pushed as a RemoteViews action.
+     *
+     * A launcher reuses the hierarchy it already inflated when the layout id has not changed:
+     * actions are re-applied to it, an XML-only attribute is not. So a dimen edited in one place
+     * takes effect on a newly placed widget and silently not on the ones already on the home
+     * screen — and the first thing anyone does to check is place a new one, which shows the *new*
+     * value and hides the bug. `widget_bar_action_size` did precisely this going from 22dp to 21dp.
+     *
+     * Reads the source rather than the resource so it is checking what a human wrote. Crude on
+     * purpose: it asks only whether the dimen's name appears somewhere in the provider, which is
+     * enough to make someone adding a styling attribute stop and think about where it is applied.
+     */
+    @Test
+    fun `every styled dimen in the bar layout is also pushed at runtime`() {
+        val layout = File(layoutDir(), "widget_search_bar.xml").readText()
+        val provider = providerSource().readText()
+
+        // Structural values that cannot go stale usefully: they never change, and match_parent /
+        // wrap_content are not dimens at all.
+        val exempt = setOf("widget_bar_inset")
+
+        val named = Regex("""@dimen/(\w+)""").findAll(layout)
+            .map { it.groupValues[1] }
+            .toSet() - exempt
+
+        assertTrue("layout names no dimens — did the file move?", named.isNotEmpty())
+        named.forEach { dimen ->
+            assertTrue(
+                "$dimen is set in widget_search_bar.xml but never pushed in SearchWidgetProvider, " +
+                    "so editing it will not reach widgets already placed",
+                provider.contains(dimen),
+            )
+        }
+    }
+
+    private fun providerSource(): File {
+        var dir: File? = File(".").absoluteFile
+        while (dir != null) {
+            val candidate = File(dir, "app/src/main/java/com/vynex/gumshoos/SearchWidgetProvider.kt")
+            if (candidate.isFile) return candidate
+            val here = File(dir, "src/main/java/com/vynex/gumshoos/SearchWidgetProvider.kt")
+            if (here.isFile) return here
+            dir = dir.parentFile
+        }
+        throw AssertionError("could not locate SearchWidgetProvider.kt")
+    }
 }

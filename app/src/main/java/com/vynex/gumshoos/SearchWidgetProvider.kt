@@ -15,9 +15,12 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.DrawableRes
 import androidx.core.content.ContextCompat
+import com.vynex.gumshoos.widget.SlotKind
+import com.vynex.gumshoos.widget.WeatherIcons
 import com.vynex.gumshoos.widget.WidgetAction
 import com.vynex.gumshoos.widget.WidgetBarMetrics
 import com.vynex.gumshoos.widget.WidgetBarRenderer
+import com.vynex.gumshoos.widget.WidgetDateFormat
 import kotlin.math.roundToInt
 
 /**
@@ -61,6 +64,9 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
         appWidgetIds.forEach { id ->
             appWidgetManager.updateAppWidget(id, buildViews(context, appWidgetManager, id))
         }
+        // The widget's updatePeriodMillis is what makes this the weather's heartbeat. It draws
+        // from the cache above either way; this only decides whether that cache moves on.
+        WeatherRepository.refreshIfDue(context)
     }
 
     /**
@@ -129,12 +135,27 @@ abstract class SearchWidgetProviderBase : AppWidgetProvider() {
  *
  * Tint still rides as a separate `setColorStateList` action on the ImageView, so a tintable mark is
  * recoloured from the bitmap's alpha exactly as it was when the source was a resource.
+ *
+ * [scale] shrinks the artwork inside the bitmap without changing the bitmap's size, so the
+ * ImageView's box — and therefore the bar's spacing — is unaffected by an optical correction.
  */
-private fun rasterizeIcon(context: Context, @DrawableRes resId: Int, sizePx: Int): Bitmap {
+private fun rasterizeIcon(
+    context: Context,
+    @DrawableRes resId: Int,
+    sizePx: Int,
+    scale: Float = 1f,
+): Bitmap {
     val size = sizePx.coerceAtLeast(1)
     val drawable = requireNotNull(ContextCompat.getDrawable(context, resId)) {
         "missing drawable $resId"
     }
+    // The generated outline icons carry android:tint="?android:attr/colorControlNormal", a *theme*
+    // attribute — and this resolves it against whatever theme the context happens to have, which
+    // for a widget update is the bare application one. That colour was being baked into the bitmap
+    // and then corrected by the setImageTintList action a moment later, which is the flicker: the
+    // mark appeared in one colour and settled into another. Cleared here so the bitmap carries only
+    // the artwork and our tint is the only colour ever applied to it.
+    drawable.setTintList(null)
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
 
     // Fit the drawable's own aspect ratio, centred, rather than forcing it into the square — Voice
@@ -145,15 +166,35 @@ private fun rasterizeIcon(context: Context, @DrawableRes resId: Int, sizePx: Int
     if (iw <= 0 || ih <= 0) {
         drawable.setBounds(0, 0, size, size)
     } else {
-        val scale = minOf(size.toFloat() / iw, size.toFloat() / ih)
-        val w = (iw * scale).roundToInt()
-        val h = (ih * scale).roundToInt()
+        val fit = minOf(size.toFloat() / iw, size.toFloat() / ih) * scale.coerceAtLeast(0f)
+        val w = (iw * fit).roundToInt()
+        val h = (ih * fit).roundToInt()
         val left = (size - w) / 2
         val top = (size - h) / 2
         drawable.setBounds(left, top, left + w, top + h)
     }
     drawable.draw(Canvas(bitmap))
     return bitmap
+}
+
+/**
+ * A dimen declared in sp, back as the plain number it was written as.
+ *
+ * `getDimension` applies the device's font scale, and `setTextViewTextSize` with COMPLEX_UNIT_SP
+ * applies it again — so handing one to the other doubles the scaling and the readout balloons on a
+ * phone with large text set. Dividing by scaledDensity undoes the first pass.
+ */
+/**
+ * A dp dimen back as the plain number, for the `setViewLayout*` calls that take COMPLEX_UNIT_DIP.
+ */
+private fun dpOf(context: Context, resId: Int): Float =
+    context.resources.getDimension(resId) / context.resources.displayMetrics.density
+
+private fun spOf(context: Context, resId: Int): Float {
+    val metrics = context.resources.displayMetrics
+    @Suppress("DEPRECATION")
+    val scale = if (metrics.scaledDensity > 0f) metrics.scaledDensity else metrics.density
+    return context.resources.getDimension(resId) / scale
 }
 
 private fun refreshProvider(context: Context, provider: SearchWidgetProviderBase, type: Class<*>) {
@@ -202,16 +243,61 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         val edge = ((WidgetBarMetrics.insetHDp(style) + CONTENT_INSET_DP) * density).toInt()
         views.setViewPadding(R.id.widget_content, edge, 0, edge, 0)
 
+        // Every size and margin below is pushed as an action, not left to the layout.
+        //
+        // A launcher reuses the view hierarchy it already inflated whenever the layout id is
+        // unchanged: RemoteViews actions are re-applied to it, but an attribute that exists only in
+        // XML is not. So any dimen edited here would take effect on a freshly placed widget and
+        // silently not on the ones already on the home screen — which is the worst shape a bug can
+        // have, because the first thing anyone does to check is add a new one. widget_bar_action_size
+        // moved 22dp to 21dp and did exactly that.
+        //
+        // The XML is therefore a skeleton: it decides what views exist and nothing about how they
+        // look. Anything added to it that can ever change has to be pushed here too.
+        val hintTextSp = spOf(context, R.dimen.widget_bar_hint_text)
+        val logoDp = dpOf(context, R.dimen.widget_bar_logo_size)
+        val actionDp = dpOf(context, R.dimen.widget_bar_action_size)
+        val gapDp = dpOf(context, R.dimen.widget_bar_gap)
+        val pairGapDp = dpOf(context, R.dimen.widget_bar_pair_gap)
+
+        views.setViewLayoutWidth(R.id.widget_logo, logoDp, TypedValue.COMPLEX_UNIT_DIP)
+        views.setViewLayoutHeight(R.id.widget_logo, logoDp, TypedValue.COMPLEX_UNIT_DIP)
+        views.setTextViewTextSize(R.id.widget_hint, TypedValue.COMPLEX_UNIT_SP, hintTextSp)
+        views.setViewLayoutMargin(
+            R.id.widget_hint, RemoteViews.MARGIN_START, gapDp, TypedValue.COMPLEX_UNIT_DIP,
+        )
+        ACTION_SLOTS.indices.forEach { index ->
+            views.setViewLayoutWidth(ACTION_SLOTS[index], actionDp, TypedValue.COMPLEX_UNIT_DIP)
+            views.setViewLayoutHeight(ACTION_SLOTS[index], actionDp, TypedValue.COMPLEX_UNIT_DIP)
+            intArrayOf(ACTION_SLOTS[index], DATE_SLOTS[index], TEXT_SLOTS[index]).forEach { id ->
+                views.setViewLayoutMargin(
+                    id, RemoteViews.MARGIN_START, gapDp, TypedValue.COMPLEX_UNIT_DIP,
+                )
+            }
+        }
+
         val logoPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_logo_size)
         views.setImageViewBitmap(R.id.widget_logo, rasterizeIcon(context, style.logo.icon, logoPx))
-        // Null, not a colour, for a brand mark: a tint would flatten it to one tone.
+        // Null, not a colour, for a brand mark: a tint would flatten it to one tone — unless
+        // monochrome is on, which is the user asking for exactly that.
         views.setColorStateList(
             R.id.widget_logo,
             "setImageTintList",
-            if (style.logo.tintable) ColorStateList.valueOf(content) else null,
+            if (WidgetBarMetrics.tintsToContent(style, style.logo.tintable)) {
+                ColorStateList.valueOf(content)
+            } else {
+                null
+            },
         )
 
         val actionPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_action_size)
+        // Resolved once rather than per slot: only one slot can be the date, but which one is not
+        // known until the loop, and asking ICU three times for the same answer is waste.
+        val datePattern = WidgetDateFormat.patternFor(context.resources.configuration.locales[0])
+        // Read as a raw sp value rather than getDimension, which would return it already scaled by
+        // the font setting — setTextViewTextSize scales it again, so the readout would grow twice
+        // over for anyone running large text.
+        val slotTextSp = spOf(context, R.dimen.widget_bar_slot_text)
 
         views.setViewVisibility(R.id.widget_hint, if (style.showHint) View.VISIBLE else View.GONE)
         views.setTextColor(R.id.widget_hint, content)
@@ -232,17 +318,93 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
             val slot = ACTION_SLOTS[index]
             if (action == null) {
                 views.setViewVisibility(slot, View.GONE)
+                views.setViewVisibility(DATE_SLOTS[index], View.GONE)
+                views.setViewVisibility(TEXT_SLOTS[index], View.GONE)
                 return@forEachIndexed
             }
-            views.setViewVisibility(slot, View.VISIBLE)
-            views.setImageViewBitmap(slot, rasterizeIcon(context, action.icon, actionPx))
-            views.setColorStateList(
-                slot,
-                "setImageTintList",
-                if (action.tintable) ColorStateList.valueOf(content) else null,
-            )
-            views.setOnClickPendingIntent(slot, WidgetActionActivity.pendingIntent(context, action))
+            // One of the three draws and the other two stay gone. All three are addressed every
+            // time rather than only the one being shown: the launcher keeps whatever it was last
+            // handed, so a slot that changes kind would otherwise leave the previous view behind
+            // and draw two things side by side in one slot.
+            val dateSlot = DATE_SLOTS[index]
+            val textSlot = TEXT_SLOTS[index]
+            // The condition mark, when there is one. This is the one case where two of a slot's
+            // views are shown at once: the ImageView carries the picture and the TextView the
+            // temperature, which is a mark *and* a value rather than a choice between them.
+            val conditionIcon = if (action.kind == SlotKind.TEXT) {
+                WeatherIcons.forCode(WeatherRepository.conditionCode())
+            } else {
+                null
+            }
+            val showIcon = action.kind == SlotKind.ICON || conditionIcon != null
+            views.setViewVisibility(slot, if (showIcon) View.VISIBLE else View.GONE)
+            views.setViewVisibility(dateSlot, if (action.kind == SlotKind.CLOCK) View.VISIBLE else View.GONE)
+            views.setViewVisibility(textSlot, if (action.kind == SlotKind.TEXT) View.VISIBLE else View.GONE)
+
+            val target = when (action.kind) {
+                SlotKind.ICON -> slot
+                SlotKind.CLOCK -> dateSlot
+                SlotKind.TEXT -> textSlot
+            }
+            when (action.kind) {
+                SlotKind.CLOCK -> {
+                    views.setTextColor(dateSlot, content)
+                    views.setTextViewTextSize(dateSlot, TypedValue.COMPLEX_UNIT_SP, slotTextSp)
+                    // Both, because TextClock picks between them on the device's 12/24-hour setting
+                    // and this pattern carries no time for that choice to be about.
+                    views.setCharSequence(dateSlot, "setFormat12Hour", datePattern)
+                    views.setCharSequence(dateSlot, "setFormat24Hour", datePattern)
+                }
+                SlotKind.TEXT -> {
+                    // Tinted to the bar's contrast colour, unlike the brand marks: these are line
+                    // glyphs drawn in currentColor, and a fixed white would vanish on a light bar.
+                    conditionIcon?.let {
+                        views.setImageViewBitmap(slot, rasterizeIcon(context, it, actionPx))
+                        views.setColorStateList(
+                            slot, "setImageTintList", ColorStateList.valueOf(content),
+                        )
+                        // Overrides the standard slot gap set above: this mark is not a slot of its
+                        // own, it is the second half of the one to its left.
+                        views.setViewLayoutMargin(
+                            slot, RemoteViews.MARGIN_START, pairGapDp, TypedValue.COMPLEX_UNIT_DIP,
+                        )
+                    }
+                    views.setTextColor(textSlot, content)
+                    views.setTextViewTextSize(textSlot, TypedValue.COMPLEX_UNIT_SP, slotTextSp)
+                    // Whatever is cached, or the stale mark. Never a blank once it has worked once:
+                    // a slot that empties itself when the network drops moves the whole bar.
+                    views.setTextViewText(
+                        textSlot,
+                        WeatherRepository.displayText() ?: WeatherRepository.STALE_TEXT,
+                    )
+                }
+                SlotKind.ICON -> {
+                    views.setImageViewBitmap(
+                        slot,
+                        rasterizeIcon(context, action.icon, actionPx, action.iconScale),
+                    )
+                    views.setColorStateList(
+                        slot,
+                        "setImageTintList",
+                        if (WidgetBarMetrics.tintsToContent(style, action.tintable)) {
+                            ColorStateList.valueOf(content)
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
+            // Left unset on purpose for a fall-through action: with no handler of its own the
+            // press reaches widget_root, which is the search intent. Setting one to "do nothing"
+            // would swallow the tap instead of passing it on.
+            if (!action.fallsThrough) {
+                views.setOnClickPendingIntent(
+                    target,
+                    WidgetActionActivity.pendingIntent(context, action),
+                )
+            }
         }
+
     }
 
     /**
@@ -281,8 +443,23 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         /** Gap from the bar's own edge to the logo. Mirrors @dimen/widget_bar_inset. */
         private const val CONTENT_INSET_DP = 18
 
+        // Two views per slot, index for index: the ImageView an icon action draws into and the
+        // TextClock a text one does. Kept as parallel arrays rather than pairs because both are
+        // addressed by position from the same loop, and a slot that changes kind has to be told
+        // about *both* halves — the launcher keeps whatever it was last handed.
         private val ACTION_SLOTS = intArrayOf(
             R.id.widget_action_1, R.id.widget_action_2, R.id.widget_action_3,
+            R.id.widget_action_4, R.id.widget_action_5,
+        )
+
+        private val DATE_SLOTS = intArrayOf(
+            R.id.widget_date_1, R.id.widget_date_2, R.id.widget_date_3,
+            R.id.widget_date_4, R.id.widget_date_5,
+        )
+
+        private val TEXT_SLOTS = intArrayOf(
+            R.id.widget_text_1, R.id.widget_text_2, R.id.widget_text_3,
+            R.id.widget_text_4, R.id.widget_text_5,
         )
 
         fun refreshAll(context: Context) {

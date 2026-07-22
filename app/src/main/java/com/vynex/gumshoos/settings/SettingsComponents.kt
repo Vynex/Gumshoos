@@ -75,7 +75,11 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.vynex.gumshoos.EventLog
@@ -383,6 +387,12 @@ internal fun SettingsTextField(
     placeholder: String,
     modifier: Modifier = Modifier,
     supportingText: String? = null,
+    /** Dots instead of characters, for a value that is a secret rather than a name. */
+    masked: Boolean = false,
+    readOnly: Boolean = false,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    /** Fires on the keyboard's action key, for a field whose submit is the return key. */
+    onImeAction: (() -> Unit)? = null,
 ) {
     // A step above the dialog's own SurfaceContainerHigh, or the field has no edge at all.
     val container = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -391,9 +401,21 @@ internal fun SettingsTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
+            readOnly = readOnly,
+            trailingIcon = trailingIcon,
+            visualTransformation = if (masked) {
+                PasswordVisualTransformation()
+            } else {
+                VisualTransformation.None
+            },
             shape = RoundedCornerShape(28.dp),
             placeholder = { Text(placeholder) },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            // Search rather than Done purely for the glyph and the handler below, and only for a
+            // field that has something to submit to.
+            keyboardOptions = KeyboardOptions(
+                imeAction = if (onImeAction != null) ImeAction.Search else ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onSearch = { onImeAction?.invoke() }),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = container,
                 unfocusedContainerColor = container,
@@ -874,7 +896,7 @@ internal fun ProviderRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 4.dp, horizontal = 0.dp)
             // Announced on the row rather than on the grip: the grip is a 24dp target that a
             // screen reader user never sees, and the action belongs to the thing being moved.
             .semantics {
@@ -897,7 +919,7 @@ internal fun ProviderRow(
             painter = painterResource(icon),
             contentDescription = null,
             alpha = if (enabled) 1f else 0.38f,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -914,7 +936,12 @@ internal fun ProviderRow(
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Dimmed with the label rather than left at full strength. A greyed title over
+                    // a normal subtitle reads as a rendering fault, not as a disabled row — and it
+                    // is the subtitle that usually says *why* the row is disabled.
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (enabled) 1f else 0.38f,
+                    ),
                 )
             }
         }
@@ -931,15 +958,14 @@ internal fun ProviderRow(
                 )
             }
         }
-        // No contentDescription: the row already carries the move actions, and announcing a "drag
-        // handle" that assistive input cannot drag would be describing a dead end. The handle
-        // modifier contributes no semantics of its own, so there is nothing here to clear.
-        Icon(
-            painterResource(R.drawable.ic_provider_grip_vertical),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = dragHandle.size(24.dp),
-        )
+
+        when (control) {
+            RowControl.SWITCH ->
+                Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+            RowControl.CHECKBOX ->
+                Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        }
+
         // The two controls are inset differently inside their touch targets, so an equal spacer
         // draws an unequal gap. A Checkbox is a 20dp box plus 2dp of padding centred in the 48dp
         // minimum target, which is 12dp of built-in space on each side; a Switch is a 52dp track,
@@ -953,12 +979,16 @@ internal fun ProviderRow(
                 },
             ),
         )
-        when (control) {
-            RowControl.SWITCH ->
-                Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
-            RowControl.CHECKBOX ->
-                Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
-        }
+
+        // No contentDescription: the row already carries the move actions, and announcing a "drag
+        // handle" that assistive input cannot drag would be describing a dead end. The handle
+        // modifier contributes no semantics of its own, so there is nothing here to clear.
+        Icon(
+            painterResource(R.drawable.ic_provider_grip_vertical),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = dragHandle.size(24.dp),
+        )
     }
 }
 
@@ -1082,10 +1112,16 @@ internal fun SettingsRadioRow(
      * vanish into a dark settings background.
      */
     tintIcon: Boolean = false,
+    /**
+     * Carries layout the call site owns, as [ProviderRow]'s does — a `weight` when two of these
+     * share a Row, for a pair of short options that read better side by side than stacked. The
+     * row still fills whatever it is given, so passing nothing changes nothing.
+     */
+    modifier: Modifier = Modifier,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = modifier
             .clickable(onClick = onClick)
             .fillMaxWidth()
             .padding(horizontal = SettingsInset, vertical = 10.dp),

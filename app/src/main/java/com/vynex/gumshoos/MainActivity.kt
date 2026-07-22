@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshAllWidgets(this)
+        WeatherRepository.refreshIfDue(this)
     }
 
     private fun readRequest(intent: Intent?) {
@@ -76,10 +77,16 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_MANAGE_APP_KEY = "manage_app_key"
 
-        /** Opens settings on Manage apps, scrolled to and highlighting one launcher activity. */
-        fun manageAppsIntent(context: Context, componentKey: String): Intent =
+        /**
+         * Opens settings at its root. NEW_TASK because the callers are the overlay's window and
+         * the service behind it, neither of which is an activity.
+         */
+        fun settingsIntent(context: Context): Intent =
             Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(EXTRA_MANAGE_APP_KEY, componentKey)
+
+        /** Opens settings on Manage apps, scrolled to and highlighting one launcher activity. */
+        fun manageAppsIntent(context: Context, componentKey: String): Intent =
+            settingsIntent(context).putExtra(EXTRA_MANAGE_APP_KEY, componentKey)
     }
 }

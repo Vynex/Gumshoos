@@ -309,14 +309,6 @@ object SearchProviders {
             .onFailure { EventLog.record("no browser handled ${provider.id}") }
     }
 
-    /** Opens the store itself rather than a search, for the empty-query case. */
-    fun openPlayStore(context: Context) {
-        val app = viewIntent("market://search?q=&c=apps")
-        val web = viewIntent("https://play.google.com/store/apps")
-        runCatching { context.startActivity(app) }
-            .recoverCatching { context.startActivity(web) }
-    }
-
     private fun viewIntent(uri: String) =
         Intent(Intent.ACTION_VIEW, uri.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }

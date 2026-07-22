@@ -1,1 +1,14 @@
-<svg xmlns:xlink="http://www.w3.org/1999/xlink" class="Gdd5U" focusable="false" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect fill="none" height="192" width="192"/><g><circle fill="#34A853" cx="144.07" cy="144" r="16"/><circle fill="#4285F4" cx="96.07" cy="104" r="24"/><path fill="#EA4335" d="M24,135.2c0,18.11,14.69,32.8,32.8,32.8H96v-16l-40.1-0.1c-8.8,0-15.9-8.19-15.9-17.9v-18H24V135.2z"/><path fill="#FBBC05" d="M168,72.8c0-18.11-14.69-32.8-32.8-32.8H116l20,16c8.8,0,16,8.29,16,18v30h16V72.8z"/><path fill="#4285F4" d="M112,24l-32,0L68,40H56.8C38.69,40,24,54.69,24,72.8V92h16V74c0-9.71,7.2-18,16-18h80L112,24z"/></g></svg>
+<!--
+  Cropped from Google's 192x192 export, whose artwork occupies only the middle 144x144 — a 12.5%
+  transparent margin per side, plus a <rect fill="none"> spacer holding the canvas open.
+
+  That margin is not free padding: the widget bar fits this into a fixed box with fitCenter, so the
+  mark drew at 75% of the size of Gemini and the mic beside it, which both ink their full canvas.
+  The geometry is unchanged — every absolute coordinate is shifted by -24 and the relative ones left
+  alone, verified by rendering both and comparing the trimmed ink (RMSE 2e-5, antialiasing only).
+
+  Don't reinstate the margin to make the icon smaller. Lens is drawn a little under its box on
+  purpose — it is the squarest of the three marks and reads large beside them — but that lives in
+  WidgetAction.iconScale, where it is visible as a decision rather than hidden in a canvas.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144"><g><circle fill="#34A853" cx="120.07" cy="120" r="16"/><circle fill="#4285F4" cx="72.07" cy="80" r="24"/><path fill="#EA4335" d="M0,111.2c0,18.11,14.69,32.8,32.8,32.8H72v-16l-40.1-0.1c-8.8,0-15.9-8.19-15.9-17.9v-18H0V111.2z"/><path fill="#FBBC05" d="M144,48.8c0-18.11-14.69-32.8-32.8-32.8H92l20,16c8.8,0,16,8.29,16,18v30h16V48.8z"/><path fill="#4285F4" d="M88,0l-32,0L44,16H32.8C14.69,16,0,30.69,0,48.8V68h16V50c0-9.71,7.2-18,16-18h80L88,0z"/></g></svg>

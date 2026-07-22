@@ -239,6 +239,7 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
                         dragHandle = Modifier.draggableHandle(),
                         onConfigure = { configuring = provider.id }
                             .takeIf { provider.canUseBrowser },
+                        control = RowControl.CHECKBOX,
                     )
                 }
             }

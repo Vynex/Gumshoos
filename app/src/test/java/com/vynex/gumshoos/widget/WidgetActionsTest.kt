@@ -35,8 +35,9 @@ class WidgetActionsTest {
 
     @Test
     fun `the enum never outgrows the layout`() {
-        // RemoteViews cannot add views, so the slots are fixed in XML. A fourth action without a
-        // fourth slot would be dropped at render time with nothing to say so.
+        // RemoteViews cannot add views, so the slots are fixed in XML. An action past the last slot
+        // would be dropped at render time with nothing to say so. Equality is the interesting case:
+        // every action can be placed at once, so the order is a choice rather than a queue.
         assertTrue(
             "add a slot to widget_search_bar.xml before adding an action",
             WidgetAction.entries.size <= WidgetAction.SLOT_COUNT,
@@ -50,6 +51,71 @@ class WidgetActionsTest {
         WidgetAction.entries.forEach { action ->
             assertTrue("${action.id} would be flattened by a tint", !action.tintable)
         }
+    }
+
+    @Test
+    fun `a text action is an ordinary slot action`() {
+        // Every slot holds all three views and shows one, so kind changes what a slot draws and
+        // nothing about where it can be. If this stopped being true the text actions would quietly
+        // lose the ability to be dragged, which is the whole point of the trio.
+        assertEquals(SlotKind.CLOCK, WidgetAction.DATE.kind)
+        assertEquals(SlotKind.TEXT, WidgetAction.WEATHER.kind)
+        assertTrue(WidgetAction.entries.containsAll(listOf(WidgetAction.DATE, WidgetAction.WEATHER)))
+    }
+
+    @Test
+    fun `only the date self-updates, and that is why it is a clock`() {
+        // The distinction that matters: a CLOCK keeps itself current, a TEXT cannot and needs a
+        // staleness policy behind it. Weather being marked CLOCK would leave it frozen on whatever
+        // was last pushed with nothing to say so.
+        assertEquals(
+            listOf(WidgetAction.DATE),
+            WidgetAction.entries.filter { it.kind == SlotKind.CLOCK },
+        )
+    }
+
+    @Test
+    fun `a text action is never given icon treatment`() {
+        // Both would be applied to an ImageView this action never reaches, so a non-default here
+        // would be a value with nowhere to land — and a reader would reasonably believe it did
+        // something.
+        assertTrue(!WidgetAction.DATE.tintable)
+        assertEquals(1f, WidgetAction.DATE.iconScale, 0.0001f)
+    }
+
+    @Test
+    fun `date can be ordered to any position, like any other action`() {
+        // The point of pairing an ImageView with a TextClock in every slot. If the date could only
+        // sit at one end this would be the test that failed.
+        assertEquals("date", ordered(listOf("date")).first())
+        assertEquals("date", ordered(listOf("voice", "date")) [1])
+        assertEquals("date", ordered(listOf("voice", "assistant", "lens", "date"))[3])
+    }
+
+    @Test
+    fun `date is off out of the box`() {
+        // Widget actions store the enabled set precisely so a new one cannot shove itself into a
+        // bar someone has already arranged.
+        assertTrue(WidgetAction.DATE.id !in WidgetAction.DEFAULT_ENABLED)
+    }
+
+    @Test
+    fun `an optical trim never grows a mark past its box`() {
+        // Above 1 the artwork would be drawn larger than the bitmap it goes into and clipped at the
+        // edge. Every mark inks its full canvas now, so there is no transparent margin left to
+        // absorb the overflow — which there was, exactly once, before Lens was cropped.
+        WidgetAction.entries.forEach {
+            assertTrue("${it.id} scales past its box", it.iconScale in 0.5f..1f)
+        }
+    }
+
+    @Test
+    fun `only Lens is trimmed, and the rest are left alone`() {
+        // Pins the intent rather than the number: a trim is a per-mark judgement about shape, so a
+        // second one appearing should be a deliberate edit here and not a drifted default.
+        assertEquals(1f, WidgetAction.ASSISTANT.iconScale, 0.0001f)
+        assertEquals(1f, WidgetAction.VOICE.iconScale, 0.0001f)
+        assertTrue(WidgetAction.LENS.iconScale < 1f)
     }
 
     @Test
@@ -102,36 +168,42 @@ class WidgetActionsTest {
         SearchProviders.inConfiguredOrder(WidgetAction.entries.toList(), order, WidgetAction::id)
             .map { it.id }
 
+    private val slotIds = WidgetAction.entries.map { it.id }
+
     @Test
     fun `no configured order means declaration order`() {
-        assertEquals(WidgetAction.entries.map { it.id }, ordered(emptyList()))
+        assertEquals(slotIds, ordered(emptyList()))
     }
 
     @Test
     fun `a configured order is applied`() {
-        assertEquals(listOf("lens", "voice", "assistant"), ordered(listOf("lens", "voice", "assistant")))
+        // Unlisted ids keep declaration order at the end, so date and weather trail in that order.
+        assertEquals(
+            listOf("lens", "voice", "assistant", "date", "weather"),
+            ordered(listOf("lens", "voice", "assistant")),
+        )
     }
 
     @Test
     fun `an action missing from the order sorts to the end`() {
         // Same rule as the search providers: an action added in a later version lands at the end of
         // an order saved before it existed, rather than being dropped for not being listed.
-        assertEquals(listOf("voice", "assistant", "lens"), ordered(listOf("voice", "assistant")))
+        assertEquals(
+            listOf("voice", "assistant", "lens", "date", "weather"),
+            ordered(listOf("voice", "assistant")),
+        )
     }
 
     @Test
     fun `an order naming an action that no longer exists is ignored`() {
         // Ids come out of saved preferences, so the list can name something a later build dropped.
         // It must not disturb the actions that remain.
-        assertEquals(
-            WidgetAction.entries.map { it.id },
-            ordered(listOf("gone") + WidgetAction.entries.map { it.id }),
-        )
+        assertEquals(slotIds, ordered(listOf("gone") + slotIds))
     }
 
     @Test
     fun `reordering an action list preserves every entry`() {
-        val ids = WidgetAction.entries.map { it.id }
+        val ids = slotIds
         val from = ids.indexOf("voice")
         val moved = SearchProviders.reorderVisible(ids, ids, from, from - 1)
         assertEquals(ids.toSet(), moved.toSet())

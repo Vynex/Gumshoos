@@ -16,6 +16,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Optional: without it the contacts section simply doesn't appear. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!--
+      Coarse only, and never fine: this decides which city's weather the bar shows, which a
+      network-grade fix answers exactly as well as GPS would. Optional in every sense — refused, the
+      weather action still works from a typed place name, and nothing else in the app reads it.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!--
       Required to trigger the system uninstall dialog when targeting API 28+. Without it the intent
       is simply refused. Normal permission, granted at install, and it only lets us *ask* — the

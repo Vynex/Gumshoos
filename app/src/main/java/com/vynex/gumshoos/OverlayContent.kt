@@ -846,8 +846,8 @@ private fun SearchPanel(
             onQueryChange = onQueryChange,
             focusRequester = focusRequester,
             onSubmit = submit,
-            onPlayStore = {
-                SearchProviders.openPlayStore(context)
+            onSettings = {
+                context.startActivity(MainActivity.settingsIntent(context))
                 onDismiss()
             },
             onClear = { onQueryChange("") },
@@ -1506,7 +1506,7 @@ private fun SearchHeader(
     onQueryChange: (String) -> Unit,
     focusRequester: FocusRequester,
     onSubmit: () -> Unit,
-    onPlayStore: () -> Unit,
+    onSettings: () -> Unit,
     onClear: () -> Unit,
 ) {
     // Around the header rather than the field, because the interceptor is a composition local and
@@ -1563,16 +1563,15 @@ private fun SearchHeader(
         )
 
         Spacer(Modifier.width(12.dp))
-        // Dual purpose: with no query there is nothing to clear, so it opens the store instead of
-        // sitting there dimmed and inert. Once you type, clearing is by far the more useful action,
-        // and the "Search using" row below covers handing the query off to the store.
+        // Dual purpose: with no query there is nothing to clear, so it opens settings instead of
+        // sitting there dimmed and inert. Once you type, clearing is by far the more useful action.
         val hasQuery = query.isNotBlank()
         val actionModifier = Modifier
             .size(22.dp)
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
-            ) { if (hasQuery) onClear() else onPlayStore() }
+            ) { if (hasQuery) onClear() else onSettings() }
 
         if (hasQuery) {
             Icon(
@@ -1582,10 +1581,10 @@ private fun SearchHeader(
                 modifier = actionModifier,
             )
         } else {
-            // Untinted, so the store's own colours show through.
-            Image(
-                painter = painterResource(SearchProviders.playStore.icon),
-                contentDescription = "Open the Play Store",
+            Icon(
+                painter = painterResource(R.drawable.ic_provider_settings_2),
+                contentDescription = "Open settings",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = actionModifier,
             )
         }

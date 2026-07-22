@@ -1,8 +1,12 @@
 // svgo runs here for exactly two jobs, and nothing else.
 //
-//   1. convertShapeToPath — svg2vectordrawable only understands <path>. Any <circle>, <rect>,
-//      <ellipse>, <polygon> or <line> is dropped silently, so artwork disappears with no error.
-//      convertArcs is off by default and is what covers <circle> and <ellipse>.
+//   1. convertShapeToPath — svg2vectordrawable is unreliable on anything but <path>. convertArcs is
+//      off by default and is what covers <circle> and <ellipse>.
+//
+//      It does NOT cover a <rect> with rx or ry: svgo skips rounded rectangles outright, whatever
+//      convertArcs is set to, so one reaches the converter as a <rect>. That is why prepare-svg.py
+//      propagates onto every shape rather than only onto <path> — the calendar icon shipped with
+//      its box missing before it did.
 //   2. convertStyleToAttrs — lifts style="" into attributes, which is what prepare-svg.py then
 //      needs to see in order to normalise colours and fills.
 //

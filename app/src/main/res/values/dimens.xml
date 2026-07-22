@@ -15,7 +15,40 @@
     -->
     <dimen name="widget_bar_inset">18dp</dimen>
     <dimen name="widget_bar_gap">12dp</dimen>
+    <!--
+      Between the temperature and its condition mark, which are one reading rather than two slots.
+      The 12dp above is what separates *different* actions, and at that width the mark read as its
+      own thing sitting next to the number instead of belonging to it.
+
+      Applied only as a runtime action — the layout gives every slot view the standard gap, and this
+      overrides it for the one view that is sharing a slot rather than occupying its own.
+    -->
+    <dimen name="widget_bar_pair_gap">6dp</dimen>
     <dimen name="widget_bar_logo_size">22dp</dimen>
-    <dimen name="widget_bar_action_size">22dp</dimen>
+    <!--
+      A dp under the logo, deliberately: the three action marks sit together and read heavy at the
+      logo's size.
+
+      Every action mark inks its whole canvas, so this is the size they are actually drawn at, less
+      whatever optical trim WidgetAction.iconScale applies. Lens did not always: it shipped with a
+      12.5% transparent margin from Google's export, so fitCenter gave it 16.5dp here while Gemini
+      and the mic got the full 22dp, and the three looked mismatched however this number was set.
+      Cropping the viewBox in design/icons/ic_provider_lens.svg is what fixed it. Measure a new mark
+      the same way before adding it — a margin of its own comes off this size silently, and this is
+      the one thing that cannot be corrected from here.
+    -->
+    <dimen name="widget_bar_action_size">21dp</dimen>
+    <!--
+      The date and weather readouts, and the same size as the hint beside them.
+
+      Pushed at runtime by setTextViewTextSize, and that is not belt and braces. A launcher
+      reuses the view hierarchy it already inflated when the layout id is unchanged — RemoteViews
+      actions are re-applied, but an attribute that lives only in XML is not, so editing this number
+      alone leaves every already-placed widget at the old size until the launcher happens to
+      re-inflate. The same class of staleness as the drawable ids, and the same remedy: make it an
+      action rather than something the launcher has to have noticed.
+    -->
+    <dimen name="widget_bar_slot_text">14sp</dimen>
+    <dimen name="widget_bar_hint_text">16sp</dimen>
 
 </resources>

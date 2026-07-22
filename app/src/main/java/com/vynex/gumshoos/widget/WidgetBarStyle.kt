@@ -31,6 +31,13 @@ data class WidgetBarStyle(
      */
     val paddingHDp: Int = 0,
     val paddingVDp: Int = 0,
+    /**
+     * Draw every icon in [WidgetBarMetrics.contentColor], brand marks included.
+     *
+     * Read through [WidgetBarMetrics.tintsToContent] rather than directly — the rule it overrides
+     * is per-icon, so the two have to be resolved together in one place.
+     */
+    val monochrome: Boolean = false,
 )
 
 /**
@@ -85,12 +92,14 @@ object WidgetBarMetrics {
     /**
      * Bounds for the padding sliders, in dp.
      *
-     * The vertical one is the tighter of the two because it fights the bar's own contents: the
-     * margin comes out of the bar's height, and past roughly this much the 22dp logo and action
-     * icons are taller than the bar they sit in on a single-row cell.
+     * The vertical one is the tighter of the two because it fights the bar's own contents: it is
+     * taken off a single row's height at both ends, and the 22dp logo — the tallest thing in the
+     * bar, a dp above the action marks — still has to fit in what is left. Against the widget's
+     * declared 56dp minHeight that puts the hard ceiling at 17dp, so this stops one short of it
+     * rather than at exactly none. `WidgetBarStyleTest` holds the arithmetic.
      */
     const val MAX_PADDING_H_DP = 32
-    const val MAX_PADDING_V_DP = 12
+    const val MAX_PADDING_V_DP = 16
 
     /**
      * The drop shadow, transcribed from a CSS box-shadow:
@@ -235,6 +244,21 @@ object WidgetBarMetrics {
             argb(0xFF, 0xFF, 0xFF, 0xFF)
         }
     }
+
+    /**
+     * Whether an icon is painted in [contentColor] instead of its own colours.
+     *
+     * One predicate for the widget and the settings preview both, so the two cannot disagree about
+     * what monochrome means — they read the same [tintable] flags off the same enums, and a rule
+     * written out twice is a rule that drifts.
+     *
+     * [tintable] is the icon's own claim, and it is false for every brand mark: flattening the
+     * Google G or the four-colour mic to one tone is normally damage. Monochrome is the user asking
+     * for precisely that, for the whole bar at once, so it wins — but only as an override, never by
+     * replacing the per-icon rule, which still decides everything when monochrome is off.
+     */
+    fun tintsToContent(style: WidgetBarStyle, tintable: Boolean): Boolean =
+        style.monochrome || tintable
 
     /** Perceived brightness, weighted for how the eye actually responds to each channel. */
     fun luminance(@ColorInt color: Int): Float =

@@ -20,10 +20,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.dimensionResource
@@ -35,14 +37,20 @@ import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchWidgetProvider
+import com.vynex.gumshoos.WeatherRepository
 import com.vynex.gumshoos.WidgetActionTargets
+import com.vynex.gumshoos.widget.WeatherIcons
 import com.vynex.gumshoos.widget.WidgetAction
+import com.vynex.gumshoos.widget.SlotKind
 import com.vynex.gumshoos.widget.WidgetBarFill
 import com.vynex.gumshoos.widget.WidgetBarLogo
 import com.vynex.gumshoos.widget.WidgetBarMetrics
 import com.vynex.gumshoos.widget.WidgetBarRenderer
 import com.vynex.gumshoos.widget.WidgetBarStyle
+import com.vynex.gumshoos.widget.WidgetDateFormat
 import sh.calvin.reorderable.ReorderableColumn
+import java.text.SimpleDateFormat
+import java.util.Date
 import kotlin.math.roundToInt
 
 /** Fallback preview height, used when no bar is placed yet to measure. */
@@ -127,6 +135,12 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 description = "A short drop shadow. This also slightly reduces the widget size.",
                 checked = style.shadow,
                 onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
+            )
+            SettingsSwitchRow(
+                title = "Monochrome",
+                description = "Draws every icon in one colour instead of its own.",
+                checked = style.monochrome,
+                onCheckedChange = { GumshoosConfig.setWidgetBarMonochrome(context, it); push() },
             )
         }
 
@@ -235,6 +249,7 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
     val density = LocalDensity.current.density
     val inset = dimensionResource(R.dimen.widget_bar_inset)
     val gap = dimensionResource(R.dimen.widget_bar_gap)
+    val locale = LocalConfiguration.current.locales[0]
     val logoSize = dimensionResource(R.dimen.widget_bar_logo_size)
     val actionSize = dimensionResource(R.dimen.widget_bar_action_size)
 
@@ -305,7 +320,11 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
             Image(
                 painter = painterResource(style.logo.icon),
                 contentDescription = null,
-                colorFilter = if (style.logo.tintable) ColorFilter.tint(content) else null,
+                colorFilter = if (WidgetBarMetrics.tintsToContent(style, style.logo.tintable)) {
+                    ColorFilter.tint(content)
+                } else {
+                    null
+                },
                 modifier = Modifier.size(logoSize),
             )
             if (style.showHint) {
@@ -317,14 +336,56 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
                 )
             }
             Spacer(Modifier.weight(1f))
+            // Walked in order, drawing whichever half of the slot the action there needs — the same
+            // decision `decorate` makes per slot, so the date lands wherever it was dragged to
+            // rather than always at the end.
             actions.take(WidgetAction.SLOT_COUNT).forEach { action ->
                 Spacer(Modifier.width(gap))
-                Image(
-                    painter = painterResource(action.icon),
-                    contentDescription = null,
-                    colorFilter = if (action.tintable) ColorFilter.tint(content) else null,
-                    modifier = Modifier.size(actionSize),
-                )
+                if (action.kind == SlotKind.TEXT) {
+                    // Temperature then mark, matching the layout's order — the widget shows both,
+                    // and a preview that drew only the text was the reason this looked different
+                    // on the home screen from how it looked here.
+                    Text(
+                        text = WeatherRepository.displayText() ?: WeatherRepository.STALE_TEXT,
+                        color = content,
+                        fontSize = 14.sp,
+                    )
+                    WeatherIcons.forCode(WeatherRepository.conditionCode())?.let { mark ->
+                        // The tighter pair gap, not the slot gap — same override the widget makes.
+                        Spacer(Modifier.width(dimensionResource(R.dimen.widget_bar_pair_gap)))
+                        Image(
+                            painter = painterResource(mark),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(content),
+                            modifier = Modifier.size(actionSize),
+                        )
+                    }
+                } else if (action.kind == SlotKind.CLOCK) {
+                    // Formatted once here rather than ticking: this is a still of the bar, and the
+                    // real one keeps itself current through its TextClock. Same pattern source, so
+                    // the two agree about where the locale puts the day.
+                    Text(
+                        text = remember(locale) {
+                            SimpleDateFormat(WidgetDateFormat.patternFor(locale), locale)
+                                .format(Date())
+                        },
+                        color = content,
+                        fontSize = 14.sp,
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(action.icon),
+                        contentDescription = null,
+                        colorFilter = if (WidgetBarMetrics.tintsToContent(style, action.tintable)) {
+                            ColorFilter.tint(content)
+                        } else {
+                            null
+                        },
+                        // scale, not a smaller size: the widget shrinks the artwork inside a box
+                        // that stays put, so scaling the box would move the bar's spacing with it.
+                        modifier = Modifier.size(actionSize).scale(action.iconScale),
+                    )
+                }
             }
         }
     }
@@ -359,6 +420,20 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
     //
     // Both the drag and the two accessibility actions land here. When they didn't, "move down" past
     // an uninstalled neighbour swapped with a row that isn't on screen and appeared to do nothing.
+    var weatherOpen by remember { mutableStateOf(false) }
+    if (weatherOpen) {
+        WeatherSettingsDialog(
+            onDismiss = { refetch ->
+                weatherOpen = false
+                // Only when a key or a place actually moved. Switching Celsius to Fahrenheit
+                // reports false and costs no request at all — the cached reading already answers
+                // it, and the redraw below is what makes the change visible.
+                if (refetch) WeatherRepository.refreshIfDue(context)
+                onChanged()
+            },
+        )
+    }
+
     fun settle(from: Int, to: Int) {
         GumshoosConfig.setWidgetBarActionOrder(
             context,
@@ -383,14 +458,23 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
             // scope `draggableHandle` lives in; the row cannot reach it from the column lambda.
             ReorderableItem {
                 val checked = action.id in GumshoosConfig.widgetBarActions
+                // Weather cannot be switched on without a key: with none, every fetch returns a
+                // 401 and the slot would sit on a dash forever with nothing saying why. The gear
+                // is where the key goes, so the row still leads somewhere useful while disabled.
+                val needsKey = action == WidgetAction.WEATHER && !WeatherRepository.isConfigured()
                 ProviderRow(
                     label = action.label,
                     icon = action.icon,
                     description = action.description,
                     checked = checked,
-                    // Room runs out at SLOT_COUNT, so the rows that would not fit say so by going
-                    // flat rather than accepting a tap that silently does nothing.
-                    enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
+                    // Both gates are one-way: they stop a row being switched **on**, never off.
+                    // A checked row is therefore always live, or an action that became invalid
+                    // after being enabled — weather whose key was cleared, or a slot count that
+                    // shrank — would be stuck on with the control that turns it off greyed out.
+                    // Room runs out at SLOT_COUNT, and weather with no key can only ever draw a
+                    // dash; the rows that would not fit say so by going flat rather than accepting
+                    // a tap that silently does nothing.
+                    enabled = checked || (!needsKey && enabledCount < WidgetAction.SLOT_COUNT),
                     canMoveUp = index > 0,
                     canMoveDown = index < installed.lastIndex,
                     onCheckedChange = {
@@ -404,9 +488,15 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
                         .padding(horizontal = SettingsInset),
                     control = RowControl.CHECKBOX,
                     dragHandle = Modifier.draggableHandle(),
+                    onConfigure = if (action == WidgetAction.WEATHER) {
+                        { weatherOpen = true }
+                    } else {
+                        null
+                    },
                 )
             }
         }
+
     }
 
     // A group of its own rather than a quieter heading inside the one above. These are not further

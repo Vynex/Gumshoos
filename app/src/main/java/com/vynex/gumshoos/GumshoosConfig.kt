@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.MeasurementSystem
+import com.vynex.gumshoos.widget.WeatherUnit
 import com.vynex.gumshoos.widget.WidgetAction
 import com.vynex.gumshoos.widget.WidgetBarFill
 import com.vynex.gumshoos.widget.WidgetBarLogo
@@ -47,6 +48,13 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_WIREFRAME = "widget_bar_wireframe"
     private const val KEY_WIDGET_BAR_CORNER = "widget_bar_corner"
     private const val KEY_WIDGET_BAR_SHADOW = "widget_bar_shadow"
+    private const val KEY_WIDGET_BAR_MONOCHROME = "widget_bar_monochrome"
+    private const val KEY_WEATHER_API_KEY = "weather_api_key"
+    private const val KEY_WEATHER_UNIT = "weather_unit"
+    private const val KEY_WEATHER_PLACE = "weather_place"
+    private const val KEY_WEATHER_PLACES = "weather_places"
+    private const val KEY_WEATHER_LAT = "weather_lat"
+    private const val KEY_WEATHER_LON = "weather_lon"
     private const val KEY_WIDGET_BAR_SHOW_HINT = "widget_bar_show_hint"
     private const val KEY_WIDGET_BAR_LOGO = "widget_bar_logo"
     private const val KEY_WIDGET_BAR_ACTIONS = "widget_bar_actions_enabled"
@@ -356,6 +364,62 @@ object GumshoosConfig {
         private set
 
     /**
+     * Draw every icon on the bar in the contrast colour, brand marks included.
+     *
+     * Off by default: the per-icon [WidgetBarLogo.tintable] rule exists because flattening a brand
+     * mark is normally wrong, and this is the deliberate exception rather than the starting point.
+     */
+    var widgetBarMonochrome by mutableStateOf(false)
+        private set
+
+    /**
+     * OpenWeather key, blank until the user pastes one in.
+     *
+     * Plain SharedPreferences, not encrypted. That is a real statement rather than an oversight: on
+     * a sideloaded personal app the prefs file is already only readable by this app and by root, so
+     * EncryptedSharedPreferences would add a dependency and a keystore round trip to protect a
+     * free-tier weather key from an attacker who by then has everything else too.
+     */
+    var weatherApiKey by mutableStateOf("")
+        private set
+
+    /** Display only. The request always asks for metric; conversion happens at draw time. */
+    var weatherUnit by mutableStateOf(WeatherUnit.CELSIUS)
+        private set
+
+    /**
+     * Typed place name, or blank for "wherever the phone is".
+     *
+     * Blank is the *default* and a real choice rather than an unset value, exactly as
+     * [preferredBrowser]'s null is: it means follow the device, which is what someone who travels
+     * wants, and it needs no geocoding call at all.
+     */
+    var weatherPlace by mutableStateOf("")
+        private set
+
+    /**
+     * Places used before, offered in the dropdown under "current location".
+     *
+     * A comma-joined string rather than a StringSet, for the reason every ordered list here is:
+     * SharedPreferences sets have no order, and most-recent-first is the whole value of this one.
+     */
+    var weatherPlaces by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /**
+     * The picked place's coordinates, resolved once when it was chosen.
+     *
+     * Stored beside the label rather than looked up each refresh: a place does not move, so
+     * geocoding on every fetch would double the request count for an unchanging answer — and would
+     * make the weather stop working the moment the geocoder had a bad day.
+     */
+    var weatherLat by mutableStateOf(Double.NaN)
+        private set
+
+    var weatherLon by mutableStateOf(Double.NaN)
+        private set
+
+    /**
      * Gap between the bar and its cell, in dp.
      *
      * Horizontal defaults to nothing so the bar spans the full cell; vertical to a small inset,
@@ -400,6 +464,7 @@ object GumshoosConfig {
             logo = widgetBarLogo,
             paddingHDp = widgetBarPaddingH,
             paddingVDp = widgetBarPaddingV,
+            monochrome = widgetBarMonochrome,
         )
 
     fun setWidgetBarPaddingH(context: Context, dp: Int) {
@@ -449,6 +514,60 @@ object GumshoosConfig {
         prefs(context).edit().putBoolean(KEY_WIDGET_BAR_SHADOW, enabled).apply()
     }
 
+    fun setWeatherApiKey(context: Context, key: String) {
+        weatherApiKey = key.trim()
+        prefs(context).edit().putString(KEY_WEATHER_API_KEY, weatherApiKey).apply()
+    }
+
+    fun setWeatherUnit(context: Context, unit: WeatherUnit) {
+        weatherUnit = unit
+        prefs(context).edit().putString(KEY_WEATHER_UNIT, unit.id).apply()
+    }
+
+    /** Clears the place entirely, which is what "current location" means. */
+    fun clearWeatherPlace(context: Context) {
+        weatherPlace = ""
+        weatherLat = Double.NaN
+        weatherLon = Double.NaN
+        prefs(context).edit()
+            .putString(KEY_WEATHER_PLACE, "")
+            .remove(KEY_WEATHER_LAT)
+            .remove(KEY_WEATHER_LON)
+            .apply()
+    }
+
+    fun setWeatherPlace(context: Context, place: String, lat: Double, lon: Double) {
+        weatherLat = lat
+        weatherLon = lon
+        prefs(context).edit()
+            .putFloat(KEY_WEATHER_LAT, lat.toFloat())
+            .putFloat(KEY_WEATHER_LON, lon.toFloat())
+            .apply()
+        setWeatherPlace(context, place)
+    }
+
+    private fun setWeatherPlace(context: Context, place: String) {
+        weatherPlace = place.trim()
+        // Remembered so it can be picked again without retyping. Most recent first, and blank —
+        // "current location" — is never in the list: it is the dropdown's fixed first row.
+        if (weatherPlace.isNotBlank()) {
+            weatherPlaces = (listOf(weatherPlace) + weatherPlaces.filter { it != weatherPlace })
+                .take(MAX_WEATHER_PLACES)
+        }
+        prefs(context).edit()
+            .putString(KEY_WEATHER_PLACE, weatherPlace)
+            .putString(KEY_WEATHER_PLACES, weatherPlaces.joinToString(","))
+            .apply()
+    }
+
+    /** Enough to pick from, few enough that the dropdown never needs scrolling. */
+    private const val MAX_WEATHER_PLACES = 5
+
+    fun setWidgetBarMonochrome(context: Context, enabled: Boolean) {
+        widgetBarMonochrome = enabled
+        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_MONOCHROME, enabled).apply()
+    }
+
     fun setWidgetBarShowHint(context: Context, show: Boolean) {
         widgetBarShowHint = show
         prefs(context).edit().putBoolean(KEY_WIDGET_BAR_SHOW_HINT, show).apply()
@@ -478,6 +597,7 @@ object GumshoosConfig {
             remove(KEY_WIDGET_BAR_WIREFRAME)
             remove(KEY_WIDGET_BAR_CORNER)
             remove(KEY_WIDGET_BAR_SHADOW)
+            remove(KEY_WIDGET_BAR_MONOCHROME)
             remove(KEY_WIDGET_BAR_SHOW_HINT)
             remove(KEY_WIDGET_BAR_LOGO)
             remove(KEY_WIDGET_BAR_ACTIONS)
@@ -831,6 +951,14 @@ object GumshoosConfig {
         widgetBarWireframe = p.getBoolean(KEY_WIDGET_BAR_WIREFRAME, false)
         widgetBarCorner = p.getInt(KEY_WIDGET_BAR_CORNER, 100).coerceIn(0, 100)
         widgetBarShadow = p.getBoolean(KEY_WIDGET_BAR_SHADOW, true)
+        widgetBarMonochrome = p.getBoolean(KEY_WIDGET_BAR_MONOCHROME, false)
+        weatherApiKey = p.getString(KEY_WEATHER_API_KEY, "").orEmpty()
+        weatherUnit = WeatherUnit.fromId(p.getString(KEY_WEATHER_UNIT, null))
+        weatherPlace = p.getString(KEY_WEATHER_PLACE, "").orEmpty()
+        weatherPlaces = p.getString(KEY_WEATHER_PLACES, "").orEmpty()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        weatherLat = p.getFloat(KEY_WEATHER_LAT, Float.NaN).toDouble()
+        weatherLon = p.getFloat(KEY_WEATHER_LON, Float.NaN).toDouble()
         widgetBarShowHint = p.getBoolean(KEY_WIDGET_BAR_SHOW_HINT, false)
         widgetBarLogo = WidgetBarLogo.fromId(p.getString(KEY_WIDGET_BAR_LOGO, null))
             ?: WidgetBarLogo.GOOGLE

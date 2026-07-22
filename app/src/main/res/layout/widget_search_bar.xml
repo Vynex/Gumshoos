@@ -7,8 +7,9 @@
   what the launcher's widget picker shows, and what a placed widget looks like for the instant
   before the first update lands; the bitmap replaces it immediately after.
 
-  Action slots are fixed at three because RemoteViews cannot add views. WidgetAction.SLOT_COUNT
-  mirrors this number and a unit test holds the two together.
+  Action slots are fixed at five because RemoteViews cannot add views. WidgetAction.SLOT_COUNT
+  mirrors this number and a unit test holds the two together — four so that every action can be on
+  at once, rather than one of them being permanently unreachable.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -46,7 +47,7 @@
             android:layout_marginStart="@dimen/widget_bar_gap"
             android:text="@string/widget_search_hint"
             android:textColor="#99FFFFFF"
-            android:textSize="16sp" />
+            android:textSize="@dimen/widget_bar_hint_text" />
 
         <!--
           A weighted spacer of its own, rather than weighting the hint. Weighting the hint would let
@@ -67,12 +68,74 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
+        <!--
+          Each slot is a TextClock, a TextView and an ImageView, and exactly one of the three is
+          ever visible. RemoteViews cannot reorder or add views, so the only way any action can be
+          dragged to any position is for every position to be able to draw every kind. A GONE view
+          costs no width, so a trio reads as a single slot.
+
+          TextClock is not interchangeable with the TextView beside it. A widget does not redraw
+          itself, so a plain view shows whatever it was last handed until something pushes more:
+          fine for weather, which owns a staleness policy and a refresh, and wrong for a date, which
+          would sit on yesterday. TextClock re-evaluates its own format on a ticker — once a minute
+          with no seconds in the pattern — registers for TIME_CHANGED and TIMEZONE_CHANGED itself,
+          and stops ticking off screen via onVisibilityAggregated. Read out of the android-36
+          sources rather than assumed.
+
+          Both TextClock format attributes are set because it picks between them on the device's
+          12/24-hour setting, and this pattern carries no time for that choice to be about. They are
+          replaced at runtime with a locale-appropriate pattern; these are for layout preview only.
+        -->
+        <TextClock
+            android:id="@+id/widget_date_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:format12Hour="d MMMM"
+            android:format24Hour="d MMMM"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_text_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
         <ImageView
             android:id="@+id/widget_action_1"
             android:layout_width="@dimen/widget_bar_action_size"
             android:layout_height="@dimen/widget_bar_action_size"
             android:layout_marginStart="@dimen/widget_bar_gap"
             android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <TextClock
+            android:id="@+id/widget_date_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:format12Hour="d MMMM"
+            android:format24Hour="d MMMM"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_text_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
             android:visibility="gone" />
 
         <ImageView
@@ -83,8 +146,90 @@
             android:contentDescription="@null"
             android:visibility="gone" />
 
+        <TextClock
+            android:id="@+id/widget_date_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:format12Hour="d MMMM"
+            android:format24Hour="d MMMM"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_text_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
         <ImageView
             android:id="@+id/widget_action_3"
+            android:layout_width="@dimen/widget_bar_action_size"
+            android:layout_height="@dimen/widget_bar_action_size"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <TextClock
+            android:id="@+id/widget_date_4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:format12Hour="d MMMM"
+            android:format24Hour="d MMMM"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_text_4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_action_4"
+            android:layout_width="@dimen/widget_bar_action_size"
+            android:layout_height="@dimen/widget_bar_action_size"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <TextClock
+            android:id="@+id/widget_date_5"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:format12Hour="d MMMM"
+            android:format24Hour="d MMMM"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_text_5"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_bar_slot_text"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_action_5"
             android:layout_width="@dimen/widget_bar_action_size"
             android:layout_height="@dimen/widget_bar_action_size"
             android:layout_marginStart="@dimen/widget_bar_gap"
