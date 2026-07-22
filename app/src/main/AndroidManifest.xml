@@ -114,6 +114,12 @@
         </intent>
     </queries>
 
+    <!--
+      No android:roundIcon, deliberately. It was introduced in API 25 for launchers that wanted a
+      circular icon; from API 26 an adaptive icon is masked by the launcher to whatever shape it
+      likes, so at minSdk 31 the attribute can never be reached. Pointing it at a round asset we
+      no longer ship would be a broken reference, and generating one would be dead weight.
+    -->
     <application
         android:name=".GumshoosApp"
         android:allowBackup="true"
@@ -121,7 +127,6 @@
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Gumshoos">
 

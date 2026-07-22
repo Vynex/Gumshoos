@@ -18,7 +18,7 @@ architectural decision below follows from it.
 ./gradlew lintDebug                     # see warning below
 ./gradlew testDebugUnitTest             # JVM unit tests
 ./gradlew installDebug                  # requires a connected device
-./gradlew assembleRelease               # unsigned, see below
+./gradlew assembleRelease               # signed + R8, see below
 
 # a single class, or a single method
 ./gradlew testDebugUnitTest --tests "com.vynex.gumshoos.AppMatcherTest"
@@ -46,8 +46,7 @@ build **degrades to unsigned rather than failing**, which keeps a fresh clone bu
 configure-time warning is what stops that being silent, since an unsigned APK looks identical until
 install refuses it.
 
-`versionCode`/`versionName` are still `1` / `"1.0"` and **nothing bumps them**. A second release will
-not install over a first until that is dealt with.
+`versionCode`/`versionName` are handled by the user.
 
 Debug builds carry `applicationIdSuffix = ".debug"` so a release build can sit on the phone beside a
 test one. This is safe because the manifest's `.SearchShortcut` and `.AssistTrigger` aliases expand
