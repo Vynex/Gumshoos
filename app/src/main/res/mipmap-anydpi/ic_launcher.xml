@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  The monochrome layer points at the foreground drawable rather than an asset of its own. It shipped
+  as a separate file that was a byte-for-byte copy of the foreground, which lint reported as
+  IconDuplicates at all five densities.
+
+  Reusing it is not a shortcut here: the foreground is a flat silhouette — one colour across 96.7% of
+  its opaque pixels, the remainder anti-aliasing within a step of it — and the system tints this
+  layer through its alpha. A dedicated asset could only reproduce the same shape.
+
+  That stops being true the moment the artwork gains internal colour carrying meaning, because
+  tinting flattens the whole thing to a silhouette. Draw a real monochrome asset then.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

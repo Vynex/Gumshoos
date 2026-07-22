@@ -32,6 +32,12 @@ python3 design/verify-icons.py           # needs cairosvg, numpy, pillow
 **`assembleDebug` does not run lint.** Two `NewApi` crashes have shipped because of this. Always run
 `assembleDebug lintDebug testDebugUnitTest` together before claiming a change is good.
 
+**Renaming a resource *directory* needs a `clean`.** Incremental resource merging does not notice it:
+renaming `mipmap-anydpi-v26` to `mipmap-anydpi` while also editing the file inside left the adaptive
+icon out of the APK entirely, with a green build and no warning — every density silently fell back to
+the legacy `ic_launcher.png`. Caught only by listing the APK's contents. A build succeeding says
+nothing about a renamed resource folder having been picked up.
+
 **Release builds are signed and minified.** `assembleRelease` emits `app-release.apk` — if it ever
 emits `app-release-*unsigned*.apk`, signing silently degraded and the build printed a warning saying
 so at configure time. `lintVitalRelease` runs as part of it, so the `NewApi` class of crash is
