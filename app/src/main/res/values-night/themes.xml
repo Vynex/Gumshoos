@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      The dark half of `Theme.Gumshoos`. See the reasoning in `values/themes.xml`; only the parent
+      and the window colour differ, and the parent matters far less than the colour, since nothing
+      in this app reads a text or background attribute off the theme.
+
+      `Theme.Gumshoos.Invisible` is deliberately not repeated here. It is transparent by
+      construction, so it has nothing to vary by night mode, and a copy would be a second place to
+      forget to change.
+    -->
+    <style name="Theme.Gumshoos" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/system_neutral2_900</item>
+    </style>
+</resources>

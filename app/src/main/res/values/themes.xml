@@ -1,7 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Gumshoos" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      The window behind the Compose content, and the only part of this theme that is ever seen: the
+      app is pure Compose, so nothing reads a text or background attribute off it.
+
+      It has a night variant, which it needs and did not have. The parent is a *Light* theme, so the
+      window was white on every device whatever the phone's dark mode said — visible as a white
+      flash on cold launch, before Compose has drawn, and anywhere the content stopped covering.
+      There is no `Theme.Material.DayNight` in the platform to inherit from (only DeviceDefault has
+      one), so the two variants are written out.
+
+      `windowBackground` is set to a dynamic system colour rather than a fixed grey, so it tracks
+      the wallpaper the way the app's own scheme does: `GumshoosTheme` is always the dynamic scheme,
+      and a hardcoded near-black under a wallpaper-tinted app is the same mismatch in a subtler
+      form. These are the neutral-variant shades because that is the family Compose derives
+      `colorScheme.background` from.
+
+      The match is close rather than exact. Compose uses neutral-variant tone 98 / tone 6, and
+      neither is a resource — it computes them by setting luminance on `system_neutral2_600`. The
+      nearest resources are tone 99 and tone 10. API 34+ does expose the exact colour as
+      `system_background_light` / `system_background_dark`, which is what Compose itself switches to
+      there, but a four-tone difference in near-black shown for one frame at launch does not earn
+      two more resource directories.
+    -->
+    <style name="Theme.Gumshoos" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/system_neutral2_10</item>
+    </style>
 <!--    <style name="Theme.Gumshoos" parent="android:Theme.Material.Light.NoActionBar">-->
 <!--        <item name="android:windowShowWallpaper">true</item>-->
 <!--        <item name="android:windowBackground">@android:color/transparent</item>-->

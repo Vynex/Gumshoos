@@ -287,8 +287,7 @@ internal fun WebSuggestionsScreen(onBack: () -> Unit) {
 
     SettingsScaffold(title = "Web suggestions", onBack = onBack) {
         SettingsNote(
-            "Completions for what you're typing, from a search engine, shown under the results. " +
-                "Tapping one searches for it.",
+            "Search engine completions for what you're typing, shown under the results.",
         )
 
         // The note is the point of the screen, not a caveat: this is the only feature here that
