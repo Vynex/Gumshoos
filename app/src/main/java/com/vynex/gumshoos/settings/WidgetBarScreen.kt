@@ -1,7 +1,6 @@
 package com.vynex.gumshoos.settings
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,11 +31,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Context
-import android.content.Intent
-import android.widget.Toast
-import androidx.core.net.toUri
-import com.vynex.gumshoos.EventLog
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
@@ -423,73 +416,11 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
             title = "Uninstalled",
             note = "These need an app that isn't on this phone.",
         ) {
-            missing.forEach { MissingActionRow(it) }
+            missing.forEach { action ->
+                action.requiredPackage?.let {
+                    MissingAppRow(label = action.label, icon = action.icon, packageName = it)
+                }
+            }
         }
     }
-}
-
-/**
- * An action whose app isn't installed: the mark, the name, and a way to get it.
- *
- * No checkbox and no arrows. Both would be controls over something that cannot appear in the bar,
- * and a disabled control reads as "not now" when the honest message is "not without the app".
- *
- * Nothing here is dimmed. The row isn't a switched-off setting, it is an app you don't have — and
- * greying the name says "unavailable to you" where the row's whole purpose is to offer it. The
- * package name is deliberately absent for the same reason: it explains nothing to anyone who
- * wouldn't already know.
- */
-@Composable
-private fun MissingActionRow(action: WidgetAction) {
-    val context = LocalContext.current
-    val packageName = action.requiredPackage ?: return
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            // No clip of its own: it sits inside a group card now, which is already clipped, and a
-            // second rounded shape inside that one showed as a ripple with the wrong corners.
-            .clickable { openStorePage(context, packageName) }
-            .fillMaxWidth()
-            .padding(horizontal = SettingsInset, vertical = 8.dp),
-    ) {
-        Image(
-            painter = painterResource(action.icon),
-            contentDescription = null,
-            modifier = Modifier.size(28.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            action.label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = { openStorePage(context, packageName) }) { Text("Install") }
-    }
-}
-
-/**
- * Opens the Play listing, falling back to the web page.
- *
- * `market://` is in the manifest's `<queries>`, so it resolves where Play is present; the https form
- * covers a phone without it and lands in a browser. Both are recorded, because a listing that has
- * been withdrawn will open and show "item not found" — which looks from here exactly like a listing
- * that worked.
- */
-private fun openStorePage(context: Context, packageName: String) {
-    val market = Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri())
-    val web = Intent(
-        Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri(),
-    )
-    listOf(market, web).forEach { intent ->
-        val started = runCatching {
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.isSuccess
-        if (started) {
-            EventLog.record("store page $packageName -> ${intent.data?.scheme}")
-            return
-        }
-    }
-    EventLog.record("store page $packageName -> nothing handled it")
-    Toast.makeText(context, "No app store on this phone", Toast.LENGTH_SHORT).show()
 }

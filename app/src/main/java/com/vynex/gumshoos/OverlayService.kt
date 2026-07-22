@@ -529,7 +529,9 @@ class OverlayService :
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Gumshoos is ready")
+            // Read off the app name rather than written out, so a debug build's ongoing
+            // notification says which build it belongs to. Both can run at once.
+            .setContentTitle("${getString(R.string.app_name)} is ready")
             .setContentText("Search window kept warm")
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setContentIntent(pendingIntent)

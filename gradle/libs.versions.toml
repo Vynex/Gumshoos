@@ -10,6 +10,7 @@ lifecycle = "2.9.2"
 activityCompose = "1.8.0"
 composeBom = "2026.06.01"
 reorderable = "3.1.0"
+json = "20260719"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,6 +36,13 @@ androidx-material-icons-core = { group = "androidx.compose.material", name = "ma
 # it brings ~24 org.jetbrains.compose.* alias modules — those redirect to the androidx artifacts the
 # BOM already pins and move no version of anything, checked against the resolved graph.
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
+# Test classpath only, never in the APK. org.json ships in the Android framework, so on a JVM unit
+# test it resolves to the stubbed android.jar and every method throws "Stub!" — which a parser that
+# catches its own exceptions turns into an empty result rather than a failure, so the tests pass
+# vacuously and prove nothing. This puts a real implementation of the *same* API under the test, so
+# what runs is the shipping code path rather than a reimplementation of it. The alternative was
+# hand-rolling a JSON reader, string escapes included, to make an undocumented endpoint testable.
+json = { group = "org.json", name = "json", version.ref = "json" }
 androidx-lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-service", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 

@@ -291,12 +291,6 @@ object ContactsRepository {
         }.getOrNull()
     }
 
-    /** The chooser rather than an app: framework-owned, and never what we want to draw. */
-    private fun ResolveInfo.isResolver(): Boolean {
-        val info = activityInfo ?: return true
-        return info.packageName == "android" || info.name.orEmpty().contains("ResolverActivity")
-    }
-
     /** Opens the contact in the People app. */
     fun openContact(context: Context, entry: ContactEntry) {
         val uri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, entry.id)
@@ -341,4 +335,17 @@ object ContactsRepository {
 
         withContext(Dispatchers.Main) { actionIcons = icons }
     }
+}
+
+/**
+ * The chooser rather than an app: framework-owned, and never what we want to draw.
+ *
+ * Top level and internal because two pickers need it — the contact actions above and the browser
+ * list in [BrowserApps]. A second copy elsewhere would be the same rule written twice and drifting:
+ * the null branch and the "android" package check are both load-bearing, and neither is obvious
+ * from the name.
+ */
+internal fun ResolveInfo.isResolver(): Boolean {
+    val info = activityInfo ?: return true
+    return info.packageName == "android" || info.name.orEmpty().contains("ResolverActivity")
 }

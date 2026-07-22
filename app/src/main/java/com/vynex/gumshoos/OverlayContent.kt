@@ -1,5 +1,6 @@
 package com.vynex.gumshoos
 
+import android.view.inputmethod.EditorInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
@@ -81,7 +82,10 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -105,6 +109,7 @@ import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.ui.theme.GumshoosTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -212,6 +217,15 @@ private val ContactsHeaderHeight =
 private val ContactsSectionMaxHeight =
     ContactsHeaderHeight + (ContactRowHeight * MaxContactRows) + 10.dp
 
+// Web suggestions, shown only once the engine has answered — see WebSuggestions. The header block
+// matches Contacts and "Search using" so the three read as one family of sections.
+private val SuggestionRowHeight = 40.dp
+private val SuggestionIconSize = 16.dp
+private val SuggestionsHeaderHeight = ContactsHeaderHeight
+
+private val SuggestionsSectionMaxHeight =
+    SuggestionsHeaderHeight + (SuggestionRowHeight * WebSuggestions.MAX_RESULTS) + 10.dp
+
 private val SearchUsingHeight =
     DividerHeight + ProviderRowTopSpacing + ProviderLabelHeight +
         ProviderLabelGap + ProviderIconSize + ProviderRowBottomSpacing
@@ -238,7 +252,8 @@ private val CardExpandedHeight: Dp
  */
 private val PanelMaxHeight: Dp
     get() = HeaderHeight + TabRowHeight + DividerHeight + GridContentHeight +
-        AnswerSectionHeight + ContactsSectionMaxHeight + SearchUsingHeight
+        AnswerSectionHeight + ContactsSectionMaxHeight + SuggestionsSectionMaxHeight +
+        SearchUsingHeight
 
 /** The collapsed state is exactly the header — the search bar the animation starts from. */
 private val CardCollapsedHeight = HeaderHeight
@@ -520,6 +535,27 @@ fun OverlayContent(
         LaunchedEffect(resetToken) {
             query = ""
             pagerState.scrollToPage(SearchTab.FREQUENT.ordinal)
+            WebSuggestions.clear()
+        }
+
+        // The one network call on an interactive path in this app, and the only place a section's
+        // contents cannot be derived in this composition — an engine answers when it answers.
+        //
+        // The debounce is the effect's own cancellation: re-keying on the query cancels the delay
+        // still pending, so a request is only ever sent from the last keystroke of a burst. What is
+        // read back is still derived, in this composition, from WebSuggestions' state.
+        val suggestQuery = query.trim()
+        val suggestEnabled = GumshoosConfig.webSuggestionsEnabled
+        val suggestSource = GumshoosConfig.webSuggestionSource
+        LaunchedEffect(suggestQuery, suggestEnabled, suggestSource, interactive) {
+            if (!interactive || !WebSuggestions.shouldFetch(suggestQuery, suggestEnabled)) {
+                // Covers deleting back below the floor and switching the feature off mid-query, both
+                // of which must take the section with them rather than leaving the last answer up.
+                WebSuggestions.clear()
+                return@LaunchedEffect
+            }
+            delay(WebSuggestions.DEBOUNCE_MILLIS)
+            WebSuggestions.refresh(suggestSource, suggestQuery)
         }
 
         // Searched once here and passed down, rather than computed in both places: these are the
@@ -603,8 +639,25 @@ fun OverlayContent(
             label = "contactsHeight",
         )
 
+        // Held until replaced rather than cleared as the query changes: matching the rows against
+        // the live query folded the section away on every keystroke past the first answer and
+        // unfolded it again a moment later. Three rows becoming three other rows is now a text swap
+        // at an unchanged height. What empties the section is the effect below, and only when there
+        // is no query these rows could belong to.
+        val suggestions =
+            if (GumshoosConfig.webSuggestionsEnabled) WebSuggestions.results else emptyList()
+        val suggestionsHeight = sectionHeight(
+            target = if (suggestions.isEmpty()) {
+                0.dp
+            } else {
+                SuggestionsHeaderHeight + (SuggestionRowHeight * suggestions.size) + 10.dp
+            },
+            animate = animate,
+            label = "suggestionsHeight",
+        )
+
         val heightDelta =
-            providerRowHeight + answerHeight + contactsHeight -
+            providerRowHeight + answerHeight + contactsHeight + suggestionsHeight -
                 (TabRowHeight - tabHeight) - gridCollapse
 
         // No scrim: the reference leaves the wallpaper at full brightness.
@@ -695,9 +748,11 @@ fun OverlayContent(
                     appResults = appResults,
                     answer = answer,
                     matchedContacts = matchedContacts,
+                    suggestions = suggestions,
                     tabHeight = tabHeight,
                     providerRowHeight = providerRowHeight,
                     contactsHeight = contactsHeight,
+                    suggestionsHeight = suggestionsHeight,
                     answerHeight = answerHeight,
                     gridSectionHeight = gridSectionHeight,
                 )
@@ -723,9 +778,11 @@ private fun SearchPanel(
     appResults: List<AppEntry>,
     answer: Answer?,
     matchedContacts: List<ContactEntry>,
+    suggestions: List<String>,
     tabHeight: Dp,
     providerRowHeight: Dp,
     contactsHeight: Dp,
+    suggestionsHeight: Dp,
     answerHeight: Dp,
     gridSectionHeight: Dp,
     resetToken: Int,
@@ -909,6 +966,24 @@ private fun SearchPanel(
                 },
                 onOpen = { contact ->
                     ContactsRepository.openContact(context, contact)
+                    onDismiss()
+                },
+            )
+        }
+
+        Box(
+            Modifier
+                .height(suggestionsHeight)
+                .clipToBounds(),
+        ) {
+            SuggestionsSection(
+                suggestions = suggestions,
+                onPick = { suggestion ->
+                    // Searched with the engine that suggested it. Handing a Google completion to
+                    // whatever sits first in "Search using" would answer a different question from
+                    // the one the row appeared to be asking.
+                    WebSuggestions.searchProviderFor(GumshoosConfig.webSuggestionSource)
+                        ?.let { SearchProviders.search(context, it, suggestion) }
                     onDismiss()
                 },
             )
@@ -1224,6 +1299,57 @@ private fun ContactsSection(
     }
 }
 
+/**
+ * Live completions, under the results and above "Search using".
+ *
+ * Header block copied from Contacts rather than invented, so the two sections and the provider row
+ * read as one family. No highlighting of the typed prefix: a completion is not a match against a
+ * label the way an app or a contact is, and emboldening the part the engine echoed back would be
+ * claiming a relevance nothing here computed.
+ */
+@Composable
+private fun SuggestionsSection(suggestions: List<String>, onPick: (String) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(Modifier.height(14.dp))
+        Text(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            text = "Web suggestions",
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            letterSpacing = 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        suggestions.forEach { suggestion ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(SuggestionRowHeight)
+                    .clickable { onPick(suggestion) }
+                    .padding(horizontal = 16.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_provider_up_right),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(SuggestionIconSize),
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    text = suggestion,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ContactRow(
     contact: ContactEntry,
@@ -1383,6 +1509,10 @@ private fun SearchHeader(
     onPlayStore: () -> Unit,
     onClear: () -> Unit,
 ) {
+    // Around the header rather than the field, because the interceptor is a composition local and
+    // the content lambda is not a RowScope — wrapping the field alone would cost it its weight().
+    // The header holds the window's only text field either way, so the reach is the same.
+    IncognitoKeyboard(enabled = GumshoosConfig.incognitoKeyboard) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -1460,6 +1590,45 @@ private fun SearchHeader(
             )
         }
     }
+    }
+}
+
+/**
+ * Asks the keyboard not to learn from what is typed inside [content].
+ *
+ * `IME_FLAG_NO_PERSONALIZED_LEARNING` is the platform's only mechanism for this, and **Compose has
+ * no public route to it**: `KeyboardOptions` carries an `ImeOptions` with no such field,
+ * `PlatformImeOptions` holds nothing but a `privateImeOptions` string, and
+ * `TextInputServiceAndroid.update` is what writes `EditorInfo.imeOptions`. That was read out of the
+ * 1.11.4 artifact rather than assumed — the docs describe neither the gap nor this way round it.
+ *
+ * So the input-method request is intercepted instead and the flag OR-ed in. **After** delegating,
+ * not before: `createInputConnection` is where Compose fills the EditorInfo in, so a flag set first
+ * is overwritten and the whole thing silently does nothing.
+ *
+ * Whether it has any effect is the keyboard's business — Gboard and SwiftKey honour it, others
+ * ignore it, and nothing reports back either way. The setting says so.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun IncognitoKeyboard(enabled: Boolean, content: @Composable () -> Unit) {
+    if (!enabled) {
+        content()
+        return
+    }
+    // Remembered, so recomposing the header doesn't hand the field a new interceptor identity and
+    // restart the input session under a typing finger.
+    val interceptor = remember {
+        PlatformTextInputInterceptor { request, nextHandler ->
+            nextHandler.startInputMethod { editorInfo ->
+                request.createInputConnection(editorInfo).also {
+                    editorInfo.imeOptions =
+                        editorInfo.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                }
+            }
+        }
+    }
+    InterceptPlatformTextInput(interceptor, content)
 }
 
 /**

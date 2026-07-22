@@ -23,6 +23,9 @@ object GumshoosConfig {
     private const val KEY_WIDGET_ICON_OFFSET = "widget_icon_offset_dp"
     private const val KEY_CONTACT_ACTION_PACKAGE = "contact_action_package_"
     private const val KEY_HIDE_ON_FOCUS_LOSS = "hide_on_focus_loss"
+    private const val KEY_INCOGNITO_KEYBOARD = "incognito_keyboard"
+    private const val KEY_WEB_SUGGESTIONS = "web_suggestions_enabled"
+    private const val KEY_WEB_SUGGESTION_SOURCE = "web_suggestion_source"
     private const val KEY_USAGE_SOURCE = "usage_source"
     private const val KEY_UNIT_SYSTEM = "unit_system"
     private const val KEY_PREFERRED_CURRENCY = "preferred_currency"
@@ -35,6 +38,8 @@ object GumshoosConfig {
     private const val KEY_MATCH_TIERS = "match_tiers"
     private const val KEY_DISABLED_PROVIDERS = "disabled_providers"
     private const val KEY_PROVIDER_ORDER = "provider_order"
+    private const val KEY_BROWSER_PROVIDERS = "browser_providers"
+    private const val KEY_PREFERRED_BROWSER = "preferred_browser"
     private const val KEY_SETUP_COMPLETE = "setup_complete"
     private const val KEY_WIDGET_BAR_FILL_MODE = "widget_bar_fill_mode"
     private const val KEY_WIDGET_BAR_FILL_COLOR = "widget_bar_fill_color"
@@ -68,8 +73,13 @@ object GumshoosConfig {
      */
     const val DEFAULT_HIDE_ON_FOCUS_LOSS = true
 
-    /** System usage by default, since it already knows about apps opened before Gumshoos existed. */
-    val DEFAULT_USAGE_SOURCE = UsageSource.SYSTEM
+    /**
+     * Gumshoos' own launches by default. System usage knows about apps opened before Gumshoos
+     * existed, which is the better ordering — but only once usage access is granted, and the
+     * default has to be the option that works with no permission at all. A default naming a grant
+     * nobody has made is a setting that reads as configured and orders by nothing.
+     */
+    val DEFAULT_USAGE_SOURCE = UsageSource.GUMSHOOS
 
     /** Matches the measured diameter of a real launcher icon on the reference device. */
     const val DEFAULT_WIDGET_ICON_SIZE_DP = 46
@@ -145,6 +155,30 @@ object GumshoosConfig {
         private set
 
     var hideOnFocusLoss by mutableStateOf(DEFAULT_HIDE_ON_FOCUS_LOSS)
+        private set
+
+    /**
+     * Asks the keyboard not to learn from what is typed into the search field.
+     *
+     * Off by default: it costs the keyboard's personalisation on the one field where typing a few
+     * letters and getting the right app is the entire product, so it is a trade rather than a
+     * straight improvement. Whether the keyboard honours it is the keyboard's business — see
+     * [OverlayContent]'s interceptor.
+     */
+    var incognitoKeyboard by mutableStateOf(false)
+        private set
+
+    /**
+     * Live query completions from a search engine.
+     *
+     * **Off by default, and not a default to revisit**: switching it on sends what is typed here to
+     * Google or DuckDuckGo, which is a decision only the person typing can make.
+     */
+    var webSuggestionsEnabled by mutableStateOf(false)
+        private set
+
+    /** Which engine completes a query. Meaningless while [webSuggestionsEnabled] is off. */
+    var webSuggestionSource by mutableStateOf(SuggestionSource.DEFAULT)
         private set
 
     /**
@@ -503,6 +537,44 @@ object GumshoosConfig {
         prefs(context).edit().putString(KEY_PROVIDER_ORDER, ids.joinToString(",")).apply()
     }
 
+    /**
+     * Search providers set to open in a browser rather than in their own app, by id.
+     *
+     * Only the ones whose web page is the *same* search can be in here — see
+     * [SearchProvider.canUseBrowser]. Storing the browser set rather than the app set keeps the app
+     * the default, which is what a provider is for; it also means a provider that later gains the
+     * choice starts where every other provider already is.
+     */
+    var browserProviders by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** Whether [id] hands its query to a browser instead of opening its own app. */
+    fun opensInBrowser(id: String): Boolean = id in browserProviders
+
+    fun setOpensInBrowser(context: Context, id: String, browser: Boolean) {
+        browserProviders = if (browser) browserProviders + id else browserProviders - id
+        prefs(context).edit().putStringSet(KEY_BROWSER_PROVIDERS, browserProviders).apply()
+    }
+
+    /**
+     * The browser a web search is forced into, or null to let the phone decide.
+     *
+     * Null is a real choice rather than an unset value: with several browsers installed and none set
+     * as the system default, Android hands back its chooser, which is sometimes what someone wants.
+     * Stored as a package name, so a browser that is later uninstalled simply stops resolving and
+     * [SearchProviders.search] falls through to an unforced intent.
+     */
+    var preferredBrowser by mutableStateOf<String?>(null)
+        private set
+
+    fun setPreferredBrowser(context: Context, packageName: String?) {
+        preferredBrowser = packageName
+        prefs(context).edit().apply {
+            if (packageName == null) remove(KEY_PREFERRED_BROWSER)
+            else putString(KEY_PREFERRED_BROWSER, packageName)
+        }.apply()
+    }
+
     /** [id] is a component key, or a package name from a build that stored them that way. */
     fun setAppHidden(context: Context, id: String, hidden: Boolean) {
         hiddenApps = if (hidden) hiddenApps + id else hiddenApps - id
@@ -693,6 +765,25 @@ object GumshoosConfig {
         prefs(context).edit().putBoolean(KEY_HIDE_ON_FOCUS_LOSS, enabled).apply()
     }
 
+    fun setIncognitoKeyboard(context: Context, enabled: Boolean) {
+        incognitoKeyboard = enabled
+        prefs(context).edit().putBoolean(KEY_INCOGNITO_KEYBOARD, enabled).apply()
+    }
+
+    fun setWebSuggestionsEnabled(context: Context, enabled: Boolean) {
+        webSuggestionsEnabled = enabled
+        prefs(context).edit().putBoolean(KEY_WEB_SUGGESTIONS, enabled).apply()
+        // Nothing should survive the switch going off, including a section already on screen.
+        if (!enabled) WebSuggestions.clear()
+    }
+
+    fun setWebSuggestionSource(context: Context, source: SuggestionSource) {
+        webSuggestionSource = source
+        prefs(context).edit().putString(KEY_WEB_SUGGESTION_SOURCE, source.id).apply()
+        // The results on screen came from the other engine; keeping them would credit this one.
+        WebSuggestions.clear()
+    }
+
     fun setContactActionPackage(context: Context, action: ContactAction, packageName: String?) {
         contactActionPackages = contactActionPackages.toMutableMap().apply {
             if (packageName == null) remove(action) else put(action, packageName)
@@ -716,6 +807,9 @@ object GumshoosConfig {
         widgetIconSizeDp = p.getInt(KEY_WIDGET_ICON_SIZE, DEFAULT_WIDGET_ICON_SIZE_DP)
         widgetIconOffsetDp = p.getInt(KEY_WIDGET_ICON_OFFSET, DEFAULT_WIDGET_ICON_OFFSET_DP)
         hideOnFocusLoss = p.getBoolean(KEY_HIDE_ON_FOCUS_LOSS, DEFAULT_HIDE_ON_FOCUS_LOSS)
+        incognitoKeyboard = p.getBoolean(KEY_INCOGNITO_KEYBOARD, false)
+        webSuggestionsEnabled = p.getBoolean(KEY_WEB_SUGGESTIONS, false)
+        webSuggestionSource = SuggestionSource.fromId(p.getString(KEY_WEB_SUGGESTION_SOURCE, null))
         // Copied: the set from SharedPreferences must not be mutated or read after the fact.
         hiddenApps = p.getStringSet(KEY_HIDDEN_APPS, null)?.toSet() ?: emptySet()
         hiddenContacts = p.getStringSet(KEY_HIDDEN_CONTACTS, null)?.toSet() ?: emptySet()
@@ -755,6 +849,8 @@ object GumshoosConfig {
             ?.split(',')
             ?.filter { it.isNotBlank() }
             ?: emptyList()
+        browserProviders = p.getStringSet(KEY_BROWSER_PROVIDERS, null)?.toSet() ?: emptySet()
+        preferredBrowser = p.getString(KEY_PREFERRED_BROWSER, null)
 
         // An unknown id is dropped rather than failing the load, so removing a tier later can't
         // leave a stored set that no longer parses.

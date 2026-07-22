@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.AssistIntegration
+import com.vynex.gumshoos.BrowserApps
 import com.vynex.gumshoos.ContactAction
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.CrashLog
@@ -338,6 +339,51 @@ internal fun EmailAppPicker() {
                 selected = selected == handler.packageName,
                 onClick = { choose(handler.packageName) },
                 iconBitmap = handler.icon,
+            )
+        }
+    }
+}
+
+/**
+ * Which browser a provider set to "open in a browser" hands its query to.
+ *
+ * Deliberately the same shape as [EmailAppPicker], because it answers the same kind of question and
+ * the two would read as different features if one were a dialog and the other a list.
+ *
+ * No re-warm, unlike the email picker: that one changes an icon the overlay decoded at warm time,
+ * whereas this is read from config at the moment a search is launched.
+ */
+@Composable
+internal fun BrowserPicker() {
+    val context = LocalContext.current
+    var browsers by remember { mutableStateOf<List<BrowserApps.Browser>>(emptyList()) }
+    val selected = GumshoosConfig.preferredBrowser
+
+    LaunchedEffect(Unit) { browsers = BrowserApps.installed(context) }
+
+    SettingsGroup(
+        title = "Browser",
+        note = if (browsers.isEmpty()) {
+            "No browsers found on this phone."
+        } else {
+            "Used by any provider above that's set to open in a browser."
+        },
+    ) {
+        // No mark, and no space held for one — Automatic is not an app, so a glyph invented to fill
+        // the slot the app icons occupy would be claiming it is one. Same call as the email picker.
+        SettingsRadioRow(
+            title = "Automatic",
+            description = "Lets the phone decide, may show a picker.",
+            selected = selected == null,
+            onClick = { GumshoosConfig.setPreferredBrowser(context, null) },
+        )
+        browsers.forEach { browser ->
+            SettingsRadioRow(
+                title = browser.label,
+                description = "",
+                selected = selected == browser.packageName,
+                onClick = { GumshoosConfig.setPreferredBrowser(context, browser.packageName) },
+                iconBitmap = browser.icon,
             )
         }
     }

@@ -1,5 +1,8 @@
 package com.vynex.gumshoos.settings
 
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
@@ -41,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -64,13 +68,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import com.vynex.gumshoos.EventLog
 import com.vynex.gumshoos.R
 import kotlin.math.roundToInt
 
@@ -758,6 +766,12 @@ internal fun SettingsSwitchRow(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    /**
+     * Zero inside a dialog, which holds its own content off the edge already — 20dp on top of the
+     * dialog's 24dp puts the switch 44dp in and reads as a misaligned row. A parameter rather than
+     * a fourth copy of this row, which is how three radio rows once happened.
+     */
+    horizontalInset: Dp = SettingsInset,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -766,7 +780,7 @@ internal fun SettingsSwitchRow(
             .fillMaxWidth()
             // 12dp, not 8. This was the shallowest row in the family, which showed up as a first
             // row sitting almost against the top edge of its card.
-            .padding(horizontal = SettingsInset, vertical = 12.dp),
+            .padding(horizontal = horizontalInset, vertical = 12.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
@@ -849,6 +863,12 @@ internal fun ProviderRow(
      * Left at [Modifier] the grip is inert, so pass it or the row is lying about what it offers.
      */
     dragHandle: Modifier = Modifier,
+    /**
+     * Opens whatever else this row can be told, when there is anything. Null for the rows that are
+     * only on or off, which is most of them — a gear that opens a dialog holding one dead control
+     * is worse than no gear.
+     */
+    onConfigure: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -898,6 +918,19 @@ internal fun ProviderRow(
                 )
             }
         }
+        // Before the grip rather than after, so the two things you can press are not separated by
+        // the one thing you drag. Narrower than the 48dp default: this row already carries a mark,
+        // two lines of text, a grip and a switch, and the label is what gives way.
+        onConfigure?.let { configure ->
+            IconButton(onClick = configure, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    painterResource(R.drawable.ic_provider_settings),
+                    contentDescription = "$label options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
         // No contentDescription: the row already carries the move actions, and announcing a "drag
         // handle" that assistive input cannot drag would be describing a dead end. The handle
         // modifier contributes no semantics of its own, so there is nothing here to clear.
@@ -927,6 +960,97 @@ internal fun ProviderRow(
                 Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
     }
+}
+
+/**
+ * A row for something whose app isn't installed: the mark, the name, and a way to get it.
+ *
+ * No switch, no checkbox and no arrows. All three would be controls over something that cannot
+ * appear at all, and a disabled control reads as "not now" when the honest message is "not without
+ * the app".
+ *
+ * Nothing here is dimmed. The row isn't a switched-off setting, it is an app you don't have — and
+ * greying the name says "unavailable to you" where the row's whole purpose is to offer it. The
+ * package name is deliberately absent for the same reason: it explains nothing to anyone who
+ * wouldn't already know it.
+ *
+ * Shared by the widget bar's actions and the search providers, which reached the same design
+ * separately.
+ */
+@Composable
+internal fun MissingAppRow(
+    label: String,
+    @DrawableRes icon: Int,
+    packageName: String,
+    /**
+     * Whatever else this row can still be told without the app.
+     *
+     * Not decoration: a provider that can open in a browser instead is reachable from here and
+     * nowhere else, because the row it would otherwise sit on is the one this group replaced.
+     * Without it the choice would be locked behind installing the app it exists to avoid.
+     */
+    onConfigure: (() -> Unit)? = null,
+) {
+    val context = LocalContext.current
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            // No clip of its own: it sits inside a group card, which is already clipped, and a
+            // second rounded shape inside that one showed as a ripple with the wrong corners.
+            .clickable { openStorePage(context, packageName) }
+            .fillMaxWidth()
+            .padding(horizontal = SettingsInset, vertical = 8.dp),
+    ) {
+        Image(
+            painter = painterResource(icon),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        onConfigure?.let { configure ->
+            IconButton(onClick = configure, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    painterResource(R.drawable.ic_provider_settings),
+                    contentDescription = "$label options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        TextButton(onClick = { openStorePage(context, packageName) }) { Text("Install") }
+    }
+}
+
+/**
+ * Opens the Play listing, falling back to the web page.
+ *
+ * `market://` is in the manifest's `<queries>`, so it resolves where Play is present; the https form
+ * covers a phone without it and lands in a browser. Both are recorded, because a listing that has
+ * been withdrawn will open and show "item not found" — which looks from here exactly like a listing
+ * that worked.
+ */
+private fun openStorePage(context: Context, packageName: String) {
+    val market = Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri())
+    val web = Intent(
+        Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri(),
+    )
+    listOf(market, web).forEach { intent ->
+        val started = runCatching {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+        if (started) {
+            EventLog.record("store page $packageName -> ${intent.data?.scheme}")
+            return
+        }
+    }
+    EventLog.record("store page $packageName -> nothing handled it")
+    Toast.makeText(context, "No app store on this phone", Toast.LENGTH_SHORT).show()
 }
 
 /**

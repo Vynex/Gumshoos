@@ -60,9 +60,30 @@ against `namespace`, not `applicationId`, and both are addressed as
 `ComponentName(context.packageName, <absolute class name>)`. Nothing else hardcodes the app's own id
 — check that before adding anything that does.
 
-`minSdk 31`, `targetSdk 36`, Java 11. **One third-party Gradle dependency** — five instant-answer
-modules and an HTTP client were built without any, using `HttpURLConnection`, `org.json` and a
-hand-written back stack instead. Treat adding another as a decision needing justification.
+The id suffix never touches a **label**, so the two builds were indistinguishable everywhere a name
+is drawn. `app/src/debug/res/values/strings.xml` overrides the five strings the system shows as names
+— app, drawer shortcut, assistant entry, and the two widget picker entries — with a `(Debug)` suffix.
+A debug source set rather than `resValue` or a manifest placeholder, so the real names stay written
+once in `main` and stay readable to `getString`, which `SearchTileService` and `SearchShortcuts` both
+use. The cost is that renaming one in `main` needs mirroring there. Descriptions and in-app prose are
+deliberately left alone: the picker entry above a description already carries the suffix, and "Offer
+Gumshoos (Debug) as an assistant" reads as a typo rather than as information.
+
+`minSdk 31`, `targetSdk 36`, Java 11. **One third-party Gradle dependency in the APK**, plus one that
+never reaches it — five instant-answer modules, two web clients and a hand-written back stack were
+built without any, using `HttpURLConnection` and `org.json`. Treat adding another as a decision
+needing justification.
+
+The test-only one is **`org.json:json`**, and the reason is worth knowing before deleting it as
+redundant: `org.json` ships *in the Android framework*, so on a JVM unit test it resolves to the
+stubbed `android.jar` where every method throws `Stub!` — and a parser that catches its own
+exceptions, which both of ours must, turns that into an empty result rather than a failure. So the
+tests pass while proving nothing. That is exactly how `CurrencyRates.parse` went untested for its
+whole life. The dependency puts a real implementation of the *same* API under the test, so what runs
+is the shipping code path rather than a reimplementation; the alternative was hand-rolling a JSON
+reader, string escapes included. Verified absent from the release APK — its dex references only
+`JSONArray` and `JSONObject`, the framework classes, with none of the implementation's other types.
+This is the same class of problem as `android.icu` being unavailable to unit tests.
 
 The one is `sh.calvin.reorderable`, for drag-to-reorder on the Providers and widget Actions lists.
 The case for it, since the same reasoning should be demanded of the next one: it covers the
@@ -153,6 +174,82 @@ Erasing took four. Animation hid all of it. **State that layout depends on must 
 reported upward from a child.** Anything seeded for an animation has the same problem — initialise it
 at its settled value when animations are off rather than snapping it in an effect, as the context
 menu's `appear` does.
+
+## Web suggestions
+
+Live query completions from Google or DuckDuckGo, in a section between Contacts and "Search using".
+**Off by default and staying that way** — switching it on sends what is typed here to a search
+engine, which is a decision only the person typing can make, and the settings copy says so plainly
+rather than burying it.
+
+This is the **only network call on an interactive path** in the app; the exchange-rate fetch is
+deliberately at warm time. Four things keep it off the show path, and all four are load-bearing:
+nothing runs until the window is already open, nothing is sent below
+`WebSuggestions.MIN_QUERY_LENGTH` (5) characters, `DEBOUNCE_MILLIS` (400) outlasts a gap between
+keystrokes so one burst of typing sends one request, and the section does not exist until an answer
+arrives.
+
+- **One parser serves both engines, and that was measured rather than assumed.** Google with
+  `client=firefox` and DuckDuckGo with `type=list` both answer `["query", ["a", "b", …]]`; Google
+  appends two more elements, which is why `parse` reads element 1 rather than expecting a length.
+  Drop either parameter and the shape changes — Google returns XML, DuckDuckGo returns
+  `[{"phrase":…}]`. Both are asserted, because a wrong parameter is silent.
+- **Neither endpoint is documented or promised to us**, so every malformed and unexpected shape has
+  to come out as an empty list rather than an exception. The negative tests are the point of the
+  suite; the fixtures are real captured replies rather than hand-written, or they would agree with
+  the belief instead of testing it.
+- **Rows are held until replaced, never cleared because the query changed.** The first
+  implementation matched the rows against the live query and dropped them the moment it moved, on
+  the theory that a completion one keystroke behind is a lie. On a phone that reads as a fault:
+  typing on past a first set of suggestions folds the section away and unfolds it a moment later,
+  so every pause in typing costs two layout animations. Holding them makes the common case — three
+  rows becoming three other rows — a text swap at an unchanged height, with no animation at all.
+  The trade is the right way round: a completion for a *prefix* of what is typed is still a
+  completion, and tapping a row searches for the text on it rather than for the query, so nothing
+  it offers is untrue. A reply for an abandoned query cannot overwrite a newer one — the effect is
+  cancelled when the query changes and cancellation is checked on the way back to the main thread,
+  so a slow request that already left simply never publishes. `clear()` is therefore only for the
+  cases where no query these rows could belong to exists at all: window closed, feature switched
+  off, engine changed, or the query fell back under the character floor.
+- **A failed fetch leaves the previous rows alone; an empty successful one replaces them.** A
+  dropped connection is not the engine saying there is nothing.
+- **Tapping searches with the engine that suggested it**, falling back to the first enabled provider.
+  Handing a Google completion to whatever happens to sit first in "Search using" would answer a
+  different question from the one the row appeared to ask.
+
+The section's height derives in `OverlayContent` like every other, and is threaded into
+`SearchPanel` rather than reported up from it — see the rule about `LaunchedEffect` lag. The
+network is the one thing that genuinely cannot be derived, which is why the effect writes to state
+that the height is then derived *from*, in the same composition.
+
+**The incognito keyboard needs an interceptor, because Compose has no route to `EditorInfo`.**
+`IME_FLAG_NO_PERSONALIZED_LEARNING` is the platform's only mechanism for asking a keyboard not to
+learn from what is typed, and none of `KeyboardOptions`, `ImeOptions` or `PlatformImeOptions` can
+carry it — the last holds a `privateImeOptions` *string* and nothing else, and
+`TextInputServiceAndroid.update` is what actually writes `EditorInfo.imeOptions`. That came out of
+the 1.11.4 artifact with `javap`; the documentation describes neither the gap nor the way round it.
+
+The way round it is `InterceptPlatformTextInput` with a `PlatformTextInputInterceptor`, still
+`@ExperimentalComposeUiApi` in 1.11.4 despite what several write-ups say. Three things about
+`IncognitoKeyboard` in `OverlayContent`:
+
+- **The flag is OR-ed in *after* delegating to `createInputConnection`.** That call is where Compose
+  fills the `EditorInfo`, so a flag set first is overwritten and the feature silently does nothing —
+  which is indistinguishable from a keyboard that ignored it.
+- **It wraps the header, not the field.** The interceptor is a composition local and its content
+  lambda is not a `RowScope`, so wrapping `BasicTextField` alone would cost it its `weight()`. The
+  header holds the window's only text field, so the reach is identical.
+- **Nothing is recorded when it applies.** Normally this app prefers recording an outcome to
+  swallowing it, but the interceptor runs when the keyboard opens, which is the show path, and there
+  is no outcome to record anyway: Gboard and SwiftKey honour the flag, others ignore it, and no API
+  reports which happened. The setting's copy says so rather than the log.
+
+Related, and settled by research rather than code: **a "private browsing" toggle for the web
+providers is not implementable.** Chromium deliberately removed third-party incognito-with-a-URL —
+the only public entry point, `org.chromium.chrome.browser.incognito.OPEN_PRIVATE_TAB`, cannot carry
+a URL at all — and Fenix dropped Fennec's `private_browsing` extra with no replacement. Anything
+built on an ignored extra opens a *normal* tab while `startActivity` reports success, so the failure
+is a broken privacy promise that looks exactly like success. Don't rebuild it.
 
 ## Matching
 
@@ -461,6 +558,31 @@ the sources jar, which is the only place it is written down.
   card's rounded edge.
   The handle modifier comes from `ReorderableItem`'s scope, so the row takes it as a parameter — it
   is bound to the item's index within the column, which only the call site knows.
+- `ProviderModeDialog` — whether one provider opens its own app or hands the query to a browser,
+  behind the gear on its row. A dialog rather than a second switch, because the row's switch already
+  means "show this at all" and two switches side by side read as halves of one setting. Only
+  providers with `canUseBrowser` get the gear: Google and DuckDuckGo, whose web page runs the *same*
+  search their app does. Maps, YouTube, Spotify and ChatGPT have a web page too, but it is what you
+  get when the app is absent rather than something anyone would pick, so offering the switch would
+  be inventing a decision.
+  Three things hold this together and each was a way to get it wrong:
+  - **Browser mode has to open the gate.** `requiresPackage` hides a provider whose app is missing;
+    a DuckDuckGo switched to the browser doesn't need that app at all. `SearchProviders.needsMissingApp`
+    is the single rule, and it takes both the absent set and the browser set as **parameters** — the
+    settings screen passes the availability it just resolved, and the tests pass a browser set they
+    could otherwise never write, since config is only writable through a Context.
+  - **The gear has to be on the Uninstalled row too.** Without the app, DuckDuckGo's ordinary row
+    isn't drawn, so the browser choice would have been locked behind installing the app it exists to
+    avoid — reachable only by doing the thing you were trying not to do.
+  - **Google's app route is not its web route.** `ACTION_WEB_SEARCH` resolves to whichever *search
+    app* the phone prefers, so browser mode skips it entirely rather than letting it win first.
+- `MissingAppRow` — the mark, the name and an **Install** button, for a row whose app isn't on the
+  phone. The widget bar's Actions and the Providers list both need it, and the second was a
+  disabled row reading "Not installed, so it stays hidden" until they were made to agree. Availability
+  is read through `rememberOnResume` on both screens, which is why `SearchProviders` has a
+  main-thread `refreshAvailabilityNow` beside its suspending refresh: the global `missing` starts out
+  pessimistic for the overlay's sake, so a suspending read would put every gated provider under
+  **Uninstalled** for a frame and then move it up.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
 - `SettingsFilterField` and `ActionSquircle`, the filter input and the row-action tile of the long
   list screens — Manage apps and Hidden contacts. Both started life private to Manage apps and were
@@ -624,7 +746,38 @@ Two conventions that read as inconsistencies unless you know why:
 - On/off lists store the **disabled** set (`disabledProviders`), so a provider added in a later
   version defaults on rather than being invisible to anyone with settings already saved. Widget
   actions invert this and store the **enabled** set, because the layout has only three slots and a
-  fourth action must not shove itself into a bar someone has already arranged.
+  fourth action must not shove itself into a bar someone has already arranged. `browserProviders`
+  follows the first rule for the same reason: it stores the ids sent to a browser, so the app stays
+  the default and a provider that later gains the choice starts where every other one already is.
+- `preferredBrowser` is a package name, and **null is a real choice** rather than an unset value —
+  "Automatic" means let the phone decide, which with several browsers and no default means its
+  chooser, and someone may want exactly that.
+
+**`queryIntentActivities` narrows a web query to the app that would open the link, and the flag to
+stop it is `MATCH_ALL`.** A phone with Chrome and Firefox listed **only Firefox** — the default
+browser. Passing `0` gets the same preferred-handler resolution the *launch* path uses, which is the
+right answer to "who should open this link" and the wrong answer to "which browsers exist". The
+filtering happens after the match, so no amount of rephrasing the intent gets past it.
+
+That last part cost two rounds. Three differently-phrased probes were added first, on the theory that
+browsers disagree about `CATEGORY_BROWSABLE` — and all three came back with the same single app,
+which was the evidence that the intent had never been the problem. **When several genuinely different
+inputs produce one identical wrong answer, stop editing the input.** The probes were kept as belt and
+braces, but `BrowserApps.probes` says in as many words that they are not what fixed it, because a
+comment that credits the wrong change is how the next person re-derives the wrong lesson.
+
+Two things that remain true about the design:
+
+- **The host does the filtering, not the category.** `example.com` is reserved by RFC 2606 precisely
+  so nothing can claim it, so an app matching it matches the web in general — which is what a browser
+  is. That is what lets a probe drop `BROWSABLE` without becoming "every app with a deep link", and
+  it is why probing a real address is wrong: a google.com URL lists the Google app.
+- **Package visibility is not the suspect here, though it looks like one.** The manifest's `<queries>`
+  declares MAIN/LAUNCHER, so every app with a launcher icon is already visible and a browser has one.
+  Worth knowing because visibility filtering never fails loudly — it returns fewer rows, which reads
+  exactly like an app that genuinely didn't match. Each probe records what it found to `EventLog`, by
+  scheme and category rather than by position, and the resolved default is recorded beside them: it
+  is the one answer guaranteed to be a browser, so it is what a suspicious list gets compared against.
 - Ordered lists are a comma-joined string, never a `StringSet`: SharedPreferences sets are unordered
   and order is the entire content of the value. Unlisted ids sort last, for the same
   forward-compatibility reason.
@@ -713,7 +866,14 @@ is the arrangement the hand-authored ones used. Three things about it are worth 
   black. It is `tintable` in `WidgetBarStyle`, so the wrong colour never reached the screen.
 - **Only the root is walked.** A `<g>` carrying its own fill or stroke is reported rather than
   half-handled, because the pipeline's entire problem is failures that build cleanly and draw the
-  wrong thing.
+  wrong thing. `ic_provider_duckduckgo` is the first source that hit it — a `<g fill="#14307E"
+  opacity=".8">` around the eyes and eyebrows, whose paths carry no fill of their own. **The remedy
+  is to flatten the group in the source SVG**, pushing its fill onto each child path and its group
+  `opacity` onto each as `fill-opacity`, which is equivalent wherever the children don't overlap.
+  Left alone it would not merely have lost the navy: that artwork's root carries `fill="none"`, so
+  `propagate_root_presentation` would have handed both paths *that* and the duck's face would have
+  drawn as nothing at all. The converter folds `fill-opacity` into the colour — `#CC14307E` — since
+  a vector drawable has no separate group alpha.
 
 The converter has a `--tint` option. It accepts any value, including a valid hex, and emits nothing
 — which is why the attribute is written in afterwards.

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only overrides of every name the system shows for this app.
+
+  Debug builds carry applicationIdSuffix ".debug" so one can sit on the phone beside a release
+  build. That makes the two indistinguishable everywhere a *label* is drawn — the home screen, the
+  drawer, the app switcher, Settings -> Apps, the widget picker, the assistant picker — because a
+  label is a string resource and the id suffix never touches it. These say which build you are
+  looking at.
+
+  A debug source set rather than resValue or a manifest placeholder: the values are plain strings
+  already declared in main, so overriding them is exactly what variant source sets are for, and the
+  main copy stays the single place the real names are written. Nothing here duplicates a name — each
+  is the main string plus the suffix — so a rename in main only needs mirroring here, which is the
+  cost of the whole arrangement.
+
+  Every string that reaches the system as a name is here. Descriptions and in-app prose deliberately
+  are not: the picker entries above them already carry the suffix, and "Offer Gumshoos (Debug) as an
+  assistant" reads as a typo rather than as information.
+-->
+<resources>
+    <!-- Launcher icon, app switcher, Settings -> Apps, the QS tile, the widget picker's grouping. -->
+    <string name="app_name">Gumshoos (Debug)</string>
+
+    <!-- The optional second drawer icon, and the pinned home-screen shortcut. -->
+    <string name="search_shortcut_label">Gumshoos Search (Debug)</string>
+
+    <!-- The entry's name in the system's assistant picker. -->
+    <string name="assist_trigger_label">Gumshoos (Debug)</string>
+
+    <!-- The two entries in the widget picker. -->
+    <string name="widget_bar_label">Gumshoos search bar (Debug)</string>
+    <string name="widget_small_label">Gumshoos icon (Debug)</string>
+</resources>

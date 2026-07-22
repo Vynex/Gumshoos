@@ -143,8 +143,84 @@ class SearchProvidersTest {
     }
 
     @Test
-    fun `spotify and chatgpt are gated on their app being installed`() {
+    fun `only the app-gated providers carry a required package`() {
         val gated = SearchProviders.all.filter { it.requiresPackage != null }.map { it.id }
-        assertEquals(setOf("spotify", "chatgpt"), gated.toSet())
+        assertEquals(setOf("spotify", "chatgpt", "duckduckgo"), gated.toSet())
+    }
+
+    /**
+     * Gating is what hides a provider and moves it to the settings screen's Uninstalled group, so
+     * the two have to agree: a provider with a required package must have somewhere to send the user
+     * to install it, and that is the same string.
+     */
+    @Test
+    fun `a gated provider names a package the store can be opened on`() {
+        SearchProviders.all.filter { it.requiresPackage != null }.forEach { provider ->
+            val required = provider.requiresPackage.orEmpty()
+            assert(required.count { it == '.' } >= 2) { "${provider.id}: '$required' isn't a package" }
+        }
+    }
+
+    @Test
+    fun `only a search engine offers the browser choice`() {
+        val choosable = SearchProviders.all.filter { it.canUseBrowser }.map { it.id }
+        assertEquals(setOf("google", "duckduckgo"), choosable.toSet())
+    }
+
+    // --- the gate, and the switch that opens it -------------------------------------------------
+
+    @Test
+    fun `a gated provider is unavailable while its app is missing`() {
+        assertEquals(
+            true,
+            SearchProviders.needsMissingApp(
+                SearchProviders.duckDuckGo,
+                absent = setOf("duckduckgo"),
+                browserMode = emptySet(),
+            ),
+        )
+    }
+
+    /**
+     * The whole point of the switch. Without this, choosing "open in a browser" for DuckDuckGo would
+     * leave the row hidden, and the setting would appear to do nothing.
+     */
+    @Test
+    fun `browser mode makes a missing app irrelevant`() {
+        assertEquals(
+            false,
+            SearchProviders.needsMissingApp(
+                SearchProviders.duckDuckGo,
+                absent = setOf("duckduckgo"),
+                browserMode = setOf("duckduckgo"),
+            ),
+        )
+    }
+
+    @Test
+    fun `an installed app is available in either mode`() {
+        listOf(emptySet(), setOf("duckduckgo")).forEach { mode ->
+            assertEquals(
+                false,
+                SearchProviders.needsMissingApp(
+                    SearchProviders.duckDuckGo,
+                    absent = emptySet(),
+                    browserMode = mode,
+                ),
+            )
+        }
+    }
+
+    /** Google needs no app, so the gate never applies to it whichever way the switch is set. */
+    @Test
+    fun `an ungated provider is never held back by a missing app`() {
+        assertEquals(
+            false,
+            SearchProviders.needsMissingApp(
+                SearchProviders.google,
+                absent = setOf("duckduckgo", "spotify"),
+                browserMode = emptySet(),
+            ),
+        )
     }
 }

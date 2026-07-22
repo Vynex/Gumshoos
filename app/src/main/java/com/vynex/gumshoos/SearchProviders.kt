@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.DrawableRes
+import androidx.annotation.MainThread
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -32,12 +33,25 @@ data class SearchProvider(
      * is forced on the intent so a claimed https link can't be swallowed by the browser.
      */
     val requiresPackage: String? = null,
+    /**
+     * Whether "open this in a browser instead" is a choice rather than a fallback.
+     *
+     * True for the two general search engines and nothing else: their [webUri] runs the *same*
+     * search as their app, so which one gets it is a preference. Maps, YouTube, Spotify and ChatGPT
+     * have a web page too, but it is what you get when the app isn't there — nobody picks it — so
+     * offering the switch would be inventing a decision.
+     *
+     * A provider with this set is never hidden for a missing app while it is in browser mode:
+     * [requiresPackage] gates the app route, and the browser route doesn't use it.
+     */
+    val canUseBrowser: Boolean = false,
 )
 
 object SearchProviders {
 
     private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
     private const val SPOTIFY_PACKAGE = "com.spotify.music"
+    private const val DUCKDUCKGO_PACKAGE = "com.duckduckgo.mobile.android"
 
     val google = SearchProvider(
         id = "google",
@@ -45,6 +59,7 @@ object SearchProviders {
         icon = R.drawable.ic_provider_google,
         appUri = { "" }, // handled specially below via ACTION_WEB_SEARCH
         webUri = { "https://www.google.com/search?q=$it" },
+        canUseBrowser = true,
     )
 
     val playStore = SearchProvider(
@@ -92,7 +107,32 @@ object SearchProviders {
         requiresPackage = CHATGPT_PACKAGE,
     )
 
-    val all = listOf(google, playStore, maps, youtube, spotify, chatGpt)
+    val duckDuckGo = SearchProvider(
+        id = "duckduckgo",
+        label = "DuckDuckGo",
+        icon = R.drawable.ic_provider_duckduckgo,
+        // The app is a browser, so it takes any https link and the forced package is what keeps this
+        // out of the default one. Both forms are the same URL: there is no scheme of DuckDuckGo's own
+        // that reaches the app, and inventing one would be a rung that starts and draws nothing.
+        appUri = { "https://duckduckgo.com/?q=$it" },
+        webUri = { "https://duckduckgo.com/?q=$it" },
+        // Gated, though duckduckgo.com works perfectly well in any browser — the point of choosing it
+        // over Google here is the app, and a row that quietly opened Chrome instead would be
+        // answering a different question. The browser is reachable, but only by asking for it: see
+        // canUseBrowser, which is what turns the gate off.
+        requiresPackage = DUCKDUCKGO_PACKAGE,
+        canUseBrowser = true,
+    )
+
+    /**
+     * Declaration order, which is also the default order — [GumshoosConfig.providerOrder] is empty
+     * until something is dragged.
+     *
+     * A provider added here goes at the **end**, and not because the end is where new things go: an
+     * id an existing saved order has never heard of sorts last anyway, so any other position would
+     * make a fresh install disagree with an upgraded one about a list neither user has touched.
+     */
+    val all = listOf(google, playStore, maps, youtube, spotify, chatGpt, duckDuckGo)
 
     /**
      * Providers whose required app isn't installed.
@@ -109,12 +149,29 @@ object SearchProviders {
         private set
 
     suspend fun refreshAvailability(context: Context) = withContext(Dispatchers.IO) {
+        val absent = resolveMissing(context)
+        withContext(Dispatchers.Main) { missing = absent }
+    }
+
+    /**
+     * The same answer, resolved on the calling thread.
+     *
+     * For the settings screen, which needs it in the composition that draws the list rather than a
+     * frame later: [missing] starts out pessimistic, so a suspending refresh would put every gated
+     * provider under "Uninstalled" and then move it up as the answer arrived. Two `getPackageInfo`
+     * calls is a cost a settings screen can afford, and the widget bar's Actions list already pays
+     * it for the same reason.
+     */
+    @MainThread
+    fun refreshAvailabilityNow(context: Context): Set<String> =
+        resolveMissing(context).also { missing = it }
+
+    private fun resolveMissing(context: Context): Set<String> {
         val pm = context.packageManager
-        val absent = all.filter { provider ->
+        return all.filter { provider ->
             val required = provider.requiresPackage ?: return@filter false
             runCatching { pm.getPackageInfo(required, 0) }.isFailure
         }.map { it.id }.toSet()
-        withContext(Dispatchers.Main) { missing = absent }
     }
 
     /**
@@ -174,14 +231,32 @@ object SearchProviders {
     }
 
     /**
-     * Which providers appear, in order: installed, switched on, and arranged as configured.
+     * Whether [provider] can't run because the app it needs isn't installed.
+     *
+     * A provider in browser mode is never unavailable: the gate exists to stop a row promising an
+     * app that isn't there, and the browser route never touches that app. This is what lets
+     * DuckDuckGo be app-gated *and* still reachable — the switch is the way past the gate.
+     *
+     * Both sets are parameters with defaults rather than reads taken inside. [absent] is so the
+     * settings screen can pass the availability it just resolved for itself instead of the
+     * warm-time [missing]; [browserMode] is so this rule can be tested at all, since the config it
+     * would otherwise read can only be written through a Context.
+     */
+    fun needsMissingApp(
+        provider: SearchProvider,
+        absent: Set<String> = missing,
+        browserMode: Set<String> = GumshoosConfig.browserProviders,
+    ): Boolean = provider.id in absent && provider.id !in browserMode
+
+    /**
+     * Which providers appear, in order: runnable, switched on, and arranged as configured.
      *
      * Disabling is stored as the *off* set rather than the on set, so a provider added later is on
      * by default instead of silently absent for everyone who already has settings saved.
      */
     val enabled: List<SearchProvider>
         get() = inConfiguredOrder(
-            all.filterNot { it.id in missing || it.id in GumshoosConfig.disabledProviders },
+            all.filterNot { needsMissingApp(it) || it.id in GumshoosConfig.disabledProviders },
             GumshoosConfig.providerOrder,
         )
 
@@ -189,6 +264,14 @@ object SearchProviders {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return
         val encoded = Uri.encode(trimmed)
+
+        // Browser mode goes straight to the web URI, skipping both the app link and — for Google —
+        // ACTION_WEB_SEARCH, which resolves to whichever *search app* the phone prefers and is
+        // therefore the opposite of what was asked for.
+        if (provider.canUseBrowser && GumshoosConfig.opensInBrowser(provider.id)) {
+            openInBrowser(context, provider, encoded)
+            return
+        }
 
         // Google gets the system's own web-search intent first, so it honours whichever search app
         // the user has actually chosen rather than forcing google.com.
@@ -204,6 +287,26 @@ object SearchProviders {
         val web = viewIntent(provider.webUri(encoded))
         runCatching { context.startActivity(app) }
             .recoverCatching { context.startActivity(web) }
+    }
+
+    /**
+     * The web URI, in the chosen browser where there is one.
+     *
+     * The forced attempt is tried first and the unforced one catches it, because a browser can be
+     * uninstalled long after it was picked and `setPackage` then makes the intent resolve to
+     * nothing. Recorded rather than swallowed: falling back lands somewhere plausible, so the only
+     * sign that the setting has quietly stopped applying is this line.
+     */
+    private fun openInBrowser(context: Context, provider: SearchProvider, encoded: String) {
+        val uri = provider.webUri(encoded)
+        val chosen = GumshoosConfig.preferredBrowser
+        if (chosen != null) {
+            val forced = viewIntent(uri).setPackage(chosen)
+            if (runCatching { context.startActivity(forced) }.isSuccess) return
+            EventLog.record("browser $chosen didn't take ${provider.id}; using the default")
+        }
+        runCatching { context.startActivity(viewIntent(uri)) }
+            .onFailure { EventLog.record("no browser handled ${provider.id}") }
     }
 
     /** Opens the store itself rather than a search, for the empty-query case. */

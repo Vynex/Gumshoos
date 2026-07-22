@@ -26,6 +26,7 @@ internal sealed interface Screen {
     data object HiddenContacts : Screen
     data object Matching : Screen
     data object Providers : Screen
+    data object WebSuggestions : Screen
 
     /**
      * The permission list as a settings screen. Not the first-run wizard, which is not a
@@ -98,6 +99,7 @@ fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
         Screen.HiddenContacts -> HiddenContactsScreen(onBack = ::pop)
         Screen.Matching -> MatchingScreen(onBack = ::pop)
         Screen.Providers -> ProvidersScreen(onBack = ::pop)
+        Screen.WebSuggestions -> WebSuggestionsScreen(onBack = ::pop)
         Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
         Screen.WidgetIcon -> WidgetIconScreen(onBack = ::pop)
         Screen.SearchWindow -> SearchWindowScreen(onBack = ::pop)

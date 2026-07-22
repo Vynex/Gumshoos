@@ -76,6 +76,10 @@ android {
             // rather than applicationId, and both are addressed as
             // ComponentName(context.packageName, <absolute class name>), so the suffix does not
             // break them. Nothing else in the app hardcodes its own applicationId.
+            //
+            // The label half of that lives in src/debug/res/values/strings.xml, which is invisible
+            // from here: the id suffix separates the two installs for the *system*, but every name
+            // a person reads is a string resource and would otherwise be identical on both.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
@@ -112,6 +116,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.reorderable)
     testImplementation(libs.junit)
+    // See the note in libs.versions.toml: the framework's org.json is a throwing stub under JVM
+    // tests. Test-only, so nothing here reaches the APK.
+    testImplementation(libs.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -50,7 +51,9 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SettingsRootScaffold(title = "Gumshoos") {
+    // Read off the app name rather than written out: a debug build carries a "(Debug)" suffix
+    // there, and the root heading is the first thing seen after opening either of two icons.
+    SettingsRootScaffold(title = stringResource(R.string.app_name)) {
         if (!hasOverlay) {
             SettingsWarning(
                 "Search can't open without permission to draw over other apps. " +
