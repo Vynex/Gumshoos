@@ -1,6 +1,7 @@
 package com.vynex.gumshoos.settings
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,8 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,9 +65,13 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.vynex.gumshoos.R
 import kotlin.math.roundToInt
 
 /**
@@ -324,6 +327,86 @@ internal fun SettingsFilterField(
         ),
         modifier = modifier,
     )
+}
+
+/**
+ * A text field for entering a value, as [SettingsFilterField] is for filtering a list.
+ *
+ * **A filled field on `surfaceContainerHighest`, fully rounded, with no indicator** — the shape
+ * matching the dialog's own `CornerExtraLarge` corners, the same treatment [SettingsFilterField]
+ * wears on the screen behind it.
+ *
+ * The container colour is the whole reason this works, and getting it wrong is what made the first
+ * attempt look broken rather than merely plain. **A dialog's own surface is
+ * `SurfaceContainerHigh`** (`DialogTokens.ContainerColor`), and that first version set the field to
+ * `surfaceContainerHigh` too — copied from the filter field, which sits on the screen background
+ * where it reads perfectly well. Identical colour to the dialog behind it, and a transparent
+ * indicator on top: the field had no boundary of any kind, so the placeholder appeared to float on
+ * the dialog itself. A tonal step above, `surfaceContainerHighest`, is what makes the field a
+ * distinct surface at all.
+ *
+ * So a tonal fill is only ever legible relative to **what it is sitting on**, which a shared
+ * component cannot see. Before reusing this anywhere but a dialog, check it against that surface.
+ *
+ * Two other arrangements were tried and are worth keeping, since both read as reasonable in source:
+ * the stock M3 filled field, whose 1dp `OnSurfaceVariant` indicator and square-bottomed
+ * `CornerExtraSmallTop` are one design and cannot be half-borrowed; and an `OutlinedTextField` at
+ * [SettingsCardShape], where the outline was never what dated the original — that was the floating
+ * `label` animating into a notch cut in its own border — but which still read as old.
+ *
+ * Any shape passed here needs care for a related reason: the outlined default is `CornerExtraSmall`,
+ * 4dp, and the filled default is square-bottomed, because **the Expressive redraw never reached the
+ * text-field shape tokens.** Neither default suits a 28dp dialog.
+ *
+ * What the field is for goes in [supportingText] underneath, in a sentence, for the same reason a
+ * group's note sits under its card — a label crammed into a notch has to be two words and ends up
+ * naming the mechanism.
+ *
+ * That text is laid out here rather than handed to the field's own `supportingText` slot, which
+ * gets both dimensions wrong for a paragraph: `SupportingTopPadding` is **4dp**, so the sentence
+ * crowds the box it explains, and `supportingTextPadding` starts at `TextFieldPadding`, **16dp**,
+ * which lines it up with the *typing cursor* rather than with the edge of the field. Read against
+ * a full-width field in a dialog, that indent reads as a mistake — which it was.
+ */
+@Composable
+internal fun SettingsTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    supportingText: String? = null,
+) {
+    // A step above the dialog's own SurfaceContainerHigh, or the field has no edge at all.
+    val container = MaterialTheme.colorScheme.surfaceContainerHighest
+    Column(modifier) {
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            shape = RoundedCornerShape(28.dp),
+            placeholder = { Text(placeholder) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = container,
+                unfocusedContainerColor = container,
+                disabledContainerColor = container,
+                // The fill carries the shape, so the underline would cut a straight line across a
+                // rounded bottom edge — the mismatch the square-bottomed filled default avoids.
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (supportingText != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                supportingText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /**
@@ -706,10 +789,38 @@ internal fun SettingsSwitchRow(
 internal enum class RowControl { SWITCH, CHECKBOX }
 
 /**
- * A provider: brand mark, a toggle, and the two reorder arrows.
+ * How a row being dragged says so: it lifts a tonal step off the card it sits in.
  *
- * Arrows rather than drag-and-drop. Reorderable dragging is a dependency or a few hundred lines of
- * gesture handling, for a list of six that is arranged once.
+ * A tone rather than a shadow, because [SettingsGroupCard] clips its children — a lifted row cannot
+ * cast anything past the card's own rounded edge, so an elevation would simply be cut off. The step
+ * is the one [ActionSquircle] uses, `surfaceContainerHighest` over the card's `surfaceContainer`,
+ * which keeps the settings screens on one set of tonal roles rather than inventing a drag colour.
+ *
+ * The fill is animated so a drop settles rather than snapping, and the corners are rounded so the
+ * moving row reads as a picked-up object rather than as a full-width band of colour.
+ */
+@Composable
+internal fun Modifier.draggedRow(dragging: Boolean): Modifier {
+    val lifted = MaterialTheme.colorScheme.surfaceContainerHighest
+    val colour by animateColorAsState(
+        targetValue = if (dragging) lifted else Color.Transparent,
+        label = "draggedRow",
+    )
+    // No z-order here: `ReorderableItem` already lifts the moving row above its neighbours, and a
+    // second zIndex on the content inside it would be saying the same thing in a place that can't
+    // see whether it's true.
+    return this.background(colour, SettingsCardShape)
+}
+
+/**
+ * A provider: brand mark, a toggle, and a handle to drag the row by.
+ *
+ * The handle replaced a pair of up/down arrow buttons. Those cost the row 96dp of width to say
+ * something a grip says in 24, and moving an item three places meant six taps.
+ *
+ * **The arrows' one real job survives as accessibility actions.** A drag is not available to
+ * TalkBack or to a keyboard, so the same move is published through [canMoveUp] / [canMoveDown] as
+ * custom actions on the row — the list stays arrangeable without the gesture.
  */
 @Composable
 internal fun ProviderRow(
@@ -730,10 +841,36 @@ internal fun ProviderRow(
      */
     modifier: Modifier = Modifier,
     control: RowControl = RowControl.SWITCH,
+    /**
+     * What makes the grip draggable — `Modifier.draggableHandle()` from the enclosing
+     * `ReorderableColumn`'s scope. The row cannot build it itself: the modifier is scoped to the
+     * item's index within that column, which only the call site knows.
+     *
+     * Left at [Modifier] the grip is inert, so pass it or the row is lying about what it offers.
+     */
+    dragHandle: Modifier = Modifier,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            // Announced on the row rather than on the grip: the grip is a 24dp target that a
+            // screen reader user never sees, and the action belongs to the thing being moved.
+            .semantics {
+                customActions = listOfNotNull(
+                    if (canMoveUp) {
+                        CustomAccessibilityAction("Move $label up") { onMoveUp(); true }
+                    } else {
+                        null
+                    },
+                    if (canMoveDown) {
+                        CustomAccessibilityAction("Move $label down") { onMoveDown(); true }
+                    } else {
+                        null
+                    },
+                )
+            },
     ) {
         // Image, not Icon: these are full-colour brand marks and Icon would tint them flat.
         Image(
@@ -761,12 +898,28 @@ internal fun ProviderRow(
                 )
             }
         }
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
-            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move $label up")
-        }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move $label down")
-        }
+        // No contentDescription: the row already carries the move actions, and announcing a "drag
+        // handle" that assistive input cannot drag would be describing a dead end. The handle
+        // modifier contributes no semantics of its own, so there is nothing here to clear.
+        Icon(
+            painterResource(R.drawable.ic_provider_grip_vertical),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = dragHandle.size(24.dp),
+        )
+        // The two controls are inset differently inside their touch targets, so an equal spacer
+        // draws an unequal gap. A Checkbox is a 20dp box plus 2dp of padding centred in the 48dp
+        // minimum target, which is 12dp of built-in space on each side; a Switch is a 52dp track,
+        // already wider than 48dp, so it brings none. Spacing both by 12dp left the grip stranded
+        // 24dp from the checkbox on the widget screen and 12dp from the switch on Providers.
+        Spacer(
+            Modifier.width(
+                when (control) {
+                    RowControl.SWITCH -> 12.dp
+                    RowControl.CHECKBOX -> 0.dp
+                },
+            ),
+        )
         when (control) {
             RowControl.SWITCH ->
                 Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)

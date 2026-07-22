@@ -31,9 +31,20 @@ python3 design/verify-icons.py           # needs cairosvg, numpy, pillow
 **`assembleDebug` does not run lint.** Two `NewApi` crashes have shipped because of this. Always run
 `assembleDebug lintDebug testDebugUnitTest` together before claiming a change is good.
 
-`minSdk 31`, `targetSdk 36`, Java 11. **No third-party Gradle dependencies** — five instant-answer
-modules and an HTTP client have been built without adding one, using `HttpURLConnection`, `org.json`
-and a hand-written back stack instead. Treat adding one as a decision needing justification.
+`minSdk 31`, `targetSdk 36`, Java 11. **One third-party Gradle dependency** — five instant-answer
+modules and an HTTP client were built without any, using `HttpURLConnection`, `org.json` and a
+hand-written back stack instead. Treat adding another as a decision needing justification.
+
+The one is `sh.calvin.reorderable`, for drag-to-reorder on the Providers and widget Actions lists.
+The case for it, since the same reasoning should be demanded of the next one: it covers the
+**non-lazy** `ReorderableColumn` these lists actually are, and the parts it brings — auto-scroll at
+the screen edge, interrupted drags, variable-height rows — are the whole difficulty rather than the
+part that was ever going to be written well by hand. It is published as Compose Multiplatform, so it
+adds ~24 `org.jetbrains.compose.*` alias modules to the graph; **those redirect to the androidx
+artifacts the BOM already pins and move no version of anything**, which was checked by resolving
+`debugRuntimeClasspath` with and without it rather than assumed. It compiles against Compose ~1.7
+and runs against 1.11.4, which is the one thing the graph cannot vouch for. Apache-2.0 and small
+enough to vendor if it is ever abandoned.
 
 Compose comes from the BOM, currently `2026.06.01` — **Material3 1.4.0**, the first stable release of
 the Expressive components, and Compose UI 1.11.4. Two things to know before touching it:
@@ -358,6 +369,17 @@ the sources jar, which is the only place it is written down.
 - `SettingsRadioRow` is the **only** radio row. Three others had grown alongside it, one per screen
   that wanted a leading picture the shared one didn't offer, and each had drifted in padding, text
   style and whether the label was clickable. It takes a drawable or an `ImageBitmap`.
+- `ProviderRow` — a mark, a toggle, and a **grip to drag the row by**, used by the Providers list
+  and the widget bar's Actions. It replaced a pair of up/down arrow buttons, which cost the row 96dp
+  of width and made a move of three places six taps. The arrows' real job survives as **custom
+  accessibility actions** on the row, because a drag is available to neither TalkBack nor a
+  keyboard, and both routes now go through the same `SearchProviders.reorderVisible` — when they
+  didn't, "move down" past an uninstalled action swapped with a row that isn't on screen and
+  appeared to do nothing. `draggedRow` marks the row being carried with a **tonal step**, not a
+  shadow: `SettingsGroupCard` clips its children, so an elevation would simply be cut off at the
+  card's rounded edge.
+  The handle modifier comes from `ReorderableItem`'s scope, so the row takes it as a parameter — it
+  is bound to the item's index within the column, which only the call site knows.
 - `ColorPickerAccordion`, used by both the widget bar and the search window.
 - `SettingsFilterField` and `ActionSquircle`, the filter input and the row-action tile of the long
   list screens — Manage apps and Hidden contacts. Both started life private to Manage apps and were
@@ -389,6 +411,36 @@ so it is not usable standalone either. It is a search *destination* that expands
 `SettingsFilterField` is therefore a `TextField` styled as a search input: pill shape, leading
 magnifier, `surfaceContainerHigh`, transparent indicator. Reference docs give the signature; only the
 source gives behaviour like a hardcoded width.
+
+`SettingsTextField` is its sibling for a value being *typed* rather than a list being filtered:
+filled on `surfaceContainerHighest`, 28dp corners to match the dialog, no indicator. Three styles
+were tried on the alias dialog and the failures are the useful part:
+
+- **A tonal fill is legible only relative to what it sits on, which a shared component cannot see.**
+  The first attempt copied the filter field wholesale, `surfaceContainerHigh` and a transparent
+  indicator. That is exactly a dialog's own `DialogTokens.ContainerColor`, so the field was the same
+  colour as its background with no underline either: no boundary of any kind, and the placeholder
+  appeared to float on the dialog. The identical styling is correct on the filter field, which sits
+  on the screen background. One tonal step up is the whole difference.
+- **A component's parts are load-bearing together.** The stock filled field's 1dp
+  `OnSurfaceVariant` indicator and square-bottomed `CornerExtraSmallTop` are one design — an
+  underline exists to sit flush against a straight edge, so keeping the fill while rounding all four
+  corners means dropping the indicator too.
+- **The notch is the Material 2 tell, not the border.** The `OutlinedTextField` this replaced was
+  not dated for being outlined; it was the floating `label` animating into a notch cut in its own
+  border. `ColorPicker`'s hex input keeps an outline and looks current without one.
+
+Any shape has to be passed deliberately — the outlined default is `CornerExtraSmall`, **4dp**, and
+the filled default is square-bottomed, because **the Expressive redraw did not reach the text-field
+shape tokens.** Neither default suits a `CornerExtraLarge` dialog.
+
+Supporting text is laid out by the component, not handed to the field's `supportingText` slot: that
+slot uses `SupportingTopPadding` of **4dp** and starts at `TextFieldPadding`, **16dp**, which aligns
+the sentence with the *typing cursor* rather than the edge of the field. Under a full-width field
+the indent reads as a mistake.
+
+Placeholders are instructions, not samples. The alias field showed `insta, ig`, which over a dialog
+headed *Spotify* reads as leftover junk; it says `Nickname` now.
 
 The search window's **Edit** action deep-links into Manage apps. Settings is `singleTask`, so an
 already-open instance receives it through `onNewIntent`, never a second `onCreate` — the request is
@@ -515,20 +567,40 @@ guess, and the only way to grade it is to look.
 
 `design/convert-icons.sh` runs svgo, then `design/prepare-svg.py`, then svg2vectordrawable. The
 middle stage is not optional — the converter silently drops `gradientTransform`, reads CSS colour
-names as black, and leaves a fill-less path undrawn where SVG would paint it black. All three
-failures produce a successful build and a wrong icon. `verify-icons.py` renders the generated
-drawable back to SVG and compares it against the source, which is the only check that exercises the
-converter rather than the preprocessing.
+names as black, ignores inherited presentation attributes, and leaves a fill-less path undrawn where
+SVG would paint it black. Every one of those produces a successful build and a wrong icon.
+`verify-icons.py` renders the generated drawable back to SVG and compares it against the source,
+which is the only check that exercises the converter rather than the preprocessing. Run it after
+touching the pipeline; it needs `cairosvg`, `numpy` and `pillow`, which on a managed Python means a
+virtualenv rather than `pip install`.
 
-**The pipeline handles filled brand logos only.** Feather and Lucide outline icons carry
-`stroke="currentColor"` on the root `<svg>` rather than on each path, and `make_fills_explicit` only
-inspects the `<path>` — so it sees neither a fill nor a stroke there, defaults the path to black, and
-emits a filled blob with no `android:tint`. It says so, quietly, as `WARNING path had no fill`.
+**The pipeline handles outline UI icons as well as filled brand logos**, and there is nothing to
+hand-author. It did not always: Feather and Lucide icons carry `stroke="currentColor"` and
+`stroke-width` on the root `<svg>` rather than on each path, and the converter reads each `<path>`
+alone, so every stroke was dropped and `make_fills_explicit` then defaulted each path to a black
+fill — an outline icon shipping as a filled blob, announced only as `WARNING path had no fill`.
+Thirteen icons were hand-authored around that, and *re-running the script clobbered them all*.
 
-Every UI icon is therefore **hand-authored** as a stroke drawable — `fillColor="#00000000"`,
-`strokeColor`, `strokeWidth="2"`, round caps and joins, `android:tint` — and *re-running
-`convert-icons.sh` clobbers them all*, because their SVGs still sit in `design/icons/`. The set:
-`ic_provider_at_sign`, `_edit`, `_edit_app`, `_eye_on`, `_eye_off`, `_info`, `_trash`, `_moon`,
-`_search_code`, `_terminal`, `_text_search`, `_wrench`, `_hat_glasses`. Teaching `prepare-svg.py` to
-propagate a root-level stroke down to its paths would fix this properly; until then, regenerate the
-brand logos by hand-picking files rather than running the script over the whole directory.
+`propagate_root_presentation` now copies the root's inherited presentation attributes onto each
+path before anything else runs, and resolves `currentColor` to white plus an `android:tint`, which
+is the arrangement the hand-authored ones used. Three things about it are worth knowing:
+
+- **The tell is in the artwork, not in a folder.** An outline icon is one that draws in
+  `currentColor`; `prepare-svg.py` reports that on stdout and `convert-icons.sh` adds the tint. So
+  there is no list to maintain and nothing to file in the right place, which is the failure mode a
+  `ui/` and `brand/` split would have introduced.
+- **It was never only a stroke problem.** `ic_provider_search` is a filled Material Symbols icon
+  whose root carries `fill="#e3e3e3"`; that was being lost too, and the icon had been shipping
+  black. It is `tintable` in `WidgetBarStyle`, so the wrong colour never reached the screen.
+- **Only the root is walked.** A `<g>` carrying its own fill or stroke is reported rather than
+  half-handled, because the pipeline's entire problem is failures that build cleanly and draw the
+  wrong thing.
+
+The converter has a `--tint` option. It accepts any value, including a valid hex, and emits nothing
+— which is why the attribute is written in afterwards.
+
+`verify-icons.py` **could not grade an outline icon at all** before this. It rendered the drawable's
+stored white against a source that resolves `currentColor` to black, so all thirteen sat permanently
+at 10–33% `CHECK` and a real geometry error would have looked identical. It now renders a tinted
+drawable's colours as black, since a tint replaces them anyway. Every icon in the set verifies at
+0.0–0.7% except `ic_provider_voice` at 29.1%, which is a pre-existing clip-path the converter drops.

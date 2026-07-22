@@ -9,20 +9,19 @@ import com.vynex.gumshoos.widget.WidgetAction
 internal const val GSA_PACKAGE = "com.google.android.googlequicksearchbox"
 internal const val GEMINI_PACKAGE = "com.google.android.apps.bard"
 
-/** Lens has had a standalone app, and Photos was checked for an entry point of its own. */
+/** Lens has had a standalone app. Photos was checked too, and declares no Lens activity we can name. */
 internal const val LENS_PACKAGE = "com.google.ar.lens"
-internal const val PHOTOS_PACKAGE = "com.google.android.apps.photos"
 
 /**
  * One thing worth trying for a widget action.
  *
  * [intent] is null where the device doesn't have it at all — the standalone Lens app on a phone that
- * never had it. The chain drops those; the tester still lists them, because "this rung isn't
- * available here" is the single most useful line in a report from someone else's phone, and it is
- * invisible if the row simply isn't drawn.
+ * never had it. The chain drops those.
  *
  * [inChain] is what [WidgetActionActivity] actually tries, in this order. Everything else is a
- * candidate the probe turned up that nothing has yet observed working.
+ * candidate an on-device probe turned up that nothing has yet been observed doing. Those are kept
+ * rather than deleted: each one is a rung already ruled out by watching a screen, and the list is
+ * what stops that being re-litigated from a class name.
  */
 internal data class LaunchCandidate(
     val label: String,

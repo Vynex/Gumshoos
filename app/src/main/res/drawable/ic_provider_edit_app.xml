@@ -1,6 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Lucide "pencil". Stroke icon: hand-authored, since the convert pipeline is built for filled
-     logos and drops the root-level stroke these carry. 24dp canvas, tintable via android:tint. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,10 +5,15 @@
     android:viewportHeight="24"
     android:tint="?android:attr/colorControlNormal">
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
+        android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M21.174,6.812 a1,1 0 0,0 -3.986,-3.987 L3.842,16.174 a2,2 0 0,0 -0.5,0.83 l-1.321,4.352 a0.5,0.5 0 0,0 0.623,0.622 l4.353,-1.32 a2,2 0 0,0 0.83,-0.497 z M15,5 l4,4" />
+        android:pathData="M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-0.5 0.83l-1.32 4.36a0.5 0.5 0 0 0 0.62 0.62l4.36-1.32a2 2 0 0 0 0.83-0.5z"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M15 5l4 4"/>
 </vector>

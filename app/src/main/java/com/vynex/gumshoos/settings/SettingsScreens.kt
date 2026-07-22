@@ -6,14 +6,9 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,19 +27,18 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.AppMatcher
 import com.vynex.gumshoos.AppPermission
-import com.vynex.gumshoos.AssistIntegration
+import com.vynex.gumshoos.BuildConfig
 import com.vynex.gumshoos.ContactsRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.LaunchMethod
 import com.vynex.gumshoos.OverlayService
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
-import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
-import com.vynex.gumshoos.WidgetActionActivity
 import com.vynex.gumshoos.answers.AnswerProviders
 import com.vynex.gumshoos.answers.CurrencyRates
 import com.vynex.gumshoos.answers.MeasurementSystem
+import sh.calvin.reorderable.ReorderableColumn
 import java.time.ZoneId
 import java.util.Currency
 
@@ -156,13 +150,14 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
     // still read "Not installed" on the one screen that talks about it.
     LaunchedEffect(Unit) { SearchProviders.refreshAvailability(context) }
 
-    fun move(id: String, delta: Int) {
-        // The order is persisted in full from what's on screen. Saving only the moved id would
-        // leave the rest implicit, and "unlisted sorts last" would then scramble them.
-        GumshoosConfig.setProviderOrder(
-            context,
-            SearchProviders.reorder(ordered.map { it.id }, id, delta),
-        )
+    // The order is persisted in full from what's on screen. Saving only the moved id would leave
+    // the rest implicit, and "unlisted sorts last" would then scramble them.
+    //
+    // Both the drag and the two accessibility actions land here, so a move of one place cannot come
+    // out differently from a drag of one place.
+    fun settle(from: Int, to: Int) {
+        val ids = ordered.map { it.id }
+        GumshoosConfig.setProviderOrder(context, SearchProviders.reorderVisible(ids, ids, from, to))
     }
 
     SettingsScaffold(title = "Providers", onBack = onBack) {
@@ -172,30 +167,42 @@ internal fun ProvidersScreen(onBack: () -> Unit) {
         )
 
         // Undividered: this is one ordered list being arranged, and a line between each row would
-        // cut the sequence the arrows exist to change into six unrelated entries.
+        // cut the sequence a drag exists to change into six unrelated entries.
         SettingsGroup(
-            note = "Spotify and ChatGPT appear only when their app is installed.",
+            note = "Drag a row by its handle to reorder. " +
+                "Spotify and ChatGPT appear only when their app is installed.",
         ) {
-            ordered.forEachIndexed { index, provider ->
-                val isMissing = provider.id in SearchProviders.missing
-                ProviderRow(
-                    label = provider.label,
-                    icon = provider.icon,
-                    description = when {
-                        isMissing -> "Not installed, so it stays hidden"
-                        else -> null
-                    },
-                    checked = provider.id !in GumshoosConfig.disabledProviders,
-                    enabled = !isMissing,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < ordered.lastIndex,
-                    onCheckedChange = {
-                        GumshoosConfig.setProviderEnabled(context, provider.id, it)
-                    },
-                    onMoveUp = { move(provider.id, -1) },
-                    onMoveDown = { move(provider.id, 1) },
-                    modifier = Modifier.padding(horizontal = SettingsInset),
-                )
+            ReorderableColumn(
+                list = ordered,
+                onSettle = ::settle,
+                modifier = Modifier.fillMaxWidth(),
+            ) { index, provider, isDragging ->
+                // The item wrapper is what carries the row's drag offset and hands its content the
+                // scope `draggableHandle` lives in; the row cannot reach it from the column lambda.
+                ReorderableItem {
+                    val isMissing = provider.id in SearchProviders.missing
+                    ProviderRow(
+                        label = provider.label,
+                        icon = provider.icon,
+                        description = when {
+                            isMissing -> "Not installed, so it stays hidden"
+                            else -> null
+                        },
+                        checked = provider.id !in GumshoosConfig.disabledProviders,
+                        enabled = !isMissing,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < ordered.lastIndex,
+                        onCheckedChange = {
+                            GumshoosConfig.setProviderEnabled(context, provider.id, it)
+                        },
+                        onMoveUp = { settle(index, index - 1) },
+                        onMoveDown = { settle(index, index + 1) },
+                        modifier = Modifier
+                            .draggedRow(isDragging)
+                            .padding(horizontal = SettingsInset),
+                        dragHandle = Modifier.draggableHandle(),
+                    )
+                }
             }
         }
     }
@@ -247,18 +254,19 @@ internal fun AliasDialog(
         onDismissRequest = onDismiss,
         title = { Text(label) },
         text = {
-            Column {
-                SettingsNote("Comma separated. Clearing the field removes them.")
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Also matches") },
-                    placeholder = { Text("insta, ig") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // The field alone, with the explanation as its own supporting text. It used to be a
+            // note above and a field below, which put the instructions before the thing they
+            // describe and made the dialog two stacked blocks instead of one control.
+            SettingsTextField(
+                value = text,
+                onValueChange = { text = it },
+                // Says what to type, rather than showing two abbreviations of an app that may not
+                // be the one on screen — "insta, ig" over a dialog headed Spotify read as junk.
+                placeholder = "Aliases",
+                supportingText = "Another name to find this app by. Separate several with commas, " +
+                    "or empty the field to remove them.",
+                modifier = Modifier.fillMaxWidth(),
+            )
         },
         confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -389,8 +397,12 @@ private fun answerExample(providerId: String): String = when (providerId) {
 }
 
 /**
- * How search gets opened: keeping the process warm, and the launcher targets. Lives under Advanced
- * — none of it needs touching once set up, and the widget is the intended way in.
+ * Every way of getting search open: the drawer icon, the assistant gesture, and the things that can
+ * be placed on the home screen.
+ *
+ * A top-level destination rather than a corner of Advanced, which is where it began. The launcher
+ * icon deliberately opens settings rather than search, so "how do I actually bring this up" is the
+ * question a fresh install arrives with — and the answer was three levels down.
  *
  * The overlay permission is only reported here, never granted. Two buttons onto the same system
  * dialog is two places for the explanation to drift; Permissions owns that.
@@ -400,35 +412,16 @@ internal fun LaunchingScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
 
-    SettingsScaffold(title = "Launching Gumshoos", onBack = onBack) {
-        // Granting lives on the Permissions screen, not here. What this screen still owes the user
-        // is a reason for the dead button below, which is disabled without the permission.
+    SettingsScaffold(title = "Launching", onBack = onBack) {
+        // Granting lives on the Permissions screen. What this screen owes the reader is a reason
+        // why everything it offers would be inert.
         if (!hasOverlay) {
-            SettingsWarning(
-                "Nothing here works until \"draw over other apps\" is granted, under Permissions.",
-            )
+            SettingsWarning("Search can't open until \"draw over other apps\" is granted.")
         }
 
-        SettingsGroup(
-            title = "Keep it warm",
-            note = "Needed once per boot. Placing the widget does it too.",
-        ) {
-            SettingsActionRow(
-                title = "Start & pre-warm",
-                summary = "Starts the service and pre-attaches the window, which is what makes " +
-                    "opening search near-instant.",
-                imageVector = Icons.Filled.Refresh,
-                enabled = hasOverlay,
-                onClick = {
-                    context.startForegroundService(
-                        OverlayService.intent(context, OverlayService.ACTION_WARM)
-                    )
-                },
-            )
-        }
-
-        SearchIconSettings()
+        DrawerIconSettings()
         AssistSettings()
+        AddToHomeScreenSettings()
     }
 }
 
@@ -462,56 +455,18 @@ internal fun BehaviourScreen(onBack: () -> Unit) {
 }
 
 @Composable
-internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
+internal fun AdvancedScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val hasOverlay = rememberPermission { Settings.canDrawOverlays(context) }
     var hideOnFocusLoss by remember { mutableStateOf(GumshoosConfig.hideOnFocusLoss) }
 
     SettingsScaffold(title = "Advanced", onBack = onBack) {
-        SettingsGroup {
-            SettingsSwitchRow(
-                title = "Close when focus is lost",
-                description = "Dismisses the search window when another app takes over — a " +
-                    "notification, or the shade. This also covers the Home gesture.",
-                checked = hideOnFocusLoss,
-                onCheckedChange = {
-                    hideOnFocusLoss = it
-                    GumshoosConfig.setHideOnFocusLoss(context, it)
-                },
-            )
-            SettingsGroupDivider()
-            CategoryRow(
-                title = "Launching Gumshoos",
-                summary = when {
-                    !hasOverlay -> "Overlay permission needed"
-                    AssistIntegration.isCurrentAssistant(context) == true ->
-                        "Widget · assistant gesture on"
-                    SearchShortcuts.isDrawerIconEnabled(context) -> "Widget · second app icon on"
-                    else -> "Widget, quick tile and shortcuts"
-                },
-                onClick = { onOpen(Screen.Launching) },
-            )
-            SettingsGroupDivider()
-            SettingsActionRow(
-                title = "Open notification settings",
-                // The full story — that a foreground service cannot run without a notification and
-                // cannot suppress it from inside — is a platform constraint, and belongs in the
-                // service's own source. What is useful here is what turning it off does.
-                summary = "A foreground service must show one. Switching notifications off hides " +
-                    "it and leaves the service running; Gumshoos stays under \"Active apps\".",
-                onClick = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                    )
-                },
-            )
-        }
-
+        // Separated by rules as well as by card, unlike every other screen here. Advanced is the one
+        // list whose sections are unrelated to each other — a launch preference, two recovery
+        // actions and a pair of window settings share only that none of them belongs anywhere else
+        // — so the line is doing the job it exists for rather than fencing off one set of choices.
         SettingsGroup(
-            title = "How apps are opened",
-            note = "A diagnostic lever, not a preference. Each launch records which method it " +
-                "used in the event trace.",
+            title = "Opening apps",
+            note = "Only worth changing if an app won't open.",
         ) {
             LaunchMethod.entries.forEach { method ->
                 SettingsRadioRow(
@@ -523,53 +478,57 @@ internal fun AdvancedScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
             }
         }
 
+        SettingsDivider()
+
         SettingsGroup(title = "Maintenance") {
             IndexRefresh()
             SettingsGroupDivider()
             WidgetRefresh()
         }
 
-        CrashReport()
-        EventTrace()
+        SettingsDivider()
 
-        SettingsGroup(
-            title = "Google entry points",
-            note = "Neither app publishes an intent for voice search or Lens, and the components " +
-                "that look right often aren't. These read the answer off this device instead.",
-        ) {
-            SettingsActionRow(
-                title = "Probe voice search targets",
-                summary = "Writes what the Google app declares into the trace.",
-                onClick = { WidgetActionActivity.probeVoiceTargets(context) },
+        SettingsGroup {
+            SettingsSwitchRow(
+                title = "Close search when focus is lost",
+                description = "Closes the search window when you switch away or swipe to home.",
+                checked = hideOnFocusLoss,
+                onCheckedChange = {
+                    hideOnFocusLoss = it
+                    GumshoosConfig.setHideOnFocusLoss(context, it)
+                },
             )
             SettingsGroupDivider()
             SettingsActionRow(
-                title = "Probe Lens targets",
-                summary = "Writes what the Lens apps declare into the trace.",
-                onClick = { WidgetActionActivity.probeLensTargets(context) },
-            )
-            SettingsGroupDivider()
-            CategoryRow(
-                title = "Entry point tester",
-                // A probe says what exists and where an intent resolves; it cannot say whether
-                // anything appeared, because a component that opens and closes itself reports
-                // success. Only a pair of eyes settles that, one candidate at a time.
-                summary = "Fires one target at a time so it can be watched",
-                onClick = { onOpen(Screen.EntryPoints) },
-            )
-        }
-
-        SettingsGroup(title = "Compare launch paths") {
-            SettingsActionRow(
-                title = "Show overlay from app",
-                summary = "Goes through an activity, which is deliberately the slow path. " +
-                    "Compare it against tapping the widget.",
+                title = "Open notification settings",
+                // The mechanism stays here: a foreground service must supply a notification and
+                // cannot suppress it from inside, but Android 13+ only *displays* it when
+                // POST_NOTIFICATIONS is granted — which is why the app never asks for it, and why
+                // denying it is the supported way to run the service quietly. See Permissions.kt.
+                summary = "Gumshoos doesn't need notifications. Turning them off is recommended.",
                 onClick = {
-                    context.startForegroundService(
-                        OverlayService.intent(context, OverlayService.ACTION_SHOW, source = "in-app")
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     )
                 },
             )
+        }
+
+        // No divider of its own: it draws nothing at all when there is no crash, which is almost
+        // always, and a rule with nothing under it would be the visible half of that.
+        CrashReport()
+
+        // The divider is inside the gate for the same reason — in a release build it would be a
+        // line closing the screen with nothing beneath it.
+        //
+        // The crash card is not gated: it hides itself, and a user who can copy a trace and send it
+        // is worth having. The event trace is developer instrumentation, a monospace log dump with
+        // no meaning to anyone else, so it ships only in debug. EventLog still records in release —
+        // the recording is what makes a crash report readable; only the viewer goes away.
+        if (BuildConfig.DEBUG) {
+            SettingsDivider()
+            EventTrace()
         }
     }
 }

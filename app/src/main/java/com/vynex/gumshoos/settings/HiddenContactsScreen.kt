@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vynex.gumshoos.AppMatcher
 import com.vynex.gumshoos.ContactEntry
 import com.vynex.gumshoos.ContactPhotos
 import com.vynex.gumshoos.ContactsRepository
@@ -72,9 +73,12 @@ internal fun HiddenContactsScreen(onBack: () -> Unit) {
         if (query.isBlank()) {
             all
         } else {
-            val needle = query.trim().lowercase()
+            // The name is matched on its folded form, precomputed at load time, so this filter
+            // agrees with search itself — "jose" finds José here too, not only in the window.
+            // A phone number and an email address are ASCII, where folding is just lowercasing.
+            val needle = AppMatcher.foldQuery(query.trim())
             all.filter {
-                it.name.lowercase().contains(needle) ||
+                it.indexed.folded.contains(needle) ||
                     it.phone?.lowercase()?.contains(needle) == true ||
                     it.email?.lowercase()?.contains(needle) == true
             }

@@ -60,31 +60,78 @@ class SearchProvidersTest {
 
     private val ids = listOf("a", "b", "c")
 
+    /** Every row on screen, which is the Providers screen and the simple case. */
+    private fun move(from: Int, to: Int, list: List<String> = ids) =
+        SearchProviders.reorderVisible(list, list, from, to)
+
     @Test
     fun `moving up swaps with the previous entry`() {
-        assertEquals(listOf("b", "a", "c"), SearchProviders.reorder(ids, "b", -1))
+        assertEquals(listOf("b", "a", "c"), move(1, 0))
     }
 
     @Test
     fun `moving down swaps with the next entry`() {
-        assertEquals(listOf("a", "c", "b"), SearchProviders.reorder(ids, "b", 1))
+        assertEquals(listOf("a", "c", "b"), move(1, 2))
+    }
+
+    @Test
+    fun `a drag across several places lands where it was dropped`() {
+        assertEquals(listOf("b", "c", "a"), move(0, 2))
+        assertEquals(listOf("c", "a", "b"), move(2, 0))
     }
 
     @Test
     fun `moving past either end is a no-op`() {
-        assertEquals(ids, SearchProviders.reorder(ids, "a", -1))
-        assertEquals(ids, SearchProviders.reorder(ids, "c", 1))
+        // What the "move up" action on the top row does, so it needs no guard at the call site.
+        assertEquals(ids, move(0, -1))
+        assertEquals(ids, move(2, 3))
     }
 
     @Test
-    fun `moving an id that isn't there is a no-op`() {
-        assertEquals(ids, SearchProviders.reorder(ids, "zzz", 1))
+    fun `moving onto itself is a no-op`() {
+        assertEquals(ids, move(1, 1))
     }
 
     @Test
     fun `reordering preserves every id`() {
-        assertEquals(ids.toSet(), SearchProviders.reorder(ids, "c", -1).toSet())
-        assertEquals(ids.size, SearchProviders.reorder(ids, "c", -1).size)
+        assertEquals(ids.toSet(), move(2, 0).toSet())
+        assertEquals(ids.size, move(2, 0).size)
+    }
+
+    // --- reordering a visible subset --------------------------------------------------------
+
+    // The widget bar's case: uninstalled actions are saved in the order but aren't on screen, and
+    // must not be shuffled by a drag between the rows that are.
+
+    private val saved = listOf("a", "gone", "b", "c")
+    private val shown = listOf("a", "b", "c")
+
+    @Test
+    fun `an id that isn't on screen keeps its own slot`() {
+        // "b" and "a" trade places around it; "gone" stays at index 1 either way.
+        assertEquals(listOf("b", "gone", "a", "c"), SearchProviders.reorderVisible(saved, shown, 1, 0))
+    }
+
+    @Test
+    fun `a drag past an off-screen id still moves one visible place`() {
+        assertEquals(listOf("b", "gone", "a", "c"), SearchProviders.reorderVisible(saved, shown, 0, 1))
+    }
+
+    @Test
+    fun `a drag to the end of the visible rows keeps the off-screen id in place`() {
+        assertEquals(listOf("b", "gone", "c", "a"), SearchProviders.reorderVisible(saved, shown, 0, 2))
+    }
+
+    @Test
+    fun `indices are read against the visible rows, not the saved order`() {
+        // Index 2 is "c" on screen but "b" in the saved list. Reading it against the saved list
+        // would move the wrong row — the bug this function exists to make impossible.
+        assertEquals(listOf("c", "gone", "a", "b"), SearchProviders.reorderVisible(saved, shown, 2, 0))
+    }
+
+    @Test
+    fun `a visible id missing from the saved order is a no-op rather than a crash`() {
+        assertEquals(saved, SearchProviders.reorderVisible(saved, listOf("a", "b", "zzz"), 0, 1))
     }
 
     // --- what the shipped set promises ----------------------------------------------------------

@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.vynex.gumshoos.answers.AnswerContextFactory
 import com.vynex.gumshoos.answers.AnswerFormat
 import com.vynex.gumshoos.answers.CurrencyRates
+import com.vynex.gumshoos.answers.RateRefreshOutcome
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.AssistIntegration
@@ -47,6 +47,8 @@ import com.vynex.gumshoos.R
 import com.vynex.gumshoos.refreshAllWidgets
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
+import com.vynex.gumshoos.SearchWidgetProvider
+import com.vynex.gumshoos.SearchWidgetSmallProvider
 import com.vynex.gumshoos.UsageSource
 
 /**
@@ -76,7 +78,7 @@ internal fun IndexRefresh() {
     SettingsActionRow(
         title = if (running) "Rebuilding…" else "Rebuild index",
         summary = result ?: "Re-reads every installed app, and contacts if permitted.",
-        imageVector = Icons.Filled.Refresh,
+        icon = R.drawable.ic_provider_rotate_ccw,
         enabled = !running,
         onClick = {
             running = true
@@ -118,7 +120,7 @@ internal fun WidgetRefresh() {
             "Re-sends both widgets to the launcher. Worth doing if one stops responding, or " +
                 "opens this app instead of search."
         },
-        imageVector = Icons.Filled.Refresh,
+        icon = R.drawable.ic_provider_rotate_ccw,
         onClick = { refreshAllWidgets(context); done = true },
     )
 }
@@ -143,7 +145,7 @@ internal fun EventTrace() {
         SettingsActionRow(
             title = if (expanded) "Hide trace" else "Show trace",
             summary = if (expanded) null else "Reads the log from disk.",
-            imageVector = Icons.Filled.Refresh,
+            icon = R.drawable.ic_provider_rotate_ccw,
             onClick = {
                 trace = EventLog.read()
                 expanded = !expanded
@@ -352,62 +354,152 @@ internal fun CurrencyRatesSettings() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val table = CurrencyRates.table
-    var lastAttemptFailed by remember { mutableStateOf(false) }
+    var lastOutcome by remember { mutableStateOf<RateRefreshOutcome?>(null) }
+    var coolingDown by remember { mutableStateOf(CurrencyRates.cooldownRemainingMillis() > 0) }
+
+    // One delayed wake-up rather than a ticking timer: nothing on screen counts down, so the row
+    // only needs to hear about the single moment it becomes tappable again. Without it the row
+    // would stay dimmed until some unrelated recomposition happened to run. Keyed on the attempt,
+    // so a new one restarts the wait, and cancelled for free when the screen goes away.
+    LaunchedEffect(CurrencyRates.lastAttemptAtMillis) {
+        val remaining = CurrencyRates.cooldownRemainingMillis()
+        coolingDown = remaining > 0
+        if (remaining > 0) {
+            delay(remaining)
+            coolingDown = false
+        }
+    }
 
     // The status is the row's own summary rather than a separate paragraph: what the rates are and
     // the button that changes them are one thing, and reading them apart was never useful.
     SettingsGroup(title = "Exchange rates") {
         SettingsActionRow(
-            title = if (CurrencyRates.refreshing) "Refreshing…" else "Refresh rates now",
+            title = when {
+                CurrencyRates.refreshing -> "Refreshing…"
+                coolingDown -> "Just refreshed"
+                else -> "Refresh rates now"
+            },
             summary = when {
+                coolingDown && !CurrencyRates.refreshing -> "Rates only change once a day."
                 table == null -> "Not fetched rates yet."
                 else -> "${table.rates.size} currencies, based on ${table.base}. Data from " +
                     AnswerFormat.relativeTime(table.fetchedAtMillis, System.currentTimeMillis()) +
                     "."
             },
-            imageVector = Icons.Filled.Refresh,
-            enabled = !CurrencyRates.refreshing,
+            icon = R.drawable.ic_provider_rotate_ccw,
+            enabled = !CurrencyRates.refreshing && !coolingDown,
             onClick = {
-                lastAttemptFailed = false
+                lastOutcome = null
                 scope.launch {
                     val base = AnswerContextFactory.forDevice(context).currencyCode
-                    lastAttemptFailed = !CurrencyRates.refresh(context, base, force = true)
+                    lastOutcome = CurrencyRates.refresh(context, base, force = true)
                 }
             },
         )
     }
-    if (lastAttemptFailed) {
+    // Only a genuine failure warns. A refused tap is us declining to ask, and saying the service
+    // couldn't be reached would be a lie about someone else.
+    if (lastOutcome == RateRefreshOutcome.FAILED) {
         SettingsWarning("Couldn't reach the rate service. Any cached rates are still in use.")
     }
 }
 
+/**
+ * The second launcher icon.
+ *
+ * A switch, not a checkbox. It is an on/off setting like every other on/off setting here, and the
+ * checkbox was only ever there because this control predates the shared row.
+ */
 @Composable
-internal fun SearchIconSettings() {
+internal fun DrawerIconSettings() {
     val context = LocalContext.current
     var drawerIcon by remember { mutableStateOf(SearchShortcuts.isDrawerIconEnabled(context)) }
 
-    // A switch, not a checkbox. It is an on/off setting like every other on/off setting here, and
-    // the checkbox was only ever there because this control predates the shared row.
+    // Why it's slower — the icon goes through LaunchSearchActivity, a trampoline, because a
+    // shortcut can't start a service — is the mechanism, and stays here rather than on screen.
     SettingsGroup(
-        title = "Search icons",
-        note = "Both open search through a hidden activity, so expect them to read a little " +
-            "slower than the widget.",
+        title = "App drawer",
+        note = "A little slower to open than the widget.",
     ) {
         SettingsSwitchRow(
-            title = "Second icon in the app drawer",
-            description = "Adds a separate \"Gumshoos Search\" entry alongside the normal icon.",
+            title = "Second search icon",
+            description = "Adds a \"Gumshoos Search\" icon to the app drawer.",
             checked = drawerIcon,
             onCheckedChange = {
                 drawerIcon = it
                 SearchShortcuts.setDrawerIconEnabled(context, it)
             },
         )
+    }
+}
+
+/**
+ * The three things that can be dropped on the home screen.
+ *
+ * Each hands a request to the launcher, which shows its own confirmation, chooses where the thing
+ * lands, and is free to decline outright — some launchers accept neither kind, and one that accepts
+ * shortcuts can still refuse widgets, so the two capabilities are asked about separately.
+ *
+ * The outcome is surfaced rather than assumed. A refusal and a success look identical from this
+ * screen, and the innocent explanation — that it landed on a home screen page nobody is currently
+ * looking at — is the one a silent failure hides behind.
+ *
+ * The icon and the drawer switch above are deliberately independent: the pinned shortcut aims at
+ * [LaunchSearchActivity][com.vynex.gumshoos.LaunchSearchActivity] directly, so it works whether or
+ * not the drawer alias is enabled, and disabling this alongside it would grey out a control that
+ * would have worked.
+ */
+@Composable
+internal fun AddToHomeScreenSettings() {
+    val context = LocalContext.current
+    val canPinShortcut = SearchShortcuts.canPin(context)
+    val canPinWidget = SearchShortcuts.canPinWidget(context)
+    var refused by remember { mutableStateOf(false) }
+
+    SettingsGroup(
+        title = "Add to home screen",
+        // Nothing to say in the ordinary case — the launcher's own confirmation says it better a
+        // moment later. The note exists for the launcher that won't play along at all.
+        note = if (canPinShortcut || canPinWidget) {
+            null
+        } else {
+            "This launcher won't let apps add things. Use its own widget list instead."
+        },
+    ) {
+        SettingsActionRow(
+            title = "Search icon",
+            summary = "One icon that opens search.",
+            enabled = canPinShortcut,
+            onClick = { refused = !SearchShortcuts.requestPin(context) },
+        )
         SettingsGroupDivider()
         SettingsActionRow(
-            title = "Pin a search icon to the home screen",
-            enabled = SearchShortcuts.canPin(context),
-            onClick = { SearchShortcuts.requestPin(context) },
+            title = "Search bar widget",
+            summary = "The wide bar. Fastest way in.",
+            enabled = canPinWidget,
+            onClick = {
+                refused = !SearchShortcuts.requestPinWidget(
+                    context,
+                    SearchWidgetProvider::class.java,
+                )
+            },
         )
+        SettingsGroupDivider()
+        SettingsActionRow(
+            title = "App icon widget",
+            summary = "Just the icon, to sit among your apps.",
+            enabled = canPinWidget,
+            onClick = {
+                refused = !SearchShortcuts.requestPinWidget(
+                    context,
+                    SearchWidgetSmallProvider::class.java,
+                )
+            },
+        )
+    }
+
+    if (refused) {
+        SettingsWarning("Your launcher turned that down. Add it from its widget list instead.")
     }
 }
 
@@ -429,17 +521,15 @@ internal fun AssistSettings() {
 
     val assistState = when {
         isAssistant == true && !offered ->
-            "Gumshoos is still the selected assistant, but is no longer being offered. Pick " +
-                "another one in system settings, or the gesture will stop doing anything."
-        isAssistant == true -> "Selected. The assistant gesture opens Gumshoos."
-        isAssistant == false && offered ->
-            "Listed but not selected — choose Gumshoos in system settings to finish. Some " +
-                "phones only offer their own assistant here, in which case this can't be set."
+            "Still your assistant, but no longer offered. Pick another one in system settings."
+        isAssistant == true -> "Selected. The assistant gesture opens search."
+        // Some phones only offer their own assistant, so this can be unfinishable. Not said on
+        // screen: it reads as an excuse, and the next step is the same either way.
+        isAssistant == false && offered -> "Listed, but not chosen yet."
         isAssistant == false -> "Not selected."
         // Null is "couldn't tell", not "no". Saying "not selected" on a device where the check
         // is unavailable would be a confident wrong answer to the one question this row asks.
-        else -> "Couldn't read the current assistant on this device. The button below still " +
-            "opens the picker."
+        else -> "Couldn't check on this phone."
     }
     // The contradictory state is the one worth raising: still the selected assistant, no longer
     // offered as one, so the gesture is about to stop working with nothing on screen saying why.
@@ -451,8 +541,7 @@ internal fun AssistSettings() {
     ) {
         SettingsSwitchRow(
             title = "Offer Gumshoos as an assistant",
-            description = "Adds it to the phone's list, so the assistant gesture — the power " +
-                "button, or the corner swipe — can open search. Choosing it is a separate step.",
+            description = "Lets the assistant gesture open search. Choosing it is a second step.",
             checked = offered,
             onCheckedChange = {
                 offered = it
@@ -460,9 +549,10 @@ internal fun AssistSettings() {
             },
         )
         SettingsGroupDivider()
+        // No summary: the row above already says a second step is coming, and the reason for it —
+        // no app may make itself the assistant — is a platform rule, not something to read here.
         SettingsActionRow(
             title = "Open assistant settings",
-            summary = "No app is allowed to make itself the assistant, so this is where it's set.",
             onClick = { pickerMissing = !AssistIntegration.openPicker(context) },
         )
     }
@@ -470,10 +560,7 @@ internal fun AssistSettings() {
     if (contradictory) SettingsWarning(assistState)
 
     if (pickerMissing) {
-        SettingsWarning(
-            "This phone didn't answer to any of the assistant settings screens. Look under " +
-                "Settings → Apps → Default apps.",
-        )
+        SettingsWarning("Couldn't open it. Look under Settings → Apps → Default apps.")
     }
 }
 

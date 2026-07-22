@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +22,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.GumshoosConfig
+import com.vynex.gumshoos.R
 import com.vynex.gumshoos.OverlayCardTopMargin
 import com.vynex.gumshoos.OverlayContent
 import com.vynex.gumshoos.overlaySettledHeight
@@ -147,7 +146,7 @@ internal fun SearchWindowScreen(onBack: () -> Unit) {
             SettingsActionRow(
                 title = "Reset to defaults",
                 summary = "Colour, shape and grid go back to how they started.",
-                imageVector = Icons.Filled.Refresh,
+                icon = R.drawable.ic_provider_rotate_ccw,
                 onClick = { GumshoosConfig.resetSearchWindow(context) },
             )
         }

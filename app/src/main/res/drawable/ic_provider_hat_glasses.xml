@@ -1,6 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Lucide "hat-glasses". Stroke icon: hand-authored, since the convert pipeline is built for filled
-     logos and drops the root-level stroke these carry. 24dp canvas, tintable via android:tint. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,10 +5,33 @@
     android:viewportHeight="24"
     android:tint="?android:attr/colorControlNormal">
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
+        android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M14,18 a2,2 0 0,0 -4,0 M19,11 l-2.11,-6.657 a2,2 0 0,0 -2.752,-1.148 l-1.276,0.61 A2,2 0 0,1 12,4 H8.5 a2,2 0 0,0 -1.925,1.456 L5,11 M2,11 h20 M20,18 A3,3 0 1,1 14,18 A3,3 0 1,1 20,18 M10,18 A3,3 0 1,1 4,18 A3,3 0 1,1 10,18" />
+        android:pathData="M14 18a2 2 0 0 0-4 0"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M19 11l-2.11-6.66a2 2 0 0 0-2.75-1.14l-1.28 0.61A2 2 0 0 1 12 4H8.5a2 2 0 0 0-1.93 1.46L5 11"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M2 11h20"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M17 15A3 3 0 1 0 17 21 3 3 0 1 0 17 15z"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M7 15A3 3 0 1 0 7 21 3 3 0 1 0 7 15z"/>
 </vector>

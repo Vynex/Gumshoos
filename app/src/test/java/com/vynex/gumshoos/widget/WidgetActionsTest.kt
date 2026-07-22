@@ -132,8 +132,21 @@ class WidgetActionsTest {
     @Test
     fun `reordering an action list preserves every entry`() {
         val ids = WidgetAction.entries.map { it.id }
-        val moved = SearchProviders.reorder(ids, "voice", -1)
+        val from = ids.indexOf("voice")
+        val moved = SearchProviders.reorderVisible(ids, ids, from, from - 1)
         assertEquals(ids.toSet(), moved.toSet())
         assertEquals(ids.size, moved.size)
+    }
+
+    @Test
+    fun `dragging among installed actions leaves an uninstalled one where it was`() {
+        // The widget bar's real case: Lens drops out of the rows on screen when its app isn't
+        // there, but stays in the saved order so installing it returns it to this position.
+        val ids = listOf("google", "lens", "voice", "assistant")
+        val shown = listOf("google", "voice", "assistant")
+        assertEquals(
+            listOf("voice", "lens", "google", "assistant"),
+            SearchProviders.reorderVisible(ids, shown, 1, 0),
+        )
     }
 }

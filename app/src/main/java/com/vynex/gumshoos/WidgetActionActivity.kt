@@ -4,10 +4,8 @@ import android.app.Activity
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.core.net.toUri
 import com.vynex.gumshoos.widget.WidgetAction
@@ -22,10 +20,10 @@ import com.vynex.gumshoos.widget.WidgetAction
  * tried in order, with the rung that worked recorded. A silently-refused intent looks identical to
  * a working one otherwise, which is exactly the failure this project keeps running into.
  *
- * The chains live in [WidgetActionTargets], which the entry point tester reads from too — this class
- * only walks one. Every order there was taken off a real device by [probeVoiceTargets] or
- * [probeLensTargets]; four separate attempts to reason the right intent out from its name were all
- * wrong, and Lens is still unsolved on a phone without the standalone app.
+ * The chains live in [WidgetActionTargets]; this class only walks one. Every order there was taken
+ * off a real device with a probe and a one-at-a-time tester, both since removed — four separate
+ * attempts to reason the right intent out from its name were all wrong, and Lens is still unsolved
+ * on a phone without the standalone app. Re-derive, don't guess, if a chain ever needs changing.
  *
  * Modelled on [LaunchSearchActivity]: translucent, no history, finished before it draws. It costs a
  * launch that the overlay path deliberately avoids, but these hand off to another app where a launch
@@ -92,139 +90,6 @@ class WidgetActionActivity : Activity() {
 
     companion object {
         private const val EXTRA_ACTION = "action"
-
-        /**
-         * Writes every plausible voice-search entry point on this device to the event trace.
-         *
-         * Exists because the Google app's own routing is not something that can be reasoned about
-         * from outside: `ACTION_WEB_SEARCH` scoped to the package resolves to `HandsFreeActivity`,
-         * which then hands off to whichever assistant is configured — so the intent that looks
-         * correct opens the wrong screen, and nothing about that is visible without asking the
-         * device. Guessing a component name and shipping it is what this replaces, and it is what
-         * eventually found SEARCH_LONG_PRESS as the one action landing anywhere else.
-         */
-        fun probeVoiceTargets(context: Context) {
-            probe(
-                context = context,
-                label = "voice",
-                packages = listOf(GSA_PACKAGE),
-                // Matched on the class name alone. Matching the full name caught 210 of 271,
-                // because the app's own package prefix is com.google.android.apps.search.* — the
-                // filter let nearly everything through and the interesting entries fell past the
-                // limit before anything useful appeared.
-                keywords = listOf("voice", "opa", "assist", "search", "query", "entrypoint"),
-                intents = listOf(
-                    Intent(RecognizerIntent.ACTION_WEB_SEARCH),
-                    Intent(RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE),
-                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
-                    Intent(Intent.ACTION_SEARCH_LONG_PRESS),
-                    Intent(Intent.ACTION_VOICE_COMMAND),
-                    Intent(Intent.ACTION_ASSIST),
-                    Intent(Intent.ACTION_SEARCH),
-                ),
-            )
-        }
-
-        /**
-         * The same, for Lens.
-         *
-         * Lens was shipped and then withdrawn because every component name launchers are known to
-         * use either failed to resolve or opened something that closed itself again. Google
-         * publishes no intent for it, so the only way to find a working entry point is to ask the
-         * device what exists rather than to keep guessing class names.
-         *
-         * Wider than the voice probe in one respect: Lens does not necessarily live in the Google
-         * app. It has had a standalone package, and Photos hosts its own Lens entry point, so all
-         * three are inspected.
-         *
-         * The resolution table is what settled it, and the declared list could not have: the winning
-         * activity is `com.google.android.apps.lens.MainActivity`, and the keywords match on the
-         * class name alone, so nothing about "MainActivity" ever brought it into view. Read the
-         * table first. Photos, meanwhile, matched 0 of 328 — its Lens entry point is not an activity
-         * we can name.
-         */
-        fun probeLensTargets(context: Context) {
-            probe(
-                context = context,
-                label = "lens",
-                packages = listOf(GSA_PACKAGE, LENS_PACKAGE, PHOTOS_PACKAGE),
-                keywords = listOf("lens", "visual", "image", "camera", "scan", "capture"),
-                intents = listOf(
-                    Intent(Intent.ACTION_VIEW, "https://lens.google.com".toUri()),
-                    Intent(Intent.ACTION_VIEW, "googleapp://lens".toUri()),
-                    Intent(Intent.ACTION_VIEW, "google://lens".toUri()),
-                    Intent(Intent.ACTION_SEND).setType("image/*"),
-                    Intent("com.google.android.apps.lens.LENS"),
-                    Intent("com.google.ar.lens.LENS"),
-                ),
-            )
-        }
-
-        /**
-         * Reports what a set of packages declares and what a set of intents actually resolves to.
-         *
-         * Declared activities rather than only resolvable ones: the target may advertise no intent
-         * filter matching anything we would think to try, and a component that exists but is
-         * `internal` is worth knowing about too — it explains a launch that throws rather than one
-         * that simply doesn't resolve.
-         *
-         * Both halves matter. The declared list says what could be launched; the resolution table
-         * says where an intent lands, and it was the second that showed five different voice
-         * actions all funnelling into the same activity.
-         */
-        private fun probe(
-            context: Context,
-            label: String,
-            packages: List<String>,
-            keywords: List<String>,
-            intents: List<Intent>,
-        ) {
-            val pm = context.packageManager
-            EventLog.record("$label probe: start")
-
-            packages.forEach { pkg ->
-                @Suppress("DEPRECATION")
-                val info = runCatching {
-                    pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
-                }.getOrNull()
-
-                if (info == null) {
-                    // Absent or invisible to us, and those are different problems — a missing
-                    // <queries> entry looks exactly like the app not being installed.
-                    EventLog.record("  $pkg: not installed or not visible")
-                    return@forEach
-                }
-
-                val activities = info.activities.orEmpty()
-                val matches = activities.filter { activity ->
-                    val name = activity.name.orEmpty().substringAfterLast('.').lowercase()
-                    keywords.any { it in name }
-                }
-                EventLog.record("  $pkg: ${matches.size} of ${activities.size} declared match")
-                matches.take(PROBE_LIMIT).forEach {
-                    EventLog.record("    ${if (it.exported) "exported" else "internal"} ${it.name}")
-                }
-            }
-
-            intents.forEach { intent ->
-                val open = pm.resolveActivity(intent, 0)
-                val describe = intent.action + (intent.data?.let { " $it" } ?: "")
-                EventLog.record(
-                    "  $describe -> any:${open?.activityInfo?.packageName ?: "none"}" +
-                        "/${open?.activityInfo?.name?.substringAfterLast('.') ?: ""}"
-                )
-                packages.forEach { pkg ->
-                    val scoped = pm.resolveActivity(Intent(intent).setPackage(pkg), 0)
-                    if (scoped != null) {
-                        EventLog.record("      in $pkg: ${scoped.activityInfo?.name}")
-                    }
-                }
-            }
-            EventLog.record("$label probe: done")
-        }
-
-        /** Enough to identify the right activity without flooding a trace that has other uses. */
-        private const val PROBE_LIMIT = 60
 
         /**
          * A tap target for one action.

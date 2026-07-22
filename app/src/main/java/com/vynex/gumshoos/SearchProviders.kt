@@ -144,15 +144,33 @@ object SearchProviders {
     }
 
     /**
-     * Moves one id within a list, for the reorder buttons. Out-of-range moves are no-ops, so the
-     * top item's "up" needs no special case at the call site.
+     * Applies a move made among [visible] rows to the full saved order.
+     *
+     * A drag reports positions within the rows on screen, but the widget bar saves an order over
+     * *every* action — including the ones whose app isn't installed, which are drawn in a separate
+     * group and cannot be dragged. Those have to keep their place, so that installing the app
+     * returns the action to where it sat rather than to the end of the list.
+     *
+     * So the visible ids are reordered among themselves and then poured back into the slots the
+     * visible ids already occupied; anything not on screen stays at exactly its own index. Where
+     * every id is visible — the Providers screen — that degrades to a plain move.
+     *
+     * A move off either end is a no-op, which is what lets the "move up" accessibility action on
+     * the top row be wired without a special case at the call site.
      */
-    fun reorder(ids: List<String>, id: String, delta: Int): List<String> {
-        val from = ids.indexOf(id)
-        if (from < 0) return ids
-        val to = from + delta
-        if (to !in ids.indices) return ids
-        return ids.toMutableList().apply { add(to, removeAt(from)) }
+    fun reorderVisible(
+        ids: List<String>,
+        visible: List<String>,
+        from: Int,
+        to: Int,
+    ): List<String> {
+        if (from == to || from !in visible.indices || to !in visible.indices) return ids
+        val onScreen = visible.toSet()
+        // A visible id the saved order has never heard of would leave the pour short and throw.
+        // It can't happen from the screens, but it costs one count to not depend on that.
+        if (ids.count { it in onScreen } != visible.size) return ids
+        val moved = visible.toMutableList().apply { add(to, removeAt(from)) }.iterator()
+        return ids.map { if (it in onScreen) moved.next() else it }
     }
 
     /**

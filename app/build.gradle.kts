@@ -36,6 +36,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // For BuildConfig.DEBUG, which gates the event trace out of a release build. AGP 8 stopped
+        // generating BuildConfig unless it is asked for.
+        buildConfig = true
     }
     // No composeOptions block: the Kotlin 2.0 Compose compiler plugin supplies its own version and
     // kotlinCompilerExtensionVersion is ignored.
@@ -54,6 +57,7 @@ dependencies {
     implementation(libs.androidx.material.icons.core)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.reorderable)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

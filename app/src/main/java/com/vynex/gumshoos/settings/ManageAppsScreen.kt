@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.vynex.gumshoos.AppEntry
+import com.vynex.gumshoos.AppMatcher
 import com.vynex.gumshoos.AppRepository
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
@@ -89,15 +90,27 @@ internal fun ManageAppsScreen(onBack: () -> Unit, highlightKey: String? = null) 
     fun isHidden(entry: AppEntry): Boolean =
         entry.componentKey in hidden || entry.packageName in hidden
 
-    val all = AppRepository.apps.sortedBy { it.label.lowercase() }
+    val apps = AppRepository.apps
+    // Sorted once per index rather than once per recomposition. `sortedBy` calls its selector on
+    // both sides of every comparison, so leaving this bare re-folded the whole list — thousands of
+    // throwaway strings — on every keystroke in the filter field above it.
+    //
+    // On the folded label rather than lowercase(): it is precomputed at index time for exactly this
+    // reason, and it also puts accented names where a reader looks for them. 'é' is codepoint 233,
+    // so lowercase() sorted every one of them past 'z', to the bottom of the list.
+    val all = remember(apps) { apps.sortedBy { it.indexed.folded } }
+
     val filtered = remember(query, all, aliases) {
         if (query.isBlank()) {
             all
         } else {
-            val needle = query.trim().lowercase()
-            all.filter {
-                it.label.lowercase().contains(needle) ||
-                    aliasOf(it)?.lowercase()?.contains(needle) == true
+            // Folded on both sides, so this filter matches the way search itself does — "poke"
+            // finds Pokémon here too, rather than only in the search window. `foldQuery` is the
+            // same folding `indexed.folded` was built with, so the two are directly comparable.
+            val needle = AppMatcher.foldQuery(query.trim())
+            all.filter { entry ->
+                entry.indexed.folded.contains(needle) ||
+                    aliasOf(entry)?.let { AppMatcher.foldQuery(it).contains(needle) } == true
             }
         }
     }

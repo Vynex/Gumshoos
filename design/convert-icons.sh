@@ -5,6 +5,11 @@
 # <circle>, <rect>, <ellipse>, <polygon> or <line> is dropped silently, so artwork disappears with
 # no error. svgo flattens those to paths first — with convertArcs enabled, which is off by default
 # and is what covers <circle> and <ellipse>.
+#
+# Filled brand logos and outline UI icons both go through it, and are told apart by what they are
+# rather than by where they are filed: an outline icon carries currentColor, which prepare-svg.py
+# resolves to white and reports back so the drawable can be given a matching android:tint. There is
+# no list to keep up to date and nothing to file in the right folder — the tell is in the artwork.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -19,8 +24,12 @@ for svg in "$SRC"/*.svg; do
   # svgo first: it flattens shapes to paths and lifts style="" into attributes, which is what
   # prepare-svg.py then needs to see in order to normalise colours and fills.
   npx --yes svgo@latest --config svgo.config.mjs -i "$svg" -o "$TMP/$name.svgo.svg" >/dev/null
-  python3 prepare-svg.py "$TMP/$name.svgo.svg" "$TMP/$name.svg"
+  # stdout says TINT when the source drew in currentColor; warnings go to stderr and stay visible.
+  tint="$(python3 prepare-svg.py "$TMP/$name.svgo.svg" "$TMP/$name.svg")"
   npx --yes svg2vectordrawable@latest -i "$TMP/$name.svg" -o "$OUT/$name.xml" >/dev/null
-  echo "  $svg -> $OUT/$name.xml"
+  if [ "$tint" = "TINT" ]; then
+    python3 prepare-svg.py --add-tint "$OUT/$name.xml"
+  fi
+  echo "  $svg -> $OUT/$name.xml${tint:+  (tinted)}"
 done
 echo "Done. Check each drawable has as many <path> entries as the SVG had shapes."

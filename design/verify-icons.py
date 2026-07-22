@@ -85,6 +85,15 @@ def path_to_svg(element, state):
     fill_colour, fill_alpha = argb_to_svg(element.get(f'{ANDROID}fillColor'))
     stroke_colour, stroke_alpha = argb_to_svg(element.get(f'{ANDROID}strokeColor'))
 
+    # A tinted drawable's own colours never reach the screen — android:tint replaces them — so the
+    # white a stroke icon stores is a placeholder for currentColor, which cairosvg renders black.
+    # Comparing the two as stored made every outline icon report a 10-33% difference that was
+    # entirely colour, which is no check at all: the thirteen hand-authored ones sat on CHECK
+    # permanently and a real geometry error among them would have looked exactly the same.
+    if state['tinted']:
+        fill_colour = '#000000' if fill_colour else fill_colour
+        stroke_colour = '#000000' if stroke_colour else stroke_colour
+
     gradient = None
     for child in element:
         if child.tag == f'{AAPT}attr' and child.get('name') == 'android:fillColor':
@@ -115,7 +124,8 @@ def drawable_to_svg(path):
     width = root.get(f'{ANDROID}viewportWidth', '24')
     height = root.get(f'{ANDROID}viewportHeight', '24')
 
-    state = {'defs': '', 'index': 0, 'warnings': []}
+    state = {'defs': '', 'index': 0, 'warnings': [],
+             'tinted': root.get(f'{ANDROID}tint') is not None}
     body = elements_to_svg(root, state)
     for warning in state['warnings']:
         print(f'    WARNING {warning}', file=sys.stderr)

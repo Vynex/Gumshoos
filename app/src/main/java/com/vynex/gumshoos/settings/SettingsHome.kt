@@ -16,9 +16,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import com.vynex.gumshoos.AnimationMode
 import com.vynex.gumshoos.AppPermission
+import com.vynex.gumshoos.AssistIntegration
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
+import com.vynex.gumshoos.SearchShortcuts
 import com.vynex.gumshoos.UsageRepository
 import com.vynex.gumshoos.UsageSource
 import com.vynex.gumshoos.answers.AnswerProviders
@@ -66,6 +68,13 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
             )
             SettingsGroupDivider()
             CategoryRow(
+                title = "Launching",
+                summary = launchingSummary(),
+                onClick = { onOpen(Screen.Launching) },
+                leadingIcon = R.drawable.ic_provider_square_arrow_up_right,
+            )
+            SettingsGroupDivider()
+            CategoryRow(
                 title = "Appearance",
                 summary = appearanceSummary(),
                 onClick = { onOpen(Screen.Appearance) },
@@ -101,7 +110,7 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
         SettingsGroupCard {
             CategoryRow(
                 title = "Advanced",
-                summary = "Auto-close, launching, diagnostics",
+                summary = "Auto-close, maintenance, diagnostics",
                 onClick = { onOpen(Screen.Advanced) },
                 leadingIcon = R.drawable.ic_provider_hat_glasses,
             )
@@ -150,6 +159,28 @@ private fun permissionsSummary(): String {
     return when {
         missingRequired.isNotEmpty() -> "${missingRequired.first().title} not granted"
         else -> "Required granted · $optionalOn of ${AppPermission.optional.size} optional"
+    }
+}
+
+/**
+ * The optional ways in, if any are switched on.
+ *
+ * The widget leads because it is always available and is the intended route — the two below it are
+ * additions to it rather than alternatives. Read straight through rather than held in a `remember`:
+ * both are changed on the screen this row opens, and popping back to Home composes it afresh, so a
+ * cached value would be the stale one exactly when someone has just come back from changing it.
+ */
+@Composable
+private fun launchingSummary(): String {
+    val context = LocalContext.current
+    val extras = buildList {
+        if (SearchShortcuts.isDrawerIconEnabled(context)) add("drawer icon")
+        if (AssistIntegration.isCurrentAssistant(context) == true) add("assistant gesture")
+    }
+    return if (extras.isEmpty()) {
+        "Widgets, app icon and the assistant gesture"
+    } else {
+        "Widgets · ${extras.joinToString(" · ")} on"
     }
 }
 

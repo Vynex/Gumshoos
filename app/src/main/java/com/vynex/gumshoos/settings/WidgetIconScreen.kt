@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -92,7 +90,7 @@ internal fun WidgetIconScreen(onBack: () -> Unit) {
             SettingsActionRow(
                 title = "Reset to defaults",
                 summary = "Back to ${GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP}dp and centred.",
-                imageVector = Icons.Filled.Refresh,
+                icon = R.drawable.ic_provider_rotate_ccw,
                 onClick = {
                     GumshoosConfig.setWidgetIconSizeDp(
                         context, GumshoosConfig.DEFAULT_WIDGET_ICON_SIZE_DP,

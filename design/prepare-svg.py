@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Normalise an SVG into the subset svg2vectordrawable converts correctly.
 
-Four fixes, each for something the converter gets silently wrong.
+Five fixes, each for something the converter gets silently wrong.
 
 0. A viewBox with a non-zero origin is copied to viewportWidth/Height with the origin thrown away,
    so every coordinate is off by it. Material Symbols icons all use "0 -960 960 960", which puts
@@ -23,8 +23,20 @@ Four fixes, each for something the converter gets silently wrong.
 3. A path with no fill is black in SVG but transparent in Android. Spotify lost its waves entirely
    that way — they had no fill attribute, so they simply stopped being drawn.
 
+4. SVG inherits presentation attributes down the tree; the converter reads each <path> alone. Lucide
+   and Feather outline icons put stroke="currentColor" and stroke-width on the root <svg> and
+   nothing on the paths, so every stroke was lost and each path, seeing neither fill nor stroke,
+   was defaulted to black by fix 3 — a filled blob where an outline belonged. Thirteen icons were
+   hand-authored around this before it was fixed here.
 
-Usage: prepare-svg.py <in.svg> <out.svg>
+   currentColor has no meaning once the artwork is a drawable, so it becomes white plus an
+   android:tint, which is the same arrangement the hand-authored ones used and lets a stroke icon
+   take its colour from the theme. The tint is applied by --add-tint below, because the converter's
+   own --tint option is accepted and silently ignored.
+
+
+Usage: prepare-svg.py <in.svg> <out.svg>     normalise; prints TINT if the drawable needs one
+       prepare-svg.py --add-tint <out.xml>   add android:tint to a converted drawable
 """
 import math
 import re
@@ -53,6 +65,20 @@ NAMED_COLOURS = {
 
 PATH_TAG = re.compile(r'<path\b[^>]*/?>')
 SVG_TAG = re.compile(r'<svg\b[^>]*>')
+GROUP_TAG = re.compile(r'<g\b[^>]*>')
+
+# Presentation attributes SVG inherits down the tree. The converter honours none of them: it reads
+# each <path> in isolation, so anything set on an ancestor has to be written onto the path itself.
+INHERITED = (
+    'fill', 'fill-opacity', 'fill-rule',
+    'stroke', 'stroke-opacity', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+    'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset',
+)
+
+# What currentColor becomes. Any colour would do — android:tint replaces it at draw time — but
+# white is what the hand-authored stroke icons used, so the generated ones read the same in a diff.
+TINT_PLACEHOLDER = '#ffffff'
+TINT_VALUE = '?android:attr/colorControlNormal'
 VIEWBOX = re.compile(r'\bviewBox="\s*([^"]*?)\s*"')
 # Lowercase 'transform' only, so this never touches gradientTransform, which is folded into
 # coordinates further down instead.
@@ -143,6 +169,80 @@ def normalise_colours(svg_text, warnings):
     return re.sub(r'\b(fill|stroke|stop-color)="([^"]*)"', replace, svg_text)
 
 
+def propagate_root_presentation(svg_text, warnings):
+    """Copy inherited presentation attributes off the root <svg> onto each path.
+
+    SVG resolves fill and stroke by inheritance; the converter looks only at the path in front of
+    it. An outline icon carries all of it on the root — stroke="currentColor", stroke-width="2",
+    fill="none" — and nothing on the paths, so without this every stroke is dropped and every path
+    comes out as a black fill.
+
+    A path that sets an attribute itself keeps it, since a child always overrides an ancestor.
+
+    Returns the text and whether currentColor was found, which is what tells the caller a tint is
+    needed. A brand logo sets its colours per path and has no root attributes at all, so this is a
+    no-op for the artwork the pipeline was originally built around.
+    """
+    svg_tag = SVG_TAG.search(svg_text)
+    if not svg_tag:
+        return svg_text, False
+
+    inherited = {}
+    for name in INHERITED:
+        found = re.search(rf'\b{name}="([^"]*)"', svg_tag.group(0))
+        if found:
+            inherited[name] = found.group(1)
+    if not inherited:
+        return svg_text, False
+
+    # Only the root is walked. A <g> carrying its own fill or stroke would need the same treatment
+    # against a real ancestor chain, so it is reported rather than half-handled — the pipeline's
+    # whole problem is failures that build cleanly and draw the wrong thing.
+    body = svg_text[svg_tag.end():]
+    for group in GROUP_TAG.finditer(body):
+        for name in INHERITED:
+            if re.search(rf'\b{name}="', group.group(0)):
+                warnings.append(
+                    f"<g> sets {name}, which is not propagated; only the root <svg> is walked, "
+                    "so paths inside it may lose it"
+                )
+
+    def replace(match):
+        tag = match.group(0)
+        additions = ''
+        for name, value in inherited.items():
+            if not re.search(rf'\b{name}="', tag) and not re.search(rf'\b{name}:', tag):
+                additions += f' {name}="{value}"'
+        return tag.replace('<path', f'<path{additions}', 1) if additions else tag
+
+    result = svg_tag.group(0) + PATH_TAG.sub(replace, body)
+
+    tinted = 'currentColor' in result
+    if tinted:
+        result = re.sub(r'\b(fill|stroke)="currentColor"',
+                        rf'\1="{TINT_PLACEHOLDER}"', result)
+        warnings.append(
+            f"currentColor resolved to {TINT_PLACEHOLDER}; the drawable gets android:tint instead"
+        )
+    return result, tinted
+
+
+def add_tint(drawable_path):
+    """Put android:tint on a converted drawable, which is how currentColor survives the trip.
+
+    The converter has a --tint option. It accepts any value, including a valid hex, and emits
+    nothing — checked, rather than assumed, after it appeared to do nothing.
+    """
+    xml = open(drawable_path).read()
+    if 'android:tint=' in xml:
+        return
+    # Last attribute on the <vector>, which is where the hand-authored icons put it — so a
+    # regenerated one differs from the file it replaces only where it genuinely differs.
+    open(drawable_path, 'w').write(
+        re.sub(r'(<vector\b[^>]*?)(>)', rf'\1\n    android:tint="{TINT_VALUE}"\2', xml, count=1)
+    )
+
+
 def make_fills_explicit(svg_text, warnings):
     """Give every path an explicit fill.
 
@@ -173,8 +273,12 @@ def attr(tag, name, default=None):
 
 def prepare(svg_text):
     warnings = []
-    # Origin first: it rewrites the <svg> tag and wraps the body, so the later passes see final text.
-    result = normalise_viewbox(svg_text, warnings)
+    # Inheritance first, while the root <svg> is still the artwork's own tag: normalise_viewbox may
+    # wrap the body in a group, and make_fills_explicit must see the strokes this pass writes or it
+    # will default an outline path to a black fill.
+    result, tinted = propagate_root_presentation(svg_text, warnings)
+    # Origin next: it rewrites the <svg> tag and wraps the body, so the later passes see final text.
+    result = normalise_viewbox(result, warnings)
     result = rewrite_element_matrices(result, warnings)
     result = normalise_colours(result, warnings)
     result = make_fills_explicit(result, warnings)
@@ -238,12 +342,20 @@ def prepare(svg_text):
         updated = re.sub(r'\s*gradientTransform="[^"]*"', '', updated)
         result = result.replace(tag, updated)
 
-    return result, warnings
+    return result, warnings, tinted
 
 
 if __name__ == '__main__':
+    if sys.argv[1] == '--add-tint':
+        add_tint(sys.argv[2])
+        sys.exit(0)
+
     source, destination = sys.argv[1], sys.argv[2]
-    prepared, warnings = prepare(open(source).read())
+    prepared, warnings, tinted = prepare(open(source).read())
     open(destination, 'w').write(prepared)
     for warning in warnings:
         print(f"    WARNING {warning}", file=sys.stderr)
+    # stdout is the channel the shell script reads; warnings go to stderr so they can't be mistaken
+    # for it.
+    if tinted:
+        print('TINT')

@@ -1,6 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Feather "at-sign". Stroke icon: hand-authored, since the convert pipeline is built for filled
-     logos and drops the root-level stroke these carry. 24dp canvas, tintable via android:tint. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,10 +5,15 @@
     android:viewportHeight="24"
     android:tint="?android:attr/colorControlNormal">
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
+        android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M16,12 A4,4 0 1,1 8,12 A4,4 0 1,1 16,12 M16,8 v5 a3,3 0 0,0 6,0 v-1 a10,10 0 1,0 -3.92,7.94" />
+        android:pathData="M12 8A4 4 0 1 0 12 16 4 4 0 1 0 12 8z"/>
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>
 </vector>

@@ -1,6 +1,5 @@
 package com.vynex.gumshoos
 
-import android.app.ActivityOptions
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -344,10 +343,10 @@ object AppRepository {
      * slowed recording to see whether the app shrinks into the widget you tapped. That would explain
      * the bug, not fix it.
      *
-     * Nothing we send participates: no `setSourceBounds`, and no `ActivityOptions` outside
-     * [LaunchMethod.NO_ANIMATION]. The workaround is the QS tile, which has no home-screen view to
-     * be anchored to. [LaunchMethod.LAUNCHER_API] stays because it is the launcher-native path we
-     * were not using regardless.
+     * Nothing we send participates: no `setSourceBounds`, and no `ActivityOptions` at all. The
+     * workaround is the QS tile, which has no home-screen view to be anchored to.
+     * [LaunchMethod.LAUNCHER_API] stays because it is the launcher-native path we were not using
+     * regardless.
      *
      * The outcome is recorded rather than swallowed, so the trace can tell a refused launch from a
      * launch the system then undid.
@@ -377,67 +376,46 @@ object AppRepository {
                     .startMainActivity(entry.component, Process.myUserHandle(), null, null)
 
             LaunchMethod.STANDARD ->
-                context.startActivity(mainIntent(entry, reset = true))
-
-            LaunchMethod.NO_TASK_RESET ->
-                context.startActivity(mainIntent(entry, reset = false))
-
-            LaunchMethod.NO_ANIMATION ->
-                context.startActivity(
-                    mainIntent(entry, reset = true),
-                    ActivityOptions.makeCustomAnimation(context, 0, 0).toBundle(),
-                )
+                context.startActivity(mainIntent(entry))
         }
     }
 
     /**
-     * [reset] adds FLAG_ACTIVITY_RESET_TASK_IF_NEEDED, which returns an existing task to its root
-     * rather than resuming it where it was left. It is on by default because that is what tapping a
-     * launcher icon does; turning it off is one of the levers on the relaunch problem.
+     * FLAG_ACTIVITY_RESET_TASK_IF_NEEDED returns an existing task to its root rather than resuming
+     * it where it was left, which is what tapping a launcher icon does.
+     *
+     * It used to be optional — one of the levers on the widget-relaunch problem, alongside a
+     * no-animation start. That was settled launcher-side by the two-copy widget test, so both levers
+     * and the settings rows that drove them are gone.
      */
-    private fun mainIntent(entry: AppEntry, reset: Boolean): Intent =
+    private fun mainIntent(entry: AppEntry): Intent =
         Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
             component = entry.component
             // NEW_TASK because we're starting from a service context. Background-activity-start
             // restrictions don't apply: an app with a visible overlay window is exempt.
-            flags = if (reset) {
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-            } else {
-                Intent.FLAG_ACTIVITY_NEW_TASK
-            }
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
         }
 }
 
 /**
  * How an app is started.
  *
- * Configurable purely as a diagnostic lever. The evidence says the widget-reopens-the-last-app
- * problem is the system swallowing a tap during a Home transition, not our launch — but that
- * conclusion was reached from one trace, and this makes it cheap to test rather than argue about.
+ * Two diagnostic levers used to live here alongside these — a no-task-reset start and a
+ * no-animation one — both aimed at the widget-reopens-the-last-app problem. That was settled
+ * launcher-side, so they are gone; what remains is a real choice, because [LAUNCHER_API] is the only
+ * one that opens a work-profile app correctly and [STANDARD] is what every existing install has.
  */
 enum class LaunchMethod(val id: String, val label: String, val description: String) {
     STANDARD(
         id = "standard",
         label = "Standard",
-        description = "A launcher-style intent. What Gumshoos has always used.",
+        description = "What Gumshoos normally uses.",
     ),
     LAUNCHER_API(
         id = "launcher_api",
         label = "System launcher API",
-        description = "Hands off to the system's own launch path. Also the only one that opens a " +
-            "work-profile app correctly.",
-    ),
-    NO_TASK_RESET(
-        id = "no_task_reset",
-        label = "Resume where left off",
-        description = "Returns to the app's existing screen instead of its first one.",
-    ),
-    NO_ANIMATION(
-        id = "no_animation",
-        label = "No launch animation",
-        description = "Skips the opening transition. Worth trying if the problem tracks the " +
-            "animation rather than the gesture.",
+        description = "Try this if work profile apps don't open.",
     ),
     ;
 

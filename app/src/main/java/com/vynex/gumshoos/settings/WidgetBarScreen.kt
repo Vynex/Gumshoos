@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +49,7 @@ import com.vynex.gumshoos.widget.WidgetBarLogo
 import com.vynex.gumshoos.widget.WidgetBarMetrics
 import com.vynex.gumshoos.widget.WidgetBarRenderer
 import com.vynex.gumshoos.widget.WidgetBarStyle
+import sh.calvin.reorderable.ReorderableColumn
 import kotlin.math.roundToInt
 
 /** Fallback preview height, used when no bar is placed yet to measure. */
@@ -209,7 +208,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
             SettingsActionRow(
                 title = "Reset to defaults",
                 summary = "Colour, shape, logo and actions go back to how they started.",
-                imageVector = Icons.Filled.Refresh,
+                icon = R.drawable.ic_provider_rotate_ccw,
                 onClick = {
                     GumshoosConfig.resetWidgetBar(context)
                     push()
@@ -361,44 +360,59 @@ private fun ActionGroups(available: Set<WidgetAction>, onChanged: () -> Unit) {
     val (installed, missing) = all.partition { it in available }
     val enabledCount = installed.count { it.id in GumshoosConfig.widgetBarActions }
 
+    // A move reports positions among the rows on screen, which are only the installed ones, while
+    // the order saved covers every action. An uninstalled action keeps its place in that saved
+    // list, so installing its app returns it to where it was rather than to the end.
+    //
+    // Both the drag and the two accessibility actions land here. When they didn't, "move down" past
+    // an uninstalled neighbour swapped with a row that isn't on screen and appeared to do nothing.
+    fun settle(from: Int, to: Int) {
+        GumshoosConfig.setWidgetBarActionOrder(
+            context,
+            SearchProviders.reorderVisible(
+                all.map { it.id }, installed.map { it.id }, from, to,
+            ),
+        )
+        onChanged()
+    }
+
     SettingsGroup(
         title = "Actions",
-        note = "Tappable actions at the right of the widget. Rest of the bar still opens search.",
+        note = "Tappable actions at the right of the widget, in the order shown. " +
+            "Drag a row by its handle to rearrange them. Rest of the bar still opens search.",
     ) {
-        installed.forEachIndexed { index, action ->
-            val checked = action.id in GumshoosConfig.widgetBarActions
-            ProviderRow(
-                label = action.label,
-                icon = action.icon,
-                description = action.description,
-                checked = checked,
-                // Room runs out at SLOT_COUNT, so the rows that would not fit say so by going flat
-                // rather than accepting a tap that silently does nothing.
-                enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
-                canMoveUp = index > 0,
-                canMoveDown = index < installed.lastIndex,
-                onCheckedChange = {
-                    GumshoosConfig.setWidgetBarActionEnabled(context, action.id, it)
-                    onChanged()
-                },
-                // Reordering moves the action within the *whole* saved order, not within the
-                // visible subset. A missing action still holds its place in that list, so
-                // installing its app returns it to where it was rather than to the end.
-                onMoveUp = {
-                    GumshoosConfig.setWidgetBarActionOrder(
-                        context, SearchProviders.reorder(all.map { it.id }, action.id, -1),
-                    )
-                    onChanged()
-                },
-                onMoveDown = {
-                    GumshoosConfig.setWidgetBarActionOrder(
-                        context, SearchProviders.reorder(all.map { it.id }, action.id, 1),
-                    )
-                    onChanged()
-                },
-                modifier = Modifier.padding(horizontal = SettingsInset),
-                control = RowControl.CHECKBOX,
-            )
+        ReorderableColumn(
+            list = installed,
+            onSettle = ::settle,
+            modifier = Modifier.fillMaxWidth(),
+        ) { index, action, isDragging ->
+            // The item wrapper is what carries the row's drag offset and hands its content the
+            // scope `draggableHandle` lives in; the row cannot reach it from the column lambda.
+            ReorderableItem {
+                val checked = action.id in GumshoosConfig.widgetBarActions
+                ProviderRow(
+                    label = action.label,
+                    icon = action.icon,
+                    description = action.description,
+                    checked = checked,
+                    // Room runs out at SLOT_COUNT, so the rows that would not fit say so by going
+                    // flat rather than accepting a tap that silently does nothing.
+                    enabled = checked || enabledCount < WidgetAction.SLOT_COUNT,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < installed.lastIndex,
+                    onCheckedChange = {
+                        GumshoosConfig.setWidgetBarActionEnabled(context, action.id, it)
+                        onChanged()
+                    },
+                    onMoveUp = { settle(index, index - 1) },
+                    onMoveDown = { settle(index, index + 1) },
+                    modifier = Modifier
+                        .draggedRow(isDragging)
+                        .padding(horizontal = SettingsInset),
+                    control = RowControl.CHECKBOX,
+                    dragHandle = Modifier.draggableHandle(),
+                )
+            }
         }
     }
 
