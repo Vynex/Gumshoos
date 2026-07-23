@@ -199,8 +199,7 @@ internal fun PermissionsScreen(onBack: () -> Unit) {
 
     SettingsScaffold(title = "Permissions", onBack = onBack) {
         SettingsNote(
-            "Search needs one permission to open at all. The other two add to what it can find, " +
-                "and can be left off.",
+            "Search needs one permission to open at all. The other two are optional enhancements.",
         )
         PermissionGroups(state)
     }

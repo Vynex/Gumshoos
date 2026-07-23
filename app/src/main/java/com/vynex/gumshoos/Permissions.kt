@@ -35,14 +35,13 @@ enum class AppPermission(
         title = "Usage access",
         why = "Orders the Frequent and Recent tabs by the apps you actually open, including ones " +
             "you used before installing Gumshoos.",
-        withoutIt = "Those tabs fall back to alphabetical order. Gumshoos can also count launches " +
-            "itself instead — see Behaviour in settings.",
+        withoutIt = "",
         required = false,
     ),
     CONTACTS(
         title = "Contacts",
         why = "Lets you search through your phone's contacts as well.",
-        withoutIt = "The contacts section simply doesn't appear. Nothing else changes.",
+        withoutIt = "",
         required = false,
     ),
     ;
