@@ -10,7 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -51,9 +50,9 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Read off the app name rather than written out: a debug build carries a "(Debug)" suffix
-    // there, and the root heading is the first thing seen after opening either of two icons.
-    SettingsRootScaffold(title = stringResource(R.string.app_name)) {
+    // "Settings", not the app name — the About card at the foot now carries the name (and its
+    // "(Debug)" suffix), so the heading is free to say what the screen is.
+    SettingsRootScaffold(title = "Settings") {
         if (!hasOverlay) {
             SettingsWarning(
                 "Search can't open without permission to draw over other apps. " +
@@ -115,9 +114,14 @@ internal fun SettingsHome(onOpen: (Screen) -> Unit) {
                 title = "Advanced",
                 summary = "Auto-close, maintenance, diagnostics",
                 onClick = { onOpen(Screen.Advanced) },
-                leadingIcon = R.drawable.ic_provider_hat_glasses,
+                leadingIcon = R.drawable.ic_provider_bolt,
             )
         }
+
+        // Version, credit and the links out to the project. Sits at the very bottom, below Advanced,
+        // and carries its own update badge — see [AboutCard].
+        Spacer(Modifier.height(4.dp))
+        AboutCard()
     }
 }
 
