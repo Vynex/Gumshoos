@@ -20,8 +20,19 @@ import java.text.Normalizer
  *   6  word-boundary substring    "my"      -> Book*My*Show
  *   7  substring anywhere         "tube"    -> YouTube
  *   8  fuzzy subsequence          "bkmy"    -> BookMyShow
+ *   9  typo (prefix)              "gmial"   -> Gmail
  *
- * Tiers 2-3 and 5-8 can be switched off — see [MatchTier] — and a label can carry aliases, which
+ * Tier 8 requires a *real gap*: a query that occurs as a contiguous run is tier 6/7's, never tier
+ * 8's, so fuzzy is not a superset of substring. This is what lets the two toggles mean different
+ * things — with "anywhere" off, "tube" no longer finds YouTube even while "skipped letters" is on.
+ *
+ * Tier 9 is the weakest and last resort: it tolerates a bounded edit distance (substitution,
+ * insertion, deletion, adjacent transposition) between the query and a *prefix* of the label, so a
+ * typo in the first characters is caught as you type. It only runs when every stronger tier misses,
+ * so a typo guess never outranks a real match. Fuzzy handles dropped letters; typo is what adds the
+ * slips fuzzy cannot see — a wrong letter ("netflox") or two swapped ("gmial").
+ *
+ * Tiers 2-3 and 5-9 can be switched off — see [MatchTier] — and a label can carry aliases, which
  * match alongside it. Both are settings; both are pure logic and tested here rather than on-device.
  */
 object AppMatcher {
@@ -36,6 +47,13 @@ object AppMatcher {
     private const val WORD_BOUNDARY = 40 * TIER
     private const val SUBSTRING = 30 * TIER
     private const val FUZZY = 20 * TIER
+    private const val TYPO = 10 * TIER
+
+    /** Below this length a single edit is too loose — "cat" would reach every "Car…". */
+    private const val MIN_TYPO_LENGTH = 4
+
+    /** Unreachable-cell sentinel for the banded typo DP; halved so `+ 1` cannot overflow. */
+    private const val INF = Int.MAX_VALUE / 2
 
     /**
      * Letters NFD leaves alone because they aren't a base plus a combining mark — they're distinct
@@ -74,6 +92,7 @@ object AppMatcher {
         CAPITALS("capitals", "Camel case", "\"bms\" finds BookMyShow"),
         SUBSTRING("substring", "Anywhere in the name", "\"tube\" finds YouTube"),
         FUZZY("fuzzy", "Skipped letters", "\"bkmy\" finds BookMyShow"),
+        TYPO("typo", "Typos", "\"gmial\" finds Gmail"),
     }
 
     /**
@@ -296,11 +315,88 @@ object AppMatcher {
                 return Match(SUBSTRING + brevity, indexed.sourcesForFolded(at until at + q.length))
             }
         }
-        if (MatchTier.FUZZY !in options) return null
-
-        return subsequenceMatch(q, l)?.let { (bonus, hits) ->
-            Match(FUZZY + bonus, hits.flatMap { indexed.sourcesForFolded(it..it) })
+        // Fuzzy is "skipped letters": the match must have a real gap. A query that occurs as a
+        // contiguous run is a substring, which is a stronger tier's job — so it is rejected here
+        // even when SUBSTRING is off. Otherwise fuzzy, a superset of substring, would re-admit every
+        // contiguous query the substring toggle just removed: turning off "Anywhere in the name"
+        // would do nothing for "tube" -> YouTube, since "tube" is also a gap-free subsequence of it.
+        // When SUBSTRING is on we already returned above on any contiguous hit, so this only bites
+        // with it off. `contains` rejects *every* contiguous occurrence, not just the greedy one
+        // subsequenceMatch would find, so "a real gap" holds however the letters line up.
+        if (MatchTier.FUZZY in options && !l.contains(q)) {
+            subsequenceMatch(q, l)?.let { (bonus, hits) ->
+                return Match(FUZZY + bonus, hits.flatMap { indexed.sourcesForFolded(it..it) })
+            }
         }
+
+        // Typo is the last resort, below fuzzy. Indices are empty: the label holds the *corrected*
+        // characters, not the ones typed, so there is nothing honest to embolden — same as an alias.
+        if (MatchTier.TYPO in options) {
+            typoBonus(q, l, brevity)?.let { return Match(TYPO + it, emptyList()) }
+        }
+        return null
+    }
+
+    /**
+     * How close the query is to a *prefix* of the label, as an edit distance, or null if it is
+     * further than a small budget — so a typo in the characters typed so far still matches.
+     *
+     * The distance is prefix-aware Damerau/OSA: the fewest single-character edits — substitute,
+     * insert, delete, or swap two adjacent — that turn [q] into some prefix of [l]. A prefix rather
+     * than the whole label is what lets it fire mid-word: "spofi" is one edit from "spoti", the start
+     * of Spotify, long before the name is finished. Fuzzy already covers pure deletions, so what this
+     * adds over it is the substitution and the transposition.
+     *
+     * Two things keep it off the type-ahead hot path. It is skipped below [MIN_TYPO_LENGTH]. And the
+     * DP is banded to the budget: since edit distance is at least the length difference, only cells
+     * within [maxEdits] of the diagonal can hold a value that small, so the work is O(len * budget)
+     * with three rolling int rows — the third row is what the transposition case reads (i-2). A
+     * distance of 0 would mean the query *is* a prefix, which tier 4 already returned, so it can only
+     * arrive here ≥ 1; it is treated as no match defensively all the same.
+     */
+    private fun typoBonus(q: String, l: String, brevity: Int): Int? {
+        val m = q.length
+        if (m < MIN_TYPO_LENGTH) return null
+        val maxEdits = if (m >= 8) 2 else 1
+
+        // dp rows over prefixes of l (columns j). Bounded to length m + maxEdits: a longer prefix is
+        // already more than maxEdits of insertions away from a length-m query, so it can't win.
+        val maxCol = minOf(l.length, m + maxEdits)
+        var prev2 = IntArray(maxCol + 1)          // row i-2
+        var prev = IntArray(maxCol + 1) { it }    // row i-1, starts as row 0: j deletions from ""
+        var curr = IntArray(maxCol + 1)
+
+        for (i in 1..m) {
+            val from = maxOf(1, i - maxEdits)
+            val to = minOf(maxCol, i + maxEdits)
+            // Cells outside the band are unreachable within budget; INF stops them being read as 0.
+            if (from > 1) curr[from - 1] = INF
+            curr[0] = i                            // i deletions to reach the empty prefix
+            var rowMin = curr[0]
+            for (j in from..to) {
+                val cost = if (q[i - 1] == l[j - 1]) 0 else 1
+                var best = minOf(
+                    prev[j] + 1,                   // delete q[i-1]
+                    curr[j - 1] + 1,               // insert l[j-1]
+                    prev[j - 1] + cost,            // substitute / match
+                )
+                if (i > 1 && j > 1 && q[i - 1] == l[j - 2] && q[i - 2] == l[j - 1]) {
+                    best = minOf(best, prev2[j - 2] + 1)   // swap adjacent
+                }
+                curr[j] = best
+                if (best < rowMin) rowMin = best
+            }
+            if (to < maxCol) curr[to + 1] = INF
+            if (rowMin > maxEdits) return null     // no prefix within budget is still reachable
+            val spun = prev2; prev2 = prev; prev = curr; curr = spun
+        }
+
+        // Best over the prefixes a length-m query could be within budget of; prev is now row m.
+        var best = INF
+        for (j in maxOf(0, m - maxEdits)..minOf(maxCol, m + maxEdits)) best = minOf(best, prev[j])
+        if (best !in 1..maxEdits) return null
+        // Fewer edits rank higher, brevity breaks ties; kept under TIER so every typo stays tier 10.
+        return (brevity + (maxEdits - best + 1) * 30).coerceIn(0, TIER - 1)
     }
 
     /**

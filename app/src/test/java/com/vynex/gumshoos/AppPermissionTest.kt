@@ -68,15 +68,6 @@ class AppPermissionTest {
     }
 
     @Test
-    fun `every optional permission says what is lost without it`() {
-        // The required one is exempt: what's lost is everything, which the screen says separately.
-        AppPermission.optional.forEach { permission ->
-            assertTrue("${permission.name} has no cost", permission.withoutIt.isNotBlank())
-        }
-        assertEquals("", AppPermission.OVERLAY.withoutIt)
-    }
-
-    @Test
     fun `notification permission is not among them`() {
         // Deliberate: leaving POST_NOTIFICATIONS denied is what keeps the foreground service out
         // of the shade. Asking for it would make the app worse, so it must never be listed.

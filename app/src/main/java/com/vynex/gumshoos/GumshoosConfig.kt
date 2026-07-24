@@ -1,6 +1,7 @@
 package com.vynex.gumshoos
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -36,7 +37,27 @@ object GumshoosConfig {
     private const val KEY_HIDDEN_APPS = "hidden_apps"
     private const val KEY_HIDDEN_CONTACTS = "hidden_contacts"
     private const val KEY_APP_ALIASES = "app_aliases_"
+    /** Legacy: the *enabled* tier ids. Read only to migrate; superseded by [KEY_MATCH_TIERS_DISABLED]. */
     private const val KEY_MATCH_TIERS = "match_tiers"
+
+    /**
+     * The *disabled* tier ids. Storing the off set — not the on set — is what makes a tier added in a
+     * later version default on for someone with settings already saved, the same reason the provider
+     * lists do it. See [loadMatchOptions].
+     */
+    private const val KEY_MATCH_TIERS_DISABLED = "match_tiers_disabled"
+
+    /**
+     * The four tiers that existed while [KEY_MATCH_TIERS] stored the enabled set. Migration subtracts
+     * the saved enabled set from *these* — never the current full set — so a tier introduced after
+     * the enabled-set era (TYPO, and anything later) is never mistaken for one the user turned off.
+     */
+    private val LEGACY_MATCH_TIERS = setOf(
+        AppMatcher.MatchTier.INITIALS,
+        AppMatcher.MatchTier.CAPITALS,
+        AppMatcher.MatchTier.SUBSTRING,
+        AppMatcher.MatchTier.FUZZY,
+    )
     private const val KEY_DISABLED_PROVIDERS = "disabled_providers"
     private const val KEY_PROVIDER_ORDER = "provider_order"
     private const val KEY_BROWSER_PROVIDERS = "browser_providers"
@@ -318,7 +339,34 @@ object GumshoosConfig {
             matchOptions.enabled - tier
         }
         matchOptions = AppMatcher.MatchOptions(tiers)
-        prefs(context).edit().putStringSet(KEY_MATCH_TIERS, tiers.map { it.id }.toSet()).apply()
+        // Store the disabled set (see KEY_MATCH_TIERS_DISABLED); this also retires the legacy key.
+        val disabled = AppMatcher.MatchTier.entries.toSet() - tiers
+        prefs(context).edit()
+            .putStringSet(KEY_MATCH_TIERS_DISABLED, disabled.map { it.id }.toSet())
+            .remove(KEY_MATCH_TIERS)
+            .apply()
+    }
+
+    /**
+     * Match options are stored as the disabled set, so a tier added later is on until turned off.
+     * An unknown id is dropped rather than failing the load, so removing a tier stays safe.
+     *
+     * The first read after an update may still find the legacy enabled-set key: subtract that from
+     * the tiers of its era ([LEGACY_MATCH_TIERS]) to recover the disabled set, which leaves any newer
+     * tier on. No rewrite here — the next toggle persists the new format and drops the old key.
+     */
+    private fun loadMatchOptions(p: SharedPreferences): AppMatcher.MatchOptions {
+        fun Set<String>.toTiers() =
+            mapNotNull { id -> AppMatcher.MatchTier.entries.firstOrNull { it.id == id } }.toSet()
+
+        val all = AppMatcher.MatchTier.entries.toSet()
+        p.getStringSet(KEY_MATCH_TIERS_DISABLED, null)?.let {
+            return AppMatcher.MatchOptions(all - it.toTiers())
+        }
+        p.getStringSet(KEY_MATCH_TIERS, null)?.let {
+            return AppMatcher.MatchOptions(all - (LEGACY_MATCH_TIERS - it.toTiers()))
+        }
+        return AppMatcher.MatchOptions.ALL
     }
 
     // --- wide search bar widget ------------------------------------------------------------------
@@ -980,13 +1028,7 @@ object GumshoosConfig {
         browserProviders = p.getStringSet(KEY_BROWSER_PROVIDERS, null)?.toSet() ?: emptySet()
         preferredBrowser = p.getString(KEY_PREFERRED_BROWSER, null)
 
-        // An unknown id is dropped rather than failing the load, so removing a tier later can't
-        // leave a stored set that no longer parses.
-        matchOptions = p.getStringSet(KEY_MATCH_TIERS, null)
-            ?.mapNotNull { id -> AppMatcher.MatchTier.entries.firstOrNull { it.id == id } }
-            ?.toSet()
-            ?.let { AppMatcher.MatchOptions(it) }
-            ?: AppMatcher.MatchOptions.ALL
+        matchOptions = loadMatchOptions(p)
 
         unitSystemOverride = p.getString(KEY_UNIT_SYSTEM, null)
             ?.let { name -> MeasurementSystem.entries.firstOrNull { it.name == name } }

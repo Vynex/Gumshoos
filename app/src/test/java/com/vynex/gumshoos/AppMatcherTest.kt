@@ -1,6 +1,8 @@
 package com.vynex.gumshoos
 
+import com.vynex.gumshoos.AppMatcher.MatchTier
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -160,12 +162,25 @@ class AppMatcherTest {
     }
 
     // --- match toggles -------------------------------------------------------------------------
+    //
+    // Each optional tier is exercised *in isolation* with `only`, which enables that one tier and
+    // nothing else, so a match can have come from no other net. That is the only way to prove a
+    // toggle owns the behaviour attributed to it. The earlier suite never did this: every "disabling
+    // substring" test switched off FUZZY at the same time, so it could not have caught that substring
+    // *alone* changes nothing — which was the reported bug. INITIALS/CAPITALS and SUBSTRING/FUZZY are
+    // two pairs of overlapping nets, so a test that flips both members at once cannot tell them apart.
 
-    private fun options(vararg off: AppMatcher.MatchTier) =
-        AppMatcher.MatchOptions(AppMatcher.MatchTier.entries.toSet() - off.toSet())
+    private fun options(vararg off: MatchTier) =
+        AppMatcher.MatchOptions(MatchTier.entries.toSet() - off.toSet())
+
+    /** Only these optional tiers live; the always-on tiers (exact label, label prefix) stay on. */
+    private fun only(vararg on: MatchTier) = AppMatcher.MatchOptions(on.toSet())
 
     private fun score(query: String, label: String, options: AppMatcher.MatchOptions): Int? =
         AppMatcher.score(query, AppMatcher.index(label), options)
+
+    private fun matches(query: String, label: String, options: AppMatcher.MatchOptions) =
+        score(query, label, options) != null
 
     private fun rank(
         query: String,
@@ -176,6 +191,8 @@ class AppMatcherTest {
             .sortedByDescending { it.second }
             .map { it.first }
 
+    // --- the always-on tiers are never touched by a toggle -------------------------------------
+
     @Test
     fun `the always-on tiers survive every toggle being off`() {
         val none = AppMatcher.MatchOptions(emptySet())
@@ -184,61 +201,200 @@ class AppMatcherTest {
     }
 
     @Test
-    fun `disabling fuzzy drops a subsequence-only match`() {
-        assertNotNull(score("bkmy", "BookMyShow"))
-        assertNull(score("bkmy", "BookMyShow", options(AppMatcher.MatchTier.FUZZY)))
+    fun `exact label and label prefix survive any single toggle`() {
+        for (tier in MatchTier.entries) {
+            assertTrue("label prefix broke with $tier off", matches("you", "YouTube", options(tier)))
+            assertTrue("exact label broke with $tier off", matches("youtube", "YouTube", options(tier)))
+        }
+    }
+
+    // --- each optional tier, owned and isolated ------------------------------------------------
+
+    @Test
+    fun `initials tier owns an initials-only match`() {
+        // "is" is the word-initials of "iTunes Store". Its capitals are "its", so capitals cannot
+        // accept "is", and "is" is neither the exact label nor a label prefix — only initials can.
+        assertTrue(matches("is", "iTunes Store", only(MatchTier.INITIALS)))
+        assertFalse(matches("is", "iTunes Store", only(MatchTier.CAPITALS)))
+        assertFalse(matches("is", "iTunes Store", only(MatchTier.SUBSTRING)))
     }
 
     @Test
-    fun `disabling substring drops a mid-label match`() {
+    fun `capitals tier owns a camel-case-only match`() {
+        // BookMyShow is one token, so its word-initials are just "b"; only the capitals tier reads
+        // "bms" out of it, and "bms" is neither exact label nor prefix nor a contiguous substring.
+        assertTrue(matches("bms", "BookMyShow", only(MatchTier.CAPITALS)))
+        assertFalse(matches("bms", "BookMyShow", only(MatchTier.INITIALS)))
+        assertFalse(matches("bms", "BookMyShow", only(MatchTier.SUBSTRING)))
+    }
+
+    @Test
+    fun `substring tier owns a mid-label match`() {
+        assertTrue(matches("tube", "YouTube", only(MatchTier.SUBSTRING)))
+        assertFalse(matches("tube", "YouTube", only(MatchTier.INITIALS)))
+        assertFalse(matches("tube", "YouTube", only(MatchTier.CAPITALS)))
+        // The headline fix: fuzzy must NOT stand in for substring on a contiguous query.
+        assertFalse(matches("tube", "YouTube", only(MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `substring tier owns the word-boundary case`() {
+        assertTrue(matches("my", "Book My Show", only(MatchTier.SUBSTRING)))
+        assertFalse(matches("my", "Book My Show", only(MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `fuzzy tier owns a skipped-letter match`() {
+        // Scattered and non-contiguous, so substring cannot see it and only fuzzy can.
+        assertTrue(matches("bkmy", "BookMyShow", only(MatchTier.FUZZY)))
+        assertFalse(matches("bkmy", "BookMyShow", only(MatchTier.SUBSTRING)))
+    }
+
+    @Test
+    fun `fuzzy requires a real gap, not a contiguous run`() {
+        // "ytube" skips "ou" — a genuine gap — so fuzzy keeps it.
+        assertTrue(matches("ytube", "YouTube", only(MatchTier.FUZZY)))
+        // "tube" is a contiguous run, which belongs to substring; fuzzy rejects it. This is what
+        // stops fuzzy being a superset of substring, so the two toggles mean different things.
+        assertFalse(matches("tube", "YouTube", only(MatchTier.FUZZY)))
+        assertFalse(matches("my", "Book My Show", only(MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `fuzzy rejects a contiguous run wherever it sits, not only under the greedy scan`() {
+        // "ab" occurs both scattered (a…b) and contiguous in "aXab". `contains` sees the contiguous
+        // occurrence and rejects, so "a real gap" holds however the letters happen to line up — a
+        // check that only inspected the greedy subsequence would let this leak through.
+        assertFalse(matches("ab", "aXab", only(MatchTier.FUZZY)))
+    }
+
+    // --- the reported bug, and the pairs that need both members off ----------------------------
+
+    @Test
+    fun `turning off only Anywhere in the name stops a contiguous query`() {
+        // The exact report: "tube" still found YouTube with "Anywhere in the name" off, because
+        // FUZZY re-admitted it. It no longer does — INITIALS and CAPITALS stay on (their defaults),
+        // FUZZY is on, and only SUBSTRING is flipped, exactly as the settings switch does.
         assertNotNull(score("tube", "YouTube"))
-        assertNull(
-            score("tube", "YouTube", options(AppMatcher.MatchTier.SUBSTRING, AppMatcher.MatchTier.FUZZY)),
-        )
+        assertNull(score("tube", "YouTube", options(MatchTier.SUBSTRING)))
+        assertNull(score("my", "Book My Show", options(MatchTier.SUBSTRING)))
     }
 
     @Test
-    fun `disabling substring also drops the word-boundary case`() {
-        // The two are one switch: leaving boundary matching on would still find "my" in
-        // "Book My Show", which is exactly what switching it off is meant to stop.
-        assertNull(
-            score(
-                "my",
-                "Book My Show",
-                options(AppMatcher.MatchTier.SUBSTRING, AppMatcher.MatchTier.FUZZY),
-            ),
-        )
+    fun `the toggles are independent`() {
+        // Turning off one optional tier leaves each of the others doing its own job.
+        assertTrue(matches("bms", "BookMyShow", options(MatchTier.INITIALS)))    // capitals still on
+        assertTrue(matches("is", "iTunes Store", options(MatchTier.CAPITALS)))   // initials still on
+        assertTrue(matches("tube", "YouTube", options(MatchTier.FUZZY)))         // substring still on
+        assertTrue(matches("bkmy", "BookMyShow", options(MatchTier.SUBSTRING)))  // fuzzy still on
     }
 
     @Test
-    fun `disabling initials drops an initials match`() {
-        assertNotNull(score("bb", "Big Basket"))
+    fun `a query several tiers accept needs all of them off`() {
+        // "bb" is Big Basket's initials AND its capitals, so no single toggle can remove it; with
+        // those two and fuzzy off it finally falls through to nothing.
+        assertNotNull(score("bb", "Big Basket", options(MatchTier.INITIALS)))
         assertNull(
             score(
                 "bb",
                 "Big Basket",
-                options(
-                    AppMatcher.MatchTier.INITIALS,
-                    AppMatcher.MatchTier.CAPITALS,
-                    AppMatcher.MatchTier.FUZZY,
-                ),
+                options(MatchTier.INITIALS, MatchTier.CAPITALS, MatchTier.FUZZY),
             ),
         )
     }
+
+    @Test
+    fun `disabling fuzzy drops a subsequence-only match`() {
+        assertNotNull(score("bkmy", "BookMyShow"))
+        assertNull(score("bkmy", "BookMyShow", options(MatchTier.FUZZY)))
+    }
+
+    // --- skipping a tier is not the same as excluding a query ----------------------------------
 
     @Test
     fun `a disabled tier is skipped, not scored to zero`() {
         // With camel case on, BookMyShow wins on exact capitals. With it off it must fall through
         // to a weaker tier rather than staying ahead — a zeroed tier would still be returned here.
-        val off = options(AppMatcher.MatchTier.CAPITALS)
+        val off = options(MatchTier.CAPITALS)
         assertEquals("BookMyShow", rank("bms", listOf("Bmsoft", "BookMyShow")).first())
         assertEquals("Bmsoft", rank("bms", listOf("Bmsoft", "BookMyShow"), off).first())
     }
 
     @Test
     fun `a query only a disabled tier accepted still matches through a weaker one`() {
-        // Skipping is not the same as excluding: capitals off leaves fuzzy to accept "bms".
-        assertNotNull(score("bms", "BookMyShow", options(AppMatcher.MatchTier.CAPITALS)))
+        // Skipping is not excluding: capitals off leaves fuzzy to accept "bms" as a scattered match.
+        assertNotNull(score("bms", "BookMyShow", options(MatchTier.CAPITALS)))
+    }
+
+    // --- typos (the weakest tier: an edit or two against a prefix) ------------------------------
+
+    @Test
+    fun `typo tier catches a transposition fuzzy cannot`() {
+        // Two swapped letters are one edit for typo, but not a subsequence — "gmial" needs an "a"
+        // before its "i", which "gmail" doesn't offer in that order. So only the typo tier sees it.
+        assertTrue(matches("gmial", "Gmail", only(MatchTier.TYPO)))
+        assertFalse(matches("gmial", "Gmail", only(MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `typo tier catches a substitution fuzzy cannot`() {
+        // A wrong letter is one edit; fuzzy can only drop letters, never swap one for another.
+        assertTrue(matches("netflox", "Netflix", only(MatchTier.TYPO)))
+        assertFalse(matches("netflox", "Netflix", only(MatchTier.FUZZY)))
+    }
+
+    @Test
+    fun `typo fires on a prefix, before the whole name is typed`() {
+        // "spofi" is one substitution from "spoti", the start of Spotify — caught mid-word. This is
+        // the prefix-aware behaviour a whole-name comparison would miss, "spofi" being far too short
+        // to be one edit from the full "spotify".
+        assertTrue(matches("spofi", "Spotify", only(MatchTier.TYPO)))
+    }
+
+    @Test
+    fun `typo needs at least four characters`() {
+        // A single edit on a three-letter query reaches far too much — "cat" would find every "Car…".
+        assertFalse(matches("cat", "Car", only(MatchTier.TYPO)))
+        assertFalse(matches("abc", "Abd", only(MatchTier.TYPO)))
+    }
+
+    @Test
+    fun `typo respects the edit budget`() {
+        // "spofy" is two edits from any prefix of Spotify (f->t and y->i); the budget for five
+        // characters is one, so it stays out.
+        assertFalse(matches("spofy", "Spotify", only(MatchTier.TYPO)))
+    }
+
+    @Test
+    fun `a longer query is allowed two edits`() {
+        // Eight characters or more get a budget of two, so a double slip on a long name still lands.
+        assertTrue(matches("instagrom", "Instagram", only(MatchTier.TYPO)))   // one substitution
+        assertTrue(matches("intsagrom", "Instagram", only(MatchTier.TYPO)))   // transpose + sub
+    }
+
+    @Test
+    fun `typo ranks below fuzzy`() {
+        // A typo match must never be handed back above a genuine skipped-letter match on another app.
+        assertTrue(score("gmial", "Gmail")!! < score("bkmy", "BookMyShow")!!)
+    }
+
+    @Test
+    fun `disabling typo drops a typo-only match`() {
+        assertNotNull(score("gmial", "Gmail"))
+        assertNull(score("gmial", "Gmail", options(MatchTier.TYPO)))
+    }
+
+    @Test
+    fun `typo is on by default`() {
+        // The always-on-ness is what makes it reach a fresh install without a settings visit.
+        assertTrue(MatchTier.TYPO in AppMatcher.MatchOptions.ALL)
+    }
+
+    @Test
+    fun `typo does not reopen the substring hole`() {
+        // With "Anywhere in the name" off, "tube" must still not find YouTube. Typo is on by default
+        // now, but "tube" is not within an edit of any prefix of "youtube", so it stays shut.
+        assertNull(score("tube", "YouTube", options(MatchTier.SUBSTRING)))
     }
 
     // --- aliases -------------------------------------------------------------------------------
