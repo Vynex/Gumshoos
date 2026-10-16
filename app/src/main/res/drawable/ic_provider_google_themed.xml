@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Google G as the Google app draws it in its own search widget: one ring swept through the
+    wallpaper palette, not the four brand colours. Hand-authored rather than run through
+    design/convert-icons.sh, because the converter drops gradients and this one is the whole point.
+
+    The sweep starts at 3 o'clock and runs clockwise, so the stops read crossbar, bottom, left, top.
+    The stops, the paths and the palette roles in res/color and res/color-night come from the
+    Google app's `super_g_dynamic_*` resources (17.66.12), not from sampling a screenshot. The
+    crossbar cover is drawn flat over the ring's end so it reads as its own colour.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:pathData="M24,37.26C30.46,37.26 34.9,33.58 35.84,28.52L40,24L44.818,28.52C43.209,38.925 35.298,46 24,46C11.84,46 2,36.16 2,24C2,11.84 11.84,2 24,2C29.94,2 34.9,4.18 38.72,7.74L32.42,14.04C30.12,11.88 27.24,10.76 24,10.76C16.82,10.76 10.98,16.86 10.98,24.02C10.98,31.18 16.82,37.26 24,37.26Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="sweep"
+                android:centerX="24"
+                android:centerY="24">
+                <item android:color="@color/google_g_primary" android:offset="0.0" />
+                <item android:color="@color/google_g_primary" android:offset="0.08" />
+                <item android:color="@color/google_g_primary" android:offset="0.15" />
+                <item android:color="@color/google_g_primary_transition" android:offset="0.22" />
+                <item android:color="@color/google_g_secondary" android:offset="0.28" />
+                <item android:color="@color/google_g_secondary" android:offset="0.35" />
+                <item android:color="@color/google_g_secondary_transition" android:offset="0.375" />
+                <item android:color="@color/google_g_tertiary" android:offset="0.45" />
+                <item android:color="@color/google_g_tertiary" android:offset="0.5" />
+                <item android:color="@color/google_g_tertiary" android:offset="0.55" />
+                <item android:color="@color/google_g_tertiary" android:offset="0.575" />
+                <item android:color="@color/google_g_quaternary_transition_one" android:offset="0.635" />
+                <item android:color="@color/google_g_quaternary_transition_two" android:offset="0.68" />
+                <item android:color="@color/google_g_quaternary" android:offset="0.78" />
+                <item android:color="@color/google_g_quaternary" android:offset="0.88" />
+                <item android:color="@color/google_g_quaternary" android:offset="0.92" />
+                <item android:color="@color/google_g_primary" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="@color/google_g_primary"
+        android:pathData="M24,28.52V20H44.72C44.98,21.44 45.12,22.94 45.12,24.5C45.12,25.886 45.017,27.229 44.818,28.52H35.84H24Z" />
+</vector>

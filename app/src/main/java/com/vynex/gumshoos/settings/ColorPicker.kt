@@ -90,6 +90,7 @@ internal fun ColorPickerAccordion(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onPick: (Int) -> Unit,
+    title: String = "Colour",
     /**
      * Carries the vertical margin a [SettingsGroup] would have supplied. This draws its own card, so
      * wrapping it in a group would put a card inside a card; it sits *as* a group instead.
@@ -115,7 +116,7 @@ internal fun ColorPickerAccordion(
                 .padding(horizontal = SettingsInset, vertical = 12.dp),
         ) {
             Text(
-                "Colour",
+                title,
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
             )

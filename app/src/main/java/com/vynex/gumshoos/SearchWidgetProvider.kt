@@ -235,12 +235,14 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
 
         val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
         val content = WidgetBarMetrics.contentColor(resolved, style)
+        // Text always takes [content]. The accent is what themed actions and an accent logo use.
+        val accent = WidgetBarRenderer.resolveAccent(context, style.accent)
 
         // The content sits inside the bar, so it has to move with the bar's own margin — otherwise
         // dropping the horizontal margin to zero leaves the logo hanging off the left edge. Read
         // through insetHDp rather than off the style, because a shadow widens that margin and the
         // logo has to follow the edge it actually produced.
-        val edge = ((WidgetBarMetrics.insetHDp(style) + CONTENT_INSET_DP) * density).toInt()
+        val edge = ((WidgetBarMetrics.insetHDp(style) + style.iconPaddingDp) * density).toInt()
         views.setViewPadding(R.id.widget_content, edge, 0, edge, 0)
 
         // Every size and margin below is pushed as an action, not left to the layout.
@@ -255,9 +257,15 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         // The XML is therefore a skeleton: it decides what views exist and nothing about how they
         // look. Anything added to it that can ever change has to be pushed here too.
         val hintTextSp = spOf(context, R.dimen.widget_bar_hint_text)
-        val logoDp = dpOf(context, R.dimen.widget_bar_logo_size)
-        val actionDp = dpOf(context, R.dimen.widget_bar_action_size)
+        // The dimen stays the logo's base size; the setting moves it by however far it has gone from
+        // its default.
+        val logoDp = dpOf(context, R.dimen.widget_bar_logo_size) +
+            (style.logoSizeDp - WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+        val actionDp = style.iconSizeDp.toFloat()
         val gapDp = dpOf(context, R.dimen.widget_bar_gap)
+        // The dimen is the hint's gap to the logo and stays so; the actions' own spacing is a
+        // setting, moved by however far it has gone from that default.
+        val slotGapDp = gapDp + (style.actionSpacingDp - WidgetBarMetrics.DEFAULT_ACTION_SPACING_DP)
         val pairGapDp = dpOf(context, R.dimen.widget_bar_pair_gap)
 
         views.setViewLayoutWidth(R.id.widget_logo, logoDp, TypedValue.COMPLEX_UNIT_DIP)
@@ -271,26 +279,22 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
             views.setViewLayoutHeight(ACTION_SLOTS[index], actionDp, TypedValue.COMPLEX_UNIT_DIP)
             intArrayOf(ACTION_SLOTS[index], DATE_SLOTS[index], TEXT_SLOTS[index]).forEach { id ->
                 views.setViewLayoutMargin(
-                    id, RemoteViews.MARGIN_START, gapDp, TypedValue.COMPLEX_UNIT_DIP,
+                    id, RemoteViews.MARGIN_START, slotGapDp, TypedValue.COMPLEX_UNIT_DIP,
                 )
             }
         }
 
-        val logoPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_logo_size)
+        val logoPx = (logoDp * density).roundToInt()
         views.setImageViewBitmap(R.id.widget_logo, rasterizeIcon(context, style.logo.icon, logoPx))
-        // Null, not a colour, for a brand mark: a tint would flatten it to one tone — unless
-        // monochrome is on, which is the user asking for exactly that.
+        // Null, not a colour, for a brand mark: a tint would flatten it to one tone — unless it is
+        // the solid Google logo, which is the user asking for exactly that.
         views.setColorStateList(
             R.id.widget_logo,
             "setImageTintList",
-            if (WidgetBarMetrics.tintsToContent(style, style.logo.tintable)) {
-                ColorStateList.valueOf(content)
-            } else {
-                null
-            },
+            WidgetBarMetrics.logoTint(style.logo, content, accent)?.let(ColorStateList::valueOf),
         )
 
-        val actionPx = context.resources.getDimensionPixelSize(R.dimen.widget_bar_action_size)
+        val actionPx = (style.iconSizeDp * density).roundToInt()
         // Resolved once rather than per slot: only one slot can be the date, but which one is not
         // known until the loop, and asking ICU three times for the same answer is waste.
         val datePattern = WidgetDateFormat.patternFor(context.resources.configuration.locales[0])
@@ -361,7 +365,10 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
                     conditionIcon?.let {
                         views.setImageViewBitmap(slot, rasterizeIcon(context, it, actionPx))
                         views.setColorStateList(
-                            slot, "setImageTintList", ColorStateList.valueOf(content),
+                            slot, "setImageTintList",
+                            ColorStateList.valueOf(
+                                WidgetBarMetrics.actionTint(style, true, content, accent) ?: content,
+                            ),
                         )
                         // Overrides the standard slot gap set above: this mark is not a slot of its
                         // own, it is the second half of the one to its left.
@@ -386,11 +393,8 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
                     views.setColorStateList(
                         slot,
                         "setImageTintList",
-                        if (WidgetBarMetrics.tintsToContent(style, action.tintable)) {
-                            ColorStateList.valueOf(content)
-                        } else {
-                            null
-                        },
+                        WidgetBarMetrics.actionTint(style, action.tintable, content, accent)
+                            ?.let(ColorStateList::valueOf),
                     )
                 }
             }
@@ -440,8 +444,6 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
         private const val DEFAULT_WIDTH_DP = 250
         private const val DEFAULT_HEIGHT_DP = 56
 
-        /** Gap from the bar's own edge to the logo. Mirrors @dimen/widget_bar_inset. */
-        private const val CONTENT_INSET_DP = 18
 
         // Two views per slot, index for index: the ImageView an icon action draws into and the
         // TextClock a text one does. Kept as parallel arrays rather than pairs because both are

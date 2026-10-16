@@ -32,12 +32,23 @@ data class WidgetBarStyle(
     val paddingHDp: Int = 0,
     val paddingVDp: Int = 0,
     /**
-     * Draw every icon in [WidgetBarMetrics.contentColor], brand marks included.
-     *
-     * Read through [WidgetBarMetrics.tintsToContent] rather than directly — the rule it overrides
-     * is per-icon, so the two have to be resolved together in one place.
+     * Draw the action icons in [accent] instead of their own colours, weather mark included. The
+     * logo is not part of this; it follows [accent] only through [WidgetBarLogo.accent].
      */
-    val monochrome: Boolean = false,
+    val themedActions: Boolean = false,
+    /**
+     * The one colour [themedActions] and an accent logo are drawn in. Adaptive takes it from the
+     * wallpaper palette at draw time — see [WidgetBarRenderer.themedColor].
+     */
+    val accent: WidgetBarFill = WidgetBarFill.Adaptive,
+    /** Side of the box each action icon is drawn in, in dp: the actions and the weather mark. */
+    val iconSizeDp: Int = WidgetBarMetrics.DEFAULT_ICON_SIZE_DP,
+    /** Side of the box the logo at the left is drawn in, in dp. */
+    val logoSizeDp: Int = WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP,
+    /** Space before each action on the right, in dp. The hint's own gap to the logo is separate. */
+    val actionSpacingDp: Int = WidgetBarMetrics.DEFAULT_ACTION_SPACING_DP,
+    /** Gap from the bar's own edge to the logo on one side and the last icon on the other. */
+    val iconPaddingDp: Int = WidgetBarMetrics.DEFAULT_ICON_PADDING_DP,
 )
 
 /**
@@ -68,9 +79,25 @@ enum class WidgetBarLogo(
     val label: String,
     @DrawableRes val icon: Int,
     val tintable: Boolean,
+    /**
+     * Drawn in colours that come from the wallpaper palette, so a vector painter cannot be trusted
+     * to resolve them — Compose's own parser is not what inflates colour selectors. Rasterised
+     * through the framework like the widget does it.
+     */
+    val dynamic: Boolean = false,
+    /** Drawn flat in the bar's accent colour instead of its own. */
+    val accent: Boolean = false,
 ) {
     MAGNIFIER("magnifier", "Magnifying glass", R.drawable.ic_provider_search, tintable = true),
     GOOGLE("google", "Google", R.drawable.ic_provider_google, tintable = false),
+    GOOGLE_THEMED(
+        "google_themed", "Google (themed)", R.drawable.ic_provider_google_themed,
+        tintable = false, dynamic = true,
+    ),
+    GOOGLE_SOLID(
+        "google_solid", "Google (solid)", R.drawable.ic_provider_google,
+        tintable = false, accent = true,
+    ),
     ;
 
     companion object {
@@ -93,13 +120,24 @@ object WidgetBarMetrics {
      * Bounds for the padding sliders, in dp.
      *
      * The vertical one is the tighter of the two because it fights the bar's own contents: it is
-     * taken off a single row's height at both ends, and the 22dp logo — the tallest thing in the
-     * bar, a dp above the action marks — still has to fit in what is left. Against the widget's
-     * declared 56dp minHeight that puts the hard ceiling at 17dp, so this stops one short of it
-     * rather than at exactly none. `WidgetBarStyleTest` holds the arithmetic.
+     * taken off a single row's height at both ends, and the logo still has to fit in what is left.
+     * Against the widget's declared 56dp minHeight the contents stop fitting at 17dp, so the 24dp
+     * ceiling is only honoured on a taller cell — [effectiveInsetVDp] is what holds it back on a
+     * short one, so the slider can go further than every cell can follow without the logo ever
+     * overflowing the bar.
      */
     const val MAX_PADDING_H_DP = 32
-    const val MAX_PADDING_V_DP = 16
+    const val MAX_PADDING_V_DP = 24
+
+    /** Mirror `@dimen/widget_bar_action_size` and `widget_bar_inset`, which the layout still names. */
+    const val DEFAULT_ICON_SIZE_DP = 21
+    const val DEFAULT_ICON_PADDING_DP = 18
+    const val DEFAULT_LOGO_SIZE_DP = 22
+    const val DEFAULT_ACTION_SPACING_DP = 12
+    const val MAX_ACTION_SPACING_DP = 32
+    const val MIN_ICON_SIZE_DP = 14
+    const val MAX_ICON_SIZE_DP = 36
+    const val MAX_ICON_PADDING_DP = 40
 
     /**
      * The drop shadow, transcribed from a CSS box-shadow:
@@ -152,6 +190,18 @@ object WidgetBarMetrics {
 
     fun insetVDp(style: WidgetBarStyle): Float =
         insetDp(style.paddingVDp, style.shadow, SHADOW_EXTENT_V_DP)
+
+    /**
+     * [insetVDp], held back so the bar stays at least as tall as its tallest content.
+     *
+     * Needs the cell's height, which the style does not carry, so it is asked for where the height
+     * is known — the renderer, and anything laying content out against the same bar.
+     */
+    fun effectiveInsetVDp(style: WidgetBarStyle, cellHeightDp: Float): Float {
+        val tallest = maxOf(style.logoSizeDp, style.iconSizeDp).toFloat()
+        val room = ((cellHeightDp - tallest) / 2f).coerceAtLeast(0f)
+        return minOf(insetVDp(style), room)
+    }
 
     private fun insetDp(paddingDp: Int, shadow: Boolean, extentDp: Float): Float {
         val padding = paddingDp.coerceAtLeast(0).toFloat()
@@ -246,19 +296,32 @@ object WidgetBarMetrics {
     }
 
     /**
-     * Whether an icon is painted in [contentColor] instead of its own colours.
+     * The colour the logo is flattened to, or null to draw it in its own colours.
      *
-     * One predicate for the widget and the settings preview both, so the two cannot disagree about
-     * what monochrome means — they read the same [tintable] flags off the same enums, and a rule
-     * written out twice is a rule that drifts.
-     *
-     * [tintable] is the icon's own claim, and it is false for every brand mark: flattening the
-     * Google G or the four-colour mic to one tone is normally damage. Monochrome is the user asking
-     * for precisely that, for the whole bar at once, so it wins — but only as an override, never by
-     * replacing the per-icon rule, which still decides everything when monochrome is off.
+     * One rule for the widget and the settings preview both, so the two cannot disagree — a rule
+     * written out twice is a rule that drifts. [WidgetBarLogo.tintable] is the mark's own claim and
+     * is false for every brand mark, where flattening is normally damage; [WidgetBarLogo.accent]
+     * is the user asking for exactly that.
      */
-    fun tintsToContent(style: WidgetBarStyle, tintable: Boolean): Boolean =
-        style.monochrome || tintable
+    @ColorInt
+    fun logoTint(logo: WidgetBarLogo, @ColorInt content: Int, @ColorInt accent: Int): Int? = when {
+        logo.accent -> accent
+        logo.tintable -> content
+        else -> null
+    }
+
+    /** As [logoTint], for an action icon: themed actions override the icon's own claim. */
+    @ColorInt
+    fun actionTint(
+        style: WidgetBarStyle,
+        tintable: Boolean,
+        @ColorInt content: Int,
+        @ColorInt accent: Int,
+    ): Int? = when {
+        style.themedActions -> accent
+        tintable -> content
+        else -> null
+    }
 
     /** Perceived brightness, weighted for how the eye actually responds to each channel. */
     fun luminance(@ColorInt color: Int): Float =

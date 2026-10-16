@@ -64,6 +64,29 @@ object WidgetBarRenderer {
         }
     }
 
+    /** The accent colour as drawn: the user's pick, or the wallpaper's when adaptive. */
+    @ColorInt
+    fun resolveAccent(context: Context, accent: WidgetBarFill): Int = when (accent) {
+        is WidgetBarFill.Solid -> accent.color or 0xFF000000.toInt()
+        WidgetBarFill.Adaptive -> themedColor(context)
+    }
+
+    /**
+     * The accent colour when nothing has been picked, taken from the wallpaper palette.
+     *
+     * The accent1 tones the Google app's own widget ends its sweep on: 600 on a light theme, 200 on
+     * a dark one, so it reads against the adaptive bar in either mode.
+     */
+    @ColorInt
+    fun themedColor(context: Context): Int {
+        val night = context.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        return ContextCompat.getColor(
+            context,
+            if (night) android.R.color.system_accent1_200 else android.R.color.system_accent1_600,
+        )
+    }
+
     /**
      * The BlurMaskFilter radius that reproduces a CSS blur-radius of [cssBlurDp].
      *
@@ -125,7 +148,7 @@ object WidgetBarRenderer {
         val dx = WidgetBarMetrics.SHADOW_DX_DP * density
         val dy = WidgetBarMetrics.SHADOW_DY_DP * density
         val insetH = WidgetBarMetrics.insetHDp(style) * density
-        val insetV = WidgetBarMetrics.insetVDp(style) * density
+        val insetV = WidgetBarMetrics.effectiveInsetVDp(style, height / density) * density
 
         val rect = RectF(insetH, insetV, width - insetH, height - insetV)
         if (rect.width() <= 0f || rect.height() <= 0f) return

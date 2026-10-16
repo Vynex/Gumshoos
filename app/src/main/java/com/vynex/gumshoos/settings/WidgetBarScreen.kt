@@ -23,7 +23,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +36,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import com.vynex.gumshoos.GumshoosConfig
 import com.vynex.gumshoos.R
 import com.vynex.gumshoos.SearchProviders
@@ -52,6 +57,24 @@ import sh.calvin.reorderable.ReorderableColumn
 import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.math.roundToInt
+
+/**
+ * A logo drawn through the framework, for the ones whose colours come from the palette.
+ *
+ * Keyed on the configuration, which changes with night mode and with the wallpaper's colours, so
+ * the bitmap is redrawn when the palette moves rather than kept from the one it was first made in.
+ */
+@Composable
+private fun logoBitmap(logo: WidgetBarLogo): ImageBitmap {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    return remember(logo, configuration) {
+        val drawable = requireNotNull(ContextCompat.getDrawable(context, logo.icon)).mutate()
+        drawable.toBitmap(LOGO_BITMAP_PX, LOGO_BITMAP_PX).asImageBitmap()
+    }
+}
+
+private const val LOGO_BITMAP_PX = 128
 
 /** Fallback preview height, used when no bar is placed yet to measure. */
 private val DefaultPreviewHeight = 60.dp
@@ -89,6 +112,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
     fun push() = SearchWidgetProvider.refreshAll(context)
 
     var paletteOpen by remember { mutableStateOf(false) }
+    var accentOpen by remember { mutableStateOf(false) }
 
     SettingsScaffoldWithHeader(
         title = "Search bar widget",
@@ -109,7 +133,26 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 GumshoosConfig.setWidgetBarSolidColor(context, picked)
                 push()
             },
+            title = "Background colour",
             modifier = Modifier.padding(vertical = 8.dp),
+        )
+
+        ColorPickerAccordion(
+            currentColor = WidgetBarRenderer.resolveAccent(context, style.accent),
+            selected = (style.accent as? WidgetBarFill.Solid)?.color,
+            adaptive = GumshoosConfig.widgetBarAccentAdaptive,
+            onAdaptiveChange = { adaptive ->
+                GumshoosConfig.setWidgetBarAccentAdaptive(context, adaptive)
+                push()
+            },
+            expanded = accentOpen,
+            onExpandedChange = { accentOpen = it },
+            onPick = { picked ->
+                GumshoosConfig.setWidgetBarAccentColor(context, picked)
+                push()
+            },
+            title = "Accent colour",
+            modifier = Modifier.padding(bottom = 8.dp),
         )
 
         SettingsGroup(title = "Style") {
@@ -135,12 +178,6 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 description = "A short drop shadow. This also slightly reduces the widget size.",
                 checked = style.shadow,
                 onCheckedChange = { GumshoosConfig.setWidgetBarShadow(context, it); push() },
-            )
-            SettingsSwitchRow(
-                title = "Monochrome",
-                description = "Draws every icon in one colour instead of its own.",
-                checked = style.monochrome,
-                onCheckedChange = { GumshoosConfig.setWidgetBarMonochrome(context, it); push() },
             )
         }
 
@@ -183,21 +220,73 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
                 onValue = { GumshoosConfig.setWidgetBarPaddingV(context, it) },
                 onValueFinished = ::push,
             )
+            SettingsSliderRow(
+                label = "Horizontal padding",
+                value = GumshoosConfig.widgetBarIconPadding,
+                min = 0,
+                max = WidgetBarMetrics.MAX_ICON_PADDING_DP,
+                step = 2,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetBarIconPadding(context, it) },
+                onValueFinished = ::push,
+            )
+        }
+
+        SettingsGroup(title = "Icons") {
+            SettingsSliderRow(
+                label = "Logo size",
+                value = GumshoosConfig.widgetBarLogoSize,
+                min = WidgetBarMetrics.MIN_ICON_SIZE_DP,
+                max = WidgetBarMetrics.MAX_ICON_SIZE_DP,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetBarLogoSize(context, it) },
+                onValueFinished = ::push,
+            )
+            SettingsSliderRow(
+                label = "Action icon size",
+                value = GumshoosConfig.widgetBarIconSize,
+                min = WidgetBarMetrics.MIN_ICON_SIZE_DP,
+                max = WidgetBarMetrics.MAX_ICON_SIZE_DP,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetBarIconSize(context, it) },
+                onValueFinished = ::push,
+            )
+            SettingsSliderRow(
+                label = "Action spacing",
+                value = GumshoosConfig.widgetBarActionSpacing,
+                min = 0,
+                max = WidgetBarMetrics.MAX_ACTION_SPACING_DP,
+                step = 2,
+                valueText = { "${it}dp" },
+                onValue = { GumshoosConfig.setWidgetBarActionSpacing(context, it) },
+                onValueFinished = ::push,
+            )
+            SettingsSwitchRow(
+                title = "Themed actions",
+                description = "Draws the action icons in the accent colour.",
+                checked = style.themedActions,
+                onCheckedChange = { GumshoosConfig.setWidgetBarThemedActions(context, it); push() },
+            )
         }
 
         SettingsGroup(title = "Logo and text") {
             WidgetBarLogo.entries.forEach { logo ->
                 SettingsRadioRow(
                     title = logo.label,
-                    description = if (logo.tintable) {
+                    description = if (logo.accent) {
+                        "Follows the accent colour."
+                    } else if (logo.dynamic) {
+                        "Uses your wallpaper's colours."
+                    } else if (logo.tintable) {
                         "Follows the bar's contrast colour."
                     } else {
                         "Keeps its own colours."
                     },
                     selected = style.logo == logo,
                     onClick = { GumshoosConfig.setWidgetBarLogo(context, logo); push() },
-                    icon = logo.icon,
-                    tintIcon = logo.tintable,
+                    icon = if (logo.dynamic) null else logo.icon,
+                    iconBitmap = if (logo.dynamic) logoBitmap(logo) else null,
+                    tintIcon = logo.tintable || logo.accent,
                 )
             }
             SettingsGroupDivider()
@@ -210,6 +299,8 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         }
 
         ActionGroups(available = available, onChanged = ::push)
+
+        SettingsDivider()
 
         SettingsGroup {
             SettingsActionRow(
@@ -247,14 +338,18 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
         ) ?: DefaultPreviewHeight
     }
     val density = LocalDensity.current.density
-    val inset = dimensionResource(R.dimen.widget_bar_inset)
     val gap = dimensionResource(R.dimen.widget_bar_gap)
     val locale = LocalConfiguration.current.locales[0]
-    val logoSize = dimensionResource(R.dimen.widget_bar_logo_size)
-    val actionSize = dimensionResource(R.dimen.widget_bar_action_size)
+    val logoSize = dimensionResource(R.dimen.widget_bar_logo_size) +
+        (style.logoSizeDp - WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP).dp
+    val actionSize = style.iconSizeDp.dp
 
     val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
     val content = Color(WidgetBarMetrics.contentColor(resolved, style))
+    // The text keeps [content]; the accent is for themed actions and the solid logo.
+    val accent = WidgetBarRenderer.resolveAccent(context, style.accent)
+    val logoBitmap = logoBitmap(style.logo)
+    val logoPainter = remember(logoBitmap) { BitmapPainter(logoBitmap) }
 
     // Filtered by availability exactly as the widget filters it, or the preview would promise an
     // icon the bar on the home screen doesn't draw.
@@ -315,16 +410,17 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
                 .fillMaxSize()
                 // The bar's real edge, not the configured margin: a shadow widens it, and the logo
                 // has to sit inside whatever the renderer drew — the same read the widget makes.
-                .padding(horizontal = inset + WidgetBarMetrics.insetHDp(style).dp),
+                .padding(horizontal = (style.iconPaddingDp + WidgetBarMetrics.insetHDp(style)).dp),
         ) {
             Image(
-                painter = painterResource(style.logo.icon),
-                contentDescription = null,
-                colorFilter = if (WidgetBarMetrics.tintsToContent(style, style.logo.tintable)) {
-                    ColorFilter.tint(content)
+                painter = if (style.logo.dynamic) {
+                    logoPainter
                 } else {
-                    null
+                    painterResource(style.logo.icon)
                 },
+                contentDescription = null,
+                colorFilter = WidgetBarMetrics.logoTint(style.logo, content.toArgb(), accent)
+                    ?.let { ColorFilter.tint(Color(it)) },
                 modifier = Modifier.size(logoSize),
             )
             if (style.showHint) {
@@ -340,7 +436,7 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
             // decision `decorate` makes per slot, so the date lands wherever it was dragged to
             // rather than always at the end.
             actions.take(WidgetAction.SLOT_COUNT).forEach { action ->
-                Spacer(Modifier.width(gap))
+                Spacer(Modifier.width(gap + (style.actionSpacingDp - WidgetBarMetrics.DEFAULT_ACTION_SPACING_DP).dp))
                 if (action.kind == SlotKind.TEXT) {
                     // Temperature then mark, matching the layout's order — the widget shows both,
                     // and a preview that drew only the text was the reason this looked different
@@ -356,7 +452,12 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
                         Image(
                             painter = painterResource(mark),
                             contentDescription = null,
-                            colorFilter = ColorFilter.tint(content),
+                            colorFilter = ColorFilter.tint(
+                                Color(
+                                    WidgetBarMetrics.actionTint(style, true, content.toArgb(), accent)
+                                        ?: content.toArgb(),
+                                ),
+                            ),
                             modifier = Modifier.size(actionSize),
                         )
                     }
@@ -376,11 +477,9 @@ private fun WidgetBarPreview(style: WidgetBarStyle, available: Set<WidgetAction>
                     Image(
                         painter = painterResource(action.icon),
                         contentDescription = null,
-                        colorFilter = if (WidgetBarMetrics.tintsToContent(style, action.tintable)) {
-                            ColorFilter.tint(content)
-                        } else {
-                            null
-                        },
+                        colorFilter = WidgetBarMetrics
+                            .actionTint(style, action.tintable, content.toArgb(), accent)
+                            ?.let { ColorFilter.tint(Color(it)) },
                         // scale, not a smaller size: the widget shrinks the artwork inside a box
                         // that stays put, so scaling the box would move the bar's spacing with it.
                         modifier = Modifier.size(actionSize).scale(action.iconScale),

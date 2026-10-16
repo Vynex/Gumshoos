@@ -69,7 +69,9 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_WIREFRAME = "widget_bar_wireframe"
     private const val KEY_WIDGET_BAR_CORNER = "widget_bar_corner"
     private const val KEY_WIDGET_BAR_SHADOW = "widget_bar_shadow"
-    private const val KEY_WIDGET_BAR_MONOCHROME = "widget_bar_monochrome"
+    private const val KEY_WIDGET_BAR_THEMED = "widget_bar_themed"
+    private const val KEY_WIDGET_BAR_ACCENT_MODE = "widget_bar_accent_mode"
+    private const val KEY_WIDGET_BAR_ACCENT_COLOR = "widget_bar_accent_color"
     private const val KEY_WEATHER_API_KEY = "weather_api_key"
     private const val KEY_WEATHER_UNIT = "weather_unit"
     private const val KEY_WEATHER_PLACE = "weather_place"
@@ -82,6 +84,10 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_ACTION_ORDER = "widget_bar_action_order"
     private const val KEY_WIDGET_BAR_PAD_H = "widget_bar_padding_h"
     private const val KEY_WIDGET_BAR_PAD_V = "widget_bar_padding_v"
+    private const val KEY_WIDGET_BAR_ICON_SIZE = "widget_bar_icon_size"
+    private const val KEY_WIDGET_BAR_ICON_PAD = "widget_bar_icon_padding"
+    private const val KEY_WIDGET_BAR_LOGO_SIZE = "widget_bar_logo_size"
+    private const val KEY_WIDGET_BAR_ACTION_SPACING = "widget_bar_action_spacing"
     private const val KEY_LAUNCH_METHOD = "launch_method"
     private const val KEY_WINDOW_ADAPTIVE = "search_window_adaptive"
     private const val KEY_WINDOW_COLOR = "search_window_color"
@@ -417,8 +423,22 @@ object GumshoosConfig {
      * Off by default: the per-icon [WidgetBarLogo.tintable] rule exists because flattening a brand
      * mark is normally wrong, and this is the deliberate exception rather than the starting point.
      */
-    var widgetBarMonochrome by mutableStateOf(false)
+    var widgetBarThemedActions by mutableStateOf(false)
         private set
+
+    /** Two values for the same reason as the fill: the pick survives a trip through Adaptive. */
+    var widgetBarAccentAdaptive by mutableStateOf(true)
+        private set
+
+    var widgetBarAccentColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
+        private set
+
+    val widgetBarAccent: WidgetBarFill
+        get() = if (widgetBarAccentAdaptive) {
+            WidgetBarFill.Adaptive
+        } else {
+            WidgetBarFill.Solid(widgetBarAccentColor)
+        }
 
     /**
      * OpenWeather key, blank until the user pastes one in.
@@ -480,6 +500,18 @@ object GumshoosConfig {
     var widgetBarPaddingV by mutableStateOf(DEFAULT_WIDGET_BAR_PAD_V)
         private set
 
+    var widgetBarIconSize by mutableStateOf(WidgetBarMetrics.DEFAULT_ICON_SIZE_DP)
+        private set
+
+    var widgetBarLogoSize by mutableStateOf(WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+        private set
+
+    var widgetBarActionSpacing by mutableStateOf(WidgetBarMetrics.DEFAULT_ACTION_SPACING_DP)
+        private set
+
+    var widgetBarIconPadding by mutableStateOf(WidgetBarMetrics.DEFAULT_ICON_PADDING_DP)
+        private set
+
     var widgetBarShowHint by mutableStateOf(false)
         private set
 
@@ -512,7 +544,12 @@ object GumshoosConfig {
             logo = widgetBarLogo,
             paddingHDp = widgetBarPaddingH,
             paddingVDp = widgetBarPaddingV,
-            monochrome = widgetBarMonochrome,
+            themedActions = widgetBarThemedActions,
+            accent = widgetBarAccent,
+            iconSizeDp = widgetBarIconSize,
+            logoSizeDp = widgetBarLogoSize,
+            actionSpacingDp = widgetBarActionSpacing,
+            iconPaddingDp = widgetBarIconPadding,
         )
 
     fun setWidgetBarPaddingH(context: Context, dp: Int) {
@@ -523,6 +560,30 @@ object GumshoosConfig {
     fun setWidgetBarPaddingV(context: Context, dp: Int) {
         widgetBarPaddingV = dp.coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
         prefs(context).edit().putInt(KEY_WIDGET_BAR_PAD_V, widgetBarPaddingV).apply()
+    }
+
+    fun setWidgetBarIconSize(context: Context, dp: Int) {
+        widgetBarIconSize = dp.coerceIn(
+            WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP,
+        )
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_ICON_SIZE, widgetBarIconSize).apply()
+    }
+
+    fun setWidgetBarLogoSize(context: Context, dp: Int) {
+        widgetBarLogoSize = dp.coerceIn(
+            WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP,
+        )
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_LOGO_SIZE, widgetBarLogoSize).apply()
+    }
+
+    fun setWidgetBarActionSpacing(context: Context, dp: Int) {
+        widgetBarActionSpacing = dp.coerceIn(0, WidgetBarMetrics.MAX_ACTION_SPACING_DP)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_ACTION_SPACING, widgetBarActionSpacing).apply()
+    }
+
+    fun setWidgetBarIconPadding(context: Context, dp: Int) {
+        widgetBarIconPadding = dp.coerceIn(0, WidgetBarMetrics.MAX_ICON_PADDING_DP)
+        prefs(context).edit().putInt(KEY_WIDGET_BAR_ICON_PAD, widgetBarIconPadding).apply()
     }
 
     fun setWidgetBarFillAdaptive(context: Context, adaptive: Boolean) {
@@ -611,9 +672,25 @@ object GumshoosConfig {
     /** Enough to pick from, few enough that the dropdown never needs scrolling. */
     private const val MAX_WEATHER_PLACES = 5
 
-    fun setWidgetBarMonochrome(context: Context, enabled: Boolean) {
-        widgetBarMonochrome = enabled
-        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_MONOCHROME, enabled).apply()
+    fun setWidgetBarThemedActions(context: Context, enabled: Boolean) {
+        widgetBarThemedActions = enabled
+        prefs(context).edit().putBoolean(KEY_WIDGET_BAR_THEMED, enabled).apply()
+    }
+
+    fun setWidgetBarAccentAdaptive(context: Context, adaptive: Boolean) {
+        widgetBarAccentAdaptive = adaptive
+        val mode = if (adaptive) WidgetBarFill.ADAPTIVE_ID else WidgetBarFill.SOLID_ID
+        prefs(context).edit().putString(KEY_WIDGET_BAR_ACCENT_MODE, mode).apply()
+    }
+
+    /** As the fill: choosing a colour is a statement that it shouldn't follow the wallpaper. */
+    fun setWidgetBarAccentColor(context: Context, color: Int) {
+        widgetBarAccentColor = color
+        widgetBarAccentAdaptive = false
+        prefs(context).edit()
+            .putInt(KEY_WIDGET_BAR_ACCENT_COLOR, color)
+            .putString(KEY_WIDGET_BAR_ACCENT_MODE, WidgetBarFill.SOLID_ID)
+            .apply()
     }
 
     fun setWidgetBarShowHint(context: Context, show: Boolean) {
@@ -645,13 +722,19 @@ object GumshoosConfig {
             remove(KEY_WIDGET_BAR_WIREFRAME)
             remove(KEY_WIDGET_BAR_CORNER)
             remove(KEY_WIDGET_BAR_SHADOW)
-            remove(KEY_WIDGET_BAR_MONOCHROME)
+            remove(KEY_WIDGET_BAR_THEMED)
+            remove(KEY_WIDGET_BAR_ACCENT_MODE)
+            remove(KEY_WIDGET_BAR_ACCENT_COLOR)
             remove(KEY_WIDGET_BAR_SHOW_HINT)
             remove(KEY_WIDGET_BAR_LOGO)
             remove(KEY_WIDGET_BAR_ACTIONS)
             remove(KEY_WIDGET_BAR_ACTION_ORDER)
             remove(KEY_WIDGET_BAR_PAD_H)
             remove(KEY_WIDGET_BAR_PAD_V)
+            remove(KEY_WIDGET_BAR_ICON_SIZE)
+            remove(KEY_WIDGET_BAR_ICON_PAD)
+            remove(KEY_WIDGET_BAR_LOGO_SIZE)
+            remove(KEY_WIDGET_BAR_ACTION_SPACING)
         }.apply()
         load(context)
     }
@@ -999,7 +1082,10 @@ object GumshoosConfig {
         widgetBarWireframe = p.getBoolean(KEY_WIDGET_BAR_WIREFRAME, false)
         widgetBarCorner = p.getInt(KEY_WIDGET_BAR_CORNER, 100).coerceIn(0, 100)
         widgetBarShadow = p.getBoolean(KEY_WIDGET_BAR_SHADOW, true)
-        widgetBarMonochrome = p.getBoolean(KEY_WIDGET_BAR_MONOCHROME, false)
+        widgetBarThemedActions = p.getBoolean(KEY_WIDGET_BAR_THEMED, false)
+        widgetBarAccentAdaptive =
+            p.getString(KEY_WIDGET_BAR_ACCENT_MODE, null) != WidgetBarFill.SOLID_ID
+        widgetBarAccentColor = p.getInt(KEY_WIDGET_BAR_ACCENT_COLOR, DEFAULT_WIDGET_BAR_COLOR)
         weatherApiKey = p.getString(KEY_WEATHER_API_KEY, "").orEmpty()
         weatherUnit = WeatherUnit.fromId(p.getString(KEY_WEATHER_UNIT, null))
         weatherPlace = p.getString(KEY_WEATHER_PLACE, "").orEmpty()
@@ -1016,6 +1102,16 @@ object GumshoosConfig {
             .coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
         widgetBarPaddingV = p.getInt(KEY_WIDGET_BAR_PAD_V, DEFAULT_WIDGET_BAR_PAD_V)
             .coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
+        widgetBarIconSize = p.getInt(KEY_WIDGET_BAR_ICON_SIZE, WidgetBarMetrics.DEFAULT_ICON_SIZE_DP)
+            .coerceIn(WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP)
+        widgetBarLogoSize = p.getInt(KEY_WIDGET_BAR_LOGO_SIZE, WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+            .coerceIn(WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP)
+        widgetBarActionSpacing = p.getInt(
+            KEY_WIDGET_BAR_ACTION_SPACING, WidgetBarMetrics.DEFAULT_ACTION_SPACING_DP,
+        ).coerceIn(0, WidgetBarMetrics.MAX_ACTION_SPACING_DP)
+        widgetBarIconPadding = p.getInt(
+            KEY_WIDGET_BAR_ICON_PAD, WidgetBarMetrics.DEFAULT_ICON_PADDING_DP,
+        ).coerceIn(0, WidgetBarMetrics.MAX_ICON_PADDING_DP)
         widgetBarActionOrder = p.getString(KEY_WIDGET_BAR_ACTION_ORDER, null)
             ?.split(',')
             ?.filter { it.isNotBlank() }

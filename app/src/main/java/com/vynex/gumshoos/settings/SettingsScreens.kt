@@ -732,13 +732,15 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
         // Two groups, because they are two places. The widgets are drawn on the home screen by the
         // launcher; the window is drawn over whatever is already there. Merging them into one list
         // of "things to restyle" lost that.
-        SettingsGroup(title = "Home screen") {
+        SettingsGroup(title = "Overlay") {
             CategoryRow(
-                title = "Search bar widget",
-                summary = widgetBarSummary(),
-                onClick = { onOpen(Screen.WidgetBar) },
+                title = "Search window",
+                summary = searchWindowSummary(),
+                onClick = { onOpen(Screen.SearchWindow) },
             )
-            SettingsGroupDivider()
+        }
+
+        SettingsGroup(title = "Home screen") {
             CategoryRow(
                 title = "App icon widget",
                 summary = "Icon ${GumshoosConfig.widgetIconSizeDp}dp" +
@@ -749,13 +751,11 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     },
                 onClick = { onOpen(Screen.WidgetIcon) },
             )
-        }
-
-        SettingsGroup(title = "Overlay") {
+            SettingsGroupDivider()
             CategoryRow(
-                title = "Search window",
-                summary = searchWindowSummary(),
-                onClick = { onOpen(Screen.SearchWindow) },
+                title = "Search bar widget",
+                summary = widgetBarSummary(),
+                onClick = { onOpen(Screen.WidgetBar) },
             )
         }
 
