@@ -70,6 +70,7 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_CORNER = "widget_bar_corner"
     private const val KEY_WIDGET_BAR_SHADOW = "widget_bar_shadow"
     private const val KEY_WIDGET_BAR_THEMED = "widget_bar_themed"
+    private const val KEY_WIDGET_BAR_EXTENDED_SPACING = "widget_bar_extended_spacing"
     private const val KEY_WIDGET_BAR_ACCENT_MODE = "widget_bar_accent_mode"
     private const val KEY_WIDGET_BAR_ACCENT_COLOR = "widget_bar_accent_color"
     private const val KEY_WEATHER_API_KEY = "weather_api_key"
@@ -423,6 +424,13 @@ object GumshoosConfig {
      * Off by default: the per-icon [WidgetBarLogo.tintable] rule exists because flattening a brand
      * mark is normally wrong, and this is the deliberate exception rather than the starting point.
      */
+    /**
+     * Whether the vertical margin slider offers its longer range. A preference about the screen,
+     * not part of the bar's style, so "Reset to defaults" leaves it where it is.
+     */
+    var widgetBarExtendedSpacing by mutableStateOf(false)
+        private set
+
     var widgetBarThemedActions by mutableStateOf(false)
         private set
 
@@ -558,8 +566,18 @@ object GumshoosConfig {
     }
 
     fun setWidgetBarPaddingV(context: Context, dp: Int) {
-        widgetBarPaddingV = dp.coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
+        widgetBarPaddingV = dp.coerceIn(0, WidgetBarMetrics.maxPaddingVDp(widgetBarExtendedSpacing))
         prefs(context).edit().putInt(KEY_WIDGET_BAR_PAD_V, widgetBarPaddingV).apply()
+    }
+
+    /** Switching back to the short range pulls a margin beyond it down to the new end. */
+    fun setWidgetBarExtendedSpacing(context: Context, enabled: Boolean) {
+        widgetBarExtendedSpacing = enabled
+        widgetBarPaddingV = widgetBarPaddingV.coerceAtMost(WidgetBarMetrics.maxPaddingVDp(enabled))
+        prefs(context).edit()
+            .putBoolean(KEY_WIDGET_BAR_EXTENDED_SPACING, enabled)
+            .putInt(KEY_WIDGET_BAR_PAD_V, widgetBarPaddingV)
+            .apply()
     }
 
     fun setWidgetBarIconSize(context: Context, dp: Int) {
@@ -1100,8 +1118,9 @@ object GumshoosConfig {
             ?: WidgetAction.DEFAULT_ENABLED
         widgetBarPaddingH = p.getInt(KEY_WIDGET_BAR_PAD_H, DEFAULT_WIDGET_BAR_PAD_H)
             .coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
+        widgetBarExtendedSpacing = p.getBoolean(KEY_WIDGET_BAR_EXTENDED_SPACING, false)
         widgetBarPaddingV = p.getInt(KEY_WIDGET_BAR_PAD_V, DEFAULT_WIDGET_BAR_PAD_V)
-            .coerceIn(0, WidgetBarMetrics.MAX_PADDING_V_DP)
+            .coerceIn(0, WidgetBarMetrics.maxPaddingVDp(widgetBarExtendedSpacing))
         widgetBarIconSize = p.getInt(KEY_WIDGET_BAR_ICON_SIZE, WidgetBarMetrics.DEFAULT_ICON_SIZE_DP)
             .coerceIn(WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP)
         widgetBarLogoSize = p.getInt(KEY_WIDGET_BAR_LOGO_SIZE, WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)

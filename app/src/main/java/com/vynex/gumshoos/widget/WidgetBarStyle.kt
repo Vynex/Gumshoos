@@ -121,13 +121,19 @@ object WidgetBarMetrics {
      *
      * The vertical one is the tighter of the two because it fights the bar's own contents: it is
      * taken off a single row's height at both ends, and the logo still has to fit in what is left.
-     * Against the widget's declared 56dp minHeight the contents stop fitting at 17dp, so the 24dp
-     * ceiling is only honoured on a taller cell — [effectiveInsetVDp] is what holds it back on a
+     * Against the widget's declared 56dp minHeight the contents stop fitting at 17dp, so the longer
+     * values are only honoured on a taller cell — [effectiveInsetVDp] is what holds it back on a
      * short one, so the slider can go further than every cell can follow without the logo ever
      * overflowing the bar.
      */
     const val MAX_PADDING_H_DP = 32
-    const val MAX_PADDING_V_DP = 24
+
+    /** The hard bound. What the slider offers is [maxPaddingVDp], which the menu switches. */
+    const val MAX_PADDING_V_DP = 30
+    const val DEFAULT_MAX_PADDING_V_DP = 18
+
+    fun maxPaddingVDp(extended: Boolean): Int =
+        if (extended) MAX_PADDING_V_DP else DEFAULT_MAX_PADDING_V_DP
 
     /** Mirror `@dimen/widget_bar_action_size` and `widget_bar_inset`, which the layout still names. */
     const val DEFAULT_ICON_SIZE_DP = 21

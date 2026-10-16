@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -128,6 +129,7 @@ internal fun SettingsTopBar(
     title: String,
     onBack: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     TopAppBar(
         title = { Text(title) },
@@ -136,6 +138,7 @@ internal fun SettingsTopBar(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
         },
+        actions = actions,
         scrollBehavior = scrollBehavior,
     )
 }
@@ -214,13 +217,14 @@ internal fun SettingsScaffoldWithHeader(
     title: String,
     onBack: () -> Unit,
     header: @Composable () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { SettingsTopBar(title, onBack, scrollBehavior) },
+        topBar = { SettingsTopBar(title, onBack, scrollBehavior, actions) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             header()

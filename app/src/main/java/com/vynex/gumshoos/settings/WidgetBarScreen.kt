@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -118,6 +122,31 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
         title = "Search bar widget",
         onBack = onBack,
         header = { WidgetBarPreview(style, available) },
+        actions = {
+            var menuOpen by remember { mutableStateOf(false) }
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(painterResource(R.drawable.ic_more_vertical), contentDescription = "More options")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                val extended = GumshoosConfig.widgetBarExtendedSpacing
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (extended) {
+                                "Show less values for spacings"
+                            } else {
+                                "Show more values for spacings"
+                            },
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        GumshoosConfig.setWidgetBarExtendedSpacing(context, !extended)
+                        push()
+                    },
+                )
+            }
+        },
     ) {
         ColorPickerAccordion(
             currentColor = WidgetBarRenderer.resolveFill(context, style.fill),
@@ -215,7 +244,7 @@ internal fun WidgetBarScreen(onBack: () -> Unit) {
 //                summary = "How thick the bar is within its row.",
                 value = GumshoosConfig.widgetBarPaddingV,
                 min = 0,
-                max = WidgetBarMetrics.MAX_PADDING_V_DP,
+                max = WidgetBarMetrics.maxPaddingVDp(GumshoosConfig.widgetBarExtendedSpacing),
                 valueText = { "${it}dp" },
                 onValue = { GumshoosConfig.setWidgetBarPaddingV(context, it) },
                 onValueFinished = ::push,
