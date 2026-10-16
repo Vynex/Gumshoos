@@ -48,6 +48,7 @@ import com.vynex.gumshoos.R
 import com.vynex.gumshoos.refreshAllWidgets
 import com.vynex.gumshoos.SearchProviders
 import com.vynex.gumshoos.SearchShortcuts
+import com.vynex.gumshoos.SearchWidgetFinderProvider
 import com.vynex.gumshoos.SearchWidgetProvider
 import com.vynex.gumshoos.SearchWidgetSmallProvider
 import com.vynex.gumshoos.UsageSource
@@ -527,6 +528,18 @@ internal fun AddToHomeScreenSettings() {
                 refused = !SearchShortcuts.requestPinWidget(
                     context,
                     SearchWidgetProvider::class.java,
+                )
+            },
+        )
+        SettingsGroupDivider()
+        SettingsActionRow(
+            title = "Finder widget",
+            summary = "A small search pill, two or three cells wide.",
+            enabled = canPinWidget,
+            onClick = {
+                refused = !SearchShortcuts.requestPinWidget(
+                    context,
+                    SearchWidgetFinderProvider::class.java,
                 )
             },
         )

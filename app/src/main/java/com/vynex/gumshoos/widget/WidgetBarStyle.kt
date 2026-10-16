@@ -88,7 +88,11 @@ enum class WidgetBarLogo(
     /** Drawn flat in the bar's accent colour instead of its own. */
     val accent: Boolean = false,
 ) {
-    MAGNIFIER("magnifier", "Magnifying glass", R.drawable.ic_provider_search, tintable = true),
+    // Flat in the accent colour, like the solid Google logo. It used to follow the contrast colour.
+    MAGNIFIER(
+        "magnifier", "Magnifying glass", R.drawable.ic_provider_search,
+        tintable = true, accent = true,
+    ),
     GOOGLE("google", "Google", R.drawable.ic_provider_google, tintable = false),
     GOOGLE_THEMED(
         "google_themed", "Google (themed)", R.drawable.ic_provider_google_themed,
@@ -208,6 +212,15 @@ object WidgetBarMetrics {
         val room = ((cellHeightDp - tallest) / 2f).coerceAtLeast(0f)
         return minOf(insetVDp(style), room)
     }
+
+    /** Bounds and default for the gap between the Finder's logo and its label, in dp. */
+    const val DEFAULT_FINDER_GAP_DP = 8
+    const val MAX_FINDER_GAP_DP = 24
+
+    /** Bounds and default for the Finder's label size, in sp. */
+    const val DEFAULT_FINDER_TEXT_SP = 14
+    const val MIN_FINDER_TEXT_SP = 10
+    const val MAX_FINDER_TEXT_SP = 22
 
     private fun insetDp(paddingDp: Int, shadow: Boolean, extentDp: Float): Float {
         val padding = paddingDp.coerceAtLeast(0).toFloat()

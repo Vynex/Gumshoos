@@ -197,6 +197,35 @@ private fun spOf(context: Context, resId: Int): Float {
     return context.resources.getDimension(resId) / scale
 }
 
+/**
+ * The size the launcher says this widget occupies, in dp.
+ *
+ * Prefers the exact size list the host provides, falling back to the min-width/max-height pair
+ * and then to the size declared in the widget metadata. Hosts report zero before the first
+ * layout pass, which is why [WidgetBarMetrics.renderSizePx] floors everything at a pixel.
+ */
+private fun measuredSizeDp(
+    manager: AppWidgetManager,
+    appWidgetId: Int,
+    defaultWidthDp: Int,
+    defaultHeightDp: Int,
+): Pair<Int, Int> {
+    val options = runCatching { manager.getAppWidgetOptions(appWidgetId) }.getOrNull()
+        ?: return defaultWidthDp to defaultHeightDp
+
+    @Suppress("DEPRECATION")
+    val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+    val largest = sizes?.maxByOrNull { it.width * it.height }
+    if (largest != null && largest.width > 0f && largest.height > 0f) {
+        return largest.width.toInt() to largest.height.toInt()
+    }
+
+    val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+    val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+    return (if (width > 0) width else defaultWidthDp) to
+        (if (height > 0) height else defaultHeightDp)
+}
+
 private fun refreshProvider(context: Context, provider: SearchWidgetProviderBase, type: Class<*>) {
     val manager = AppWidgetManager.getInstance(context) ?: return
     val ids = manager.getAppWidgetIds(ComponentName(context, type))
@@ -225,7 +254,7 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
     ) {
         val style = GumshoosConfig.widgetBarStyle
         val density = context.resources.displayMetrics.density
-        val (widthDp, heightDp) = measuredSizeDp(context, manager, appWidgetId)
+        val (widthDp, heightDp) = measuredSizeDp(manager, appWidgetId, DEFAULT_WIDTH_DP, DEFAULT_HEIGHT_DP)
         val (wPx, hPx) = WidgetBarMetrics.renderSizePx(widthDp, heightDp, density)
 
         views.setImageViewBitmap(
@@ -411,34 +440,6 @@ class SearchWidgetProvider : SearchWidgetProviderBase() {
 
     }
 
-    /**
-     * The size the launcher says this widget occupies, in dp.
-     *
-     * Prefers the exact size list the host provides, falling back to the min-width/max-height pair
-     * and then to the size declared in the widget metadata. Hosts report zero before the first
-     * layout pass, which is why [WidgetBarMetrics.renderSizePx] floors everything at a pixel.
-     */
-    private fun measuredSizeDp(
-        context: Context,
-        manager: AppWidgetManager,
-        appWidgetId: Int,
-    ): Pair<Int, Int> {
-        val options = runCatching { manager.getAppWidgetOptions(appWidgetId) }.getOrNull()
-            ?: return DEFAULT_WIDTH_DP to DEFAULT_HEIGHT_DP
-
-        @Suppress("DEPRECATION")
-        val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
-        val largest = sizes?.maxByOrNull { it.width * it.height }
-        if (largest != null && largest.width > 0f && largest.height > 0f) {
-            return largest.width.toInt() to largest.height.toInt()
-        }
-
-        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
-        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
-        return (if (width > 0) width else DEFAULT_WIDTH_DP) to
-            (if (height > 0) height else DEFAULT_HEIGHT_DP)
-    }
-
     companion object {
         /** Matches search_widget_info.xml, used until the host reports a real size. */
         private const val DEFAULT_WIDTH_DP = 250
@@ -523,6 +524,85 @@ class SearchWidgetSmallProvider : SearchWidgetProviderBase() {
         fun refreshAll(context: Context) {
             refreshProvider(
                 context, SearchWidgetSmallProvider(), SearchWidgetSmallProvider::class.java,
+            )
+        }
+    }
+}
+
+/**
+ * The compact search pill: the bar's look at two or three cells wide, with a logo and a label and
+ * none of the action icons.
+ *
+ * Styled from [GumshoosConfig.finderStyle] — values of its own, drawn by the same renderer as the
+ * bar's. The bar's action slots are simply absent from the layout.
+ */
+class SearchWidgetFinderProvider : SearchWidgetProviderBase() {
+    override val layoutRes = R.layout.widget_finder_pill
+    override val requestCode = 102
+    override val sourceTag = "widget-finder"
+
+    override fun decorate(
+        context: Context,
+        views: RemoteViews,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ) {
+        val style = GumshoosConfig.finderStyle
+        val density = context.resources.displayMetrics.density
+        val (widthDp, heightDp) =
+            measuredSizeDp(manager, appWidgetId, DEFAULT_WIDTH_DP, DEFAULT_HEIGHT_DP)
+        val (wPx, hPx) = WidgetBarMetrics.renderSizePx(widthDp, heightDp, density)
+
+        views.setImageViewBitmap(
+            R.id.widget_background,
+            WidgetBarRenderer.toBitmap(context, style, wPx, hPx, density),
+        )
+
+        val resolved = WidgetBarRenderer.resolveFill(context, style.fill)
+        val content = WidgetBarMetrics.contentColor(resolved, style)
+        val accent = WidgetBarRenderer.resolveAccent(context, style.accent)
+
+
+        // Pushed rather than left to the XML, for the reason spelled out in the bar's decorate.
+        val logoDp = dpOf(context, R.dimen.widget_bar_logo_size) +
+            (style.logoSizeDp - WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+        views.setViewLayoutWidth(R.id.widget_logo, logoDp, TypedValue.COMPLEX_UNIT_DIP)
+        views.setViewLayoutHeight(R.id.widget_logo, logoDp, TypedValue.COMPLEX_UNIT_DIP)
+        views.setTextViewTextSize(
+            R.id.widget_hint, TypedValue.COMPLEX_UNIT_SP, GumshoosConfig.finderTextSize.toFloat(),
+        )
+        views.setViewLayoutMargin(
+            R.id.widget_hint, RemoteViews.MARGIN_START,
+            GumshoosConfig.finderGap.toFloat(), TypedValue.COMPLEX_UNIT_DIP,
+        )
+
+        // Logo then label from the left, the label a fixed gap after it. The horizontal padding is
+        // the distance from each edge, so a label too long for the room clips at the right.
+        val edgePx = ((WidgetBarMetrics.insetHDp(style) + style.iconPaddingDp) * density).toInt()
+        views.setViewPadding(R.id.widget_content, edgePx, 0, edgePx, 0)
+
+        views.setImageViewBitmap(
+            R.id.widget_logo,
+            rasterizeIcon(context, style.logo.icon, (logoDp * density).roundToInt()),
+        )
+        views.setColorStateList(
+            R.id.widget_logo,
+            "setImageTintList",
+            WidgetBarMetrics.logoTint(style.logo, content, accent)?.let(ColorStateList::valueOf),
+        )
+
+        views.setViewVisibility(R.id.widget_hint, if (style.showHint) View.VISIBLE else View.GONE)
+        views.setTextColor(R.id.widget_hint, content)
+    }
+
+    companion object {
+        /** Matches widget_finder_info.xml, used until the host reports a real size. */
+        private const val DEFAULT_WIDTH_DP = 110
+        private const val DEFAULT_HEIGHT_DP = 56
+
+        fun refreshAll(context: Context) {
+            refreshProvider(
+                context, SearchWidgetFinderProvider(), SearchWidgetFinderProvider::class.java,
             )
         }
     }

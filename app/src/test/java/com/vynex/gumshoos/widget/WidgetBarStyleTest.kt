@@ -257,7 +257,7 @@ class WidgetBarStyleTest {
     fun `themed actions leave the logo alone`() {
         // The switch is for the actions only; the logo has its own option.
         assertEquals(null, WidgetBarMetrics.logoTint(WidgetBarLogo.GOOGLE, white, accent))
-        assertEquals(white, WidgetBarMetrics.logoTint(WidgetBarLogo.MAGNIFIER, white, accent))
+        assertEquals(accent, WidgetBarMetrics.logoTint(WidgetBarLogo.MAGNIFIER, white, accent))
     }
 
     @Test

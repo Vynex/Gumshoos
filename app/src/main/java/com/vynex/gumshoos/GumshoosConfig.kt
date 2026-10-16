@@ -89,6 +89,23 @@ object GumshoosConfig {
     private const val KEY_WIDGET_BAR_ICON_PAD = "widget_bar_icon_padding"
     private const val KEY_WIDGET_BAR_LOGO_SIZE = "widget_bar_logo_size"
     private const val KEY_WIDGET_BAR_ACTION_SPACING = "widget_bar_action_spacing"
+    private const val KEY_FINDER_FILL_MODE = "finder_fill_mode"
+    private const val KEY_FINDER_FILL_COLOR = "finder_fill_color"
+    private const val KEY_FINDER_FILL_ALPHA = "finder_fill_alpha"
+    private const val KEY_FINDER_WIREFRAME = "finder_wireframe"
+    private const val KEY_FINDER_CORNER = "finder_corner"
+    private const val KEY_FINDER_SHADOW = "finder_shadow"
+    private const val KEY_FINDER_ACCENT_MODE = "finder_accent_mode"
+    private const val KEY_FINDER_ACCENT_COLOR = "finder_accent_color"
+    private const val KEY_FINDER_PAD_H = "finder_padding_h"
+    private const val KEY_FINDER_PAD_V = "finder_padding_v"
+    private const val KEY_FINDER_ICON_PAD = "finder_icon_padding"
+    private const val KEY_FINDER_GAP = "finder_gap"
+    private const val KEY_FINDER_TEXT_SIZE = "finder_text_size"
+    private const val KEY_FINDER_EXTENDED_SPACING = "finder_extended_spacing"
+    private const val KEY_FINDER_LOGO = "finder_logo"
+    private const val KEY_FINDER_LOGO_SIZE = "finder_logo_size"
+    private const val KEY_FINDER_SHOW_HINT = "finder_show_hint"
     private const val KEY_LAUNCH_METHOD = "launch_method"
     private const val KEY_WINDOW_ADAPTIVE = "search_window_adaptive"
     private const val KEY_WINDOW_COLOR = "search_window_color"
@@ -757,6 +774,225 @@ object GumshoosConfig {
         load(context)
     }
 
+    // --- Finder widget -------------------------------------------------------------------------
+    //
+    // Its own values rather than the search bar's: the two are separate widgets that happen to be
+    // drawn by the same renderer. Held in the same shape as the bar's, so [finderStyle] can hand the
+    // renderer a [WidgetBarStyle] and nothing downstream needs to know which widget it is drawing.
+
+    var finderFillAdaptive by mutableStateOf(true)
+        private set
+    var finderSolidColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
+        private set
+    val finderFill: WidgetBarFill
+        get() = if (finderFillAdaptive) {
+            WidgetBarFill.Adaptive
+        } else {
+            WidgetBarFill.Solid(finderSolidColor)
+        }
+
+    var finderFillAlpha by mutableStateOf(100)
+        private set
+    var finderWireframe by mutableStateOf(false)
+        private set
+    var finderCorner by mutableStateOf(100)
+        private set
+    var finderShadow by mutableStateOf(true)
+        private set
+
+    var finderAccentAdaptive by mutableStateOf(true)
+        private set
+    var finderAccentColor by mutableStateOf(DEFAULT_WIDGET_BAR_COLOR)
+        private set
+    val finderAccent: WidgetBarFill
+        get() = if (finderAccentAdaptive) {
+            WidgetBarFill.Adaptive
+        } else {
+            WidgetBarFill.Solid(finderAccentColor)
+        }
+
+    var finderPaddingH by mutableStateOf(DEFAULT_WIDGET_BAR_PAD_H)
+        private set
+    var finderPaddingV by mutableStateOf(DEFAULT_WIDGET_BAR_PAD_V)
+        private set
+
+    /** Whether the vertical margin slider offers its longer range. Not part of a reset. */
+    var finderExtendedSpacing by mutableStateOf(false)
+        private set
+    var finderLogo by mutableStateOf(WidgetBarLogo.GOOGLE)
+        private set
+    var finderLogoSize by mutableStateOf(WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+        private set
+    var finderShowHint by mutableStateOf(true)
+        private set
+
+    /**
+     * Default gap from the pill's edge to the logo, and to the label's end. Tighter than the bar's
+     * 18dp: the widget is as narrow as two cells, where that would leave no room for the label.
+     */
+    const val DEFAULT_FINDER_PADDING = 8
+
+    var finderIconPadding by mutableStateOf(DEFAULT_FINDER_PADDING)
+        private set
+
+    /** Space between the Finder's logo and its label, in dp. */
+    var finderGap by mutableStateOf(WidgetBarMetrics.DEFAULT_FINDER_GAP_DP)
+        private set
+
+    /** Size of the Finder's label, in sp. */
+    var finderTextSize by mutableStateOf(WidgetBarMetrics.DEFAULT_FINDER_TEXT_SP)
+        private set
+
+    /**
+     * The Finder as a [WidgetBarStyle].
+     *
+     * It has no action icons, so the style's icon size follows the logo's — otherwise the margin's
+     * hold-back would reserve room for an icon that is never drawn.
+     */
+    val finderStyle: WidgetBarStyle
+        get() = WidgetBarStyle(
+            fill = finderFill,
+            fillAlphaPercent = finderFillAlpha,
+            wireframe = finderWireframe,
+            cornerPercent = finderCorner,
+            shadow = finderShadow,
+            showHint = finderShowHint,
+            logo = finderLogo,
+            paddingHDp = finderPaddingH,
+            paddingVDp = finderPaddingV,
+            accent = finderAccent,
+            iconSizeDp = finderLogoSize,
+            logoSizeDp = finderLogoSize,
+            iconPaddingDp = finderIconPadding,
+        )
+
+    fun setFinderFillAdaptive(context: Context, adaptive: Boolean) {
+        finderFillAdaptive = adaptive
+        val mode = if (adaptive) WidgetBarFill.ADAPTIVE_ID else WidgetBarFill.SOLID_ID
+        prefs(context).edit().putString(KEY_FINDER_FILL_MODE, mode).apply()
+    }
+
+    fun setFinderSolidColor(context: Context, color: Int) {
+        finderSolidColor = color
+        finderFillAdaptive = false
+        prefs(context).edit()
+            .putInt(KEY_FINDER_FILL_COLOR, color)
+            .putString(KEY_FINDER_FILL_MODE, WidgetBarFill.SOLID_ID)
+            .apply()
+    }
+
+    fun setFinderFillAlpha(context: Context, percent: Int) {
+        finderFillAlpha = percent.coerceIn(0, 100)
+        prefs(context).edit().putInt(KEY_FINDER_FILL_ALPHA, finderFillAlpha).apply()
+    }
+
+    fun setFinderWireframe(context: Context, enabled: Boolean) {
+        finderWireframe = enabled
+        prefs(context).edit().putBoolean(KEY_FINDER_WIREFRAME, enabled).apply()
+    }
+
+    fun setFinderCorner(context: Context, percent: Int) {
+        finderCorner = percent.coerceIn(0, 100)
+        prefs(context).edit().putInt(KEY_FINDER_CORNER, finderCorner).apply()
+    }
+
+    fun setFinderShadow(context: Context, enabled: Boolean) {
+        finderShadow = enabled
+        prefs(context).edit().putBoolean(KEY_FINDER_SHADOW, enabled).apply()
+    }
+
+    fun setFinderAccentAdaptive(context: Context, adaptive: Boolean) {
+        finderAccentAdaptive = adaptive
+        val mode = if (adaptive) WidgetBarFill.ADAPTIVE_ID else WidgetBarFill.SOLID_ID
+        prefs(context).edit().putString(KEY_FINDER_ACCENT_MODE, mode).apply()
+    }
+
+    fun setFinderAccentColor(context: Context, color: Int) {
+        finderAccentColor = color
+        finderAccentAdaptive = false
+        prefs(context).edit()
+            .putInt(KEY_FINDER_ACCENT_COLOR, color)
+            .putString(KEY_FINDER_ACCENT_MODE, WidgetBarFill.SOLID_ID)
+            .apply()
+    }
+
+    fun setFinderPaddingH(context: Context, dp: Int) {
+        finderPaddingH = dp.coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
+        prefs(context).edit().putInt(KEY_FINDER_PAD_H, finderPaddingH).apply()
+    }
+
+    fun setFinderIconPadding(context: Context, dp: Int) {
+        finderIconPadding = dp.coerceIn(0, WidgetBarMetrics.MAX_ICON_PADDING_DP)
+        prefs(context).edit().putInt(KEY_FINDER_ICON_PAD, finderIconPadding).apply()
+    }
+
+    fun setFinderTextSize(context: Context, sp: Int) {
+        finderTextSize = sp.coerceIn(
+            WidgetBarMetrics.MIN_FINDER_TEXT_SP, WidgetBarMetrics.MAX_FINDER_TEXT_SP,
+        )
+        prefs(context).edit().putInt(KEY_FINDER_TEXT_SIZE, finderTextSize).apply()
+    }
+
+    fun setFinderGap(context: Context, dp: Int) {
+        finderGap = dp.coerceIn(0, WidgetBarMetrics.MAX_FINDER_GAP_DP)
+        prefs(context).edit().putInt(KEY_FINDER_GAP, finderGap).apply()
+    }
+
+    fun setFinderPaddingV(context: Context, dp: Int) {
+        finderPaddingV = dp.coerceIn(0, WidgetBarMetrics.maxPaddingVDp(finderExtendedSpacing))
+        prefs(context).edit().putInt(KEY_FINDER_PAD_V, finderPaddingV).apply()
+    }
+
+    /** Switching off clamps the stored margin, so the slider is never left past its own end. */
+    fun setFinderExtendedSpacing(context: Context, enabled: Boolean) {
+        finderExtendedSpacing = enabled
+        finderPaddingV = finderPaddingV.coerceAtMost(WidgetBarMetrics.maxPaddingVDp(enabled))
+        prefs(context).edit()
+            .putBoolean(KEY_FINDER_EXTENDED_SPACING, enabled)
+            .putInt(KEY_FINDER_PAD_V, finderPaddingV)
+            .apply()
+    }
+
+    fun setFinderLogo(context: Context, logo: WidgetBarLogo) {
+        finderLogo = logo
+        prefs(context).edit().putString(KEY_FINDER_LOGO, logo.id).apply()
+    }
+
+    fun setFinderLogoSize(context: Context, dp: Int) {
+        finderLogoSize = dp.coerceIn(
+            WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP,
+        )
+        prefs(context).edit().putInt(KEY_FINDER_LOGO_SIZE, finderLogoSize).apply()
+    }
+
+    fun setFinderShowHint(context: Context, show: Boolean) {
+        finderShowHint = show
+        prefs(context).edit().putBoolean(KEY_FINDER_SHOW_HINT, show).apply()
+    }
+
+    /** Back to the shipped look. The longer margin range is a preference about the slider, so stays. */
+    fun resetFinder(context: Context) {
+        prefs(context).edit().apply {
+            remove(KEY_FINDER_FILL_MODE)
+            remove(KEY_FINDER_FILL_COLOR)
+            remove(KEY_FINDER_FILL_ALPHA)
+            remove(KEY_FINDER_WIREFRAME)
+            remove(KEY_FINDER_CORNER)
+            remove(KEY_FINDER_SHADOW)
+            remove(KEY_FINDER_ACCENT_MODE)
+            remove(KEY_FINDER_ACCENT_COLOR)
+            remove(KEY_FINDER_PAD_H)
+            remove(KEY_FINDER_PAD_V)
+            remove(KEY_FINDER_ICON_PAD)
+            remove(KEY_FINDER_GAP)
+            remove(KEY_FINDER_TEXT_SIZE)
+            remove(KEY_FINDER_LOGO)
+            remove(KEY_FINDER_LOGO_SIZE)
+            remove(KEY_FINDER_SHOW_HINT)
+        }.apply()
+        load(context)
+    }
+
     fun setWidgetBarActionOrder(context: Context, ids: List<String>) {
         widgetBarActionOrder = ids
         prefs(context).edit()
@@ -1135,6 +1371,30 @@ object GumshoosConfig {
             ?.split(',')
             ?.filter { it.isNotBlank() }
             ?: emptyList()
+        finderFillAdaptive = p.getString(KEY_FINDER_FILL_MODE, null) != WidgetBarFill.SOLID_ID
+        finderSolidColor = p.getInt(KEY_FINDER_FILL_COLOR, DEFAULT_WIDGET_BAR_COLOR)
+        finderFillAlpha = p.getInt(KEY_FINDER_FILL_ALPHA, 100).coerceIn(0, 100)
+        finderWireframe = p.getBoolean(KEY_FINDER_WIREFRAME, false)
+        finderCorner = p.getInt(KEY_FINDER_CORNER, 100).coerceIn(0, 100)
+        finderShadow = p.getBoolean(KEY_FINDER_SHADOW, true)
+        finderAccentAdaptive = p.getString(KEY_FINDER_ACCENT_MODE, null) != WidgetBarFill.SOLID_ID
+        finderAccentColor = p.getInt(KEY_FINDER_ACCENT_COLOR, DEFAULT_WIDGET_BAR_COLOR)
+        finderExtendedSpacing = p.getBoolean(KEY_FINDER_EXTENDED_SPACING, false)
+        finderPaddingH = p.getInt(KEY_FINDER_PAD_H, DEFAULT_WIDGET_BAR_PAD_H)
+            .coerceIn(0, WidgetBarMetrics.MAX_PADDING_H_DP)
+        finderIconPadding = p.getInt(KEY_FINDER_ICON_PAD, DEFAULT_FINDER_PADDING)
+            .coerceIn(0, WidgetBarMetrics.MAX_ICON_PADDING_DP)
+        finderTextSize = p.getInt(KEY_FINDER_TEXT_SIZE, WidgetBarMetrics.DEFAULT_FINDER_TEXT_SP)
+            .coerceIn(WidgetBarMetrics.MIN_FINDER_TEXT_SP, WidgetBarMetrics.MAX_FINDER_TEXT_SP)
+        finderGap = p.getInt(KEY_FINDER_GAP, WidgetBarMetrics.DEFAULT_FINDER_GAP_DP)
+            .coerceIn(0, WidgetBarMetrics.MAX_FINDER_GAP_DP)
+        finderPaddingV = p.getInt(KEY_FINDER_PAD_V, DEFAULT_WIDGET_BAR_PAD_V)
+            .coerceIn(0, WidgetBarMetrics.maxPaddingVDp(finderExtendedSpacing))
+        finderLogo = WidgetBarLogo.fromId(p.getString(KEY_FINDER_LOGO, null))
+            ?: WidgetBarLogo.GOOGLE
+        finderLogoSize = p.getInt(KEY_FINDER_LOGO_SIZE, WidgetBarMetrics.DEFAULT_LOGO_SIZE_DP)
+            .coerceIn(WidgetBarMetrics.MIN_ICON_SIZE_DP, WidgetBarMetrics.MAX_ICON_SIZE_DP)
+        finderShowHint = p.getBoolean(KEY_FINDER_SHOW_HINT, true)
         disabledProviders = p.getStringSet(KEY_DISABLED_PROVIDERS, null)?.toSet() ?: emptySet()
         providerOrder = p.getString(KEY_PROVIDER_ORDER, null)
             ?.split(',')

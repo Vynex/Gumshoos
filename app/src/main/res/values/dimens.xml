@@ -50,5 +50,7 @@
     -->
     <dimen name="widget_bar_slot_text">14sp</dimen>
     <dimen name="widget_bar_hint_text">16sp</dimen>
+    <!-- The Finder's label: a little smaller than the bar's hint, and set lighter in its layout. -->
+    <dimen name="widget_finder_text">14sp</dimen>
 
 </resources>

@@ -757,6 +757,12 @@ internal fun AppearanceScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 summary = widgetBarSummary(),
                 onClick = { onOpen(Screen.WidgetBar) },
             )
+            SettingsGroupDivider()
+            CategoryRow(
+                title = "Finder widget",
+                summary = "Compact search pill",
+                onClick = { onOpen(Screen.Finder) },
+            )
         }
 
         SettingsGroup(

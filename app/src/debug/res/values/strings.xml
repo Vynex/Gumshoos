@@ -28,7 +28,8 @@
     <!-- The entry's name in the system's assistant picker. -->
     <string name="assist_trigger_label">Gumshoos (Debug)</string>
 
-    <!-- The two entries in the widget picker. -->
+    <!-- The three entries in the widget picker. -->
     <string name="widget_bar_label">Gumshoos search bar (Debug)</string>
     <string name="widget_small_label">Gumshoos icon (Debug)</string>
+    <string name="widget_finder_label">Gumshoos finder (Debug)</string>
 </resources>

@@ -69,7 +69,7 @@ import kotlin.math.roundToInt
  * the bitmap is redrawn when the palette moves rather than kept from the one it was first made in.
  */
 @Composable
-private fun logoBitmap(logo: WidgetBarLogo): ImageBitmap {
+internal fun logoBitmap(logo: WidgetBarLogo): ImageBitmap {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     return remember(logo, configuration) {

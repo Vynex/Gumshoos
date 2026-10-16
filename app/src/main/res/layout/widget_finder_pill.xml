@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Finder pill: the search bar's skeleton without its action slots. Same ids for the views it
+  shares, so the provider base's click wiring (widget_root) and the bar's styling code apply as is.
+  Where the content sits horizontally is decided in the provider, by padding, so that nothing
+  about the placement depends on a layout attribute a launcher might not re-apply.
+  Only classes RemoteViews can inflate — see widget_search_bar.xml for the list and why.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_search_bar_bg" />
+
+    <LinearLayout
+        android:id="@+id/widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="start|center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/widget_bar_inset"
+        android:paddingEnd="@dimen/widget_bar_inset">
+
+        <ImageView
+            android:id="@+id/widget_logo"
+            android:layout_width="@dimen/widget_bar_logo_size"
+            android:layout_height="@dimen/widget_bar_logo_size"
+            android:contentDescription="@string/widget_finder_hint"
+            android:src="@drawable/ic_provider_search" />
+
+        <TextView
+            android:id="@+id/widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/widget_bar_gap"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif"
+            android:maxLines="1"
+            android:text="@string/widget_finder_hint"
+            android:textColor="#99FFFFFF"
+            android:textSize="@dimen/widget_finder_text" />
+
+    </LinearLayout>
+
+</FrameLayout>

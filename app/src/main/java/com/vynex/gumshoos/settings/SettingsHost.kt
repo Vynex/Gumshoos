@@ -44,6 +44,7 @@ internal sealed interface Screen {
     data object Permissions : Screen
     data object WidgetBar : Screen
     data object WidgetIcon : Screen
+    data object Finder : Screen
     data object SearchWindow : Screen
     data object CurrencyPicker : Screen
     data object ZonePicker : Screen
@@ -166,6 +167,7 @@ fun SettingsHost(manageAppsRequest: ManageAppsRequest? = null) {
             Screen.WebSuggestions -> WebSuggestionsScreen(onBack = ::pop)
             Screen.WidgetBar -> WidgetBarScreen(onBack = ::pop)
             Screen.WidgetIcon -> WidgetIconScreen(onBack = ::pop)
+            Screen.Finder -> FinderScreen(onBack = ::pop)
             Screen.SearchWindow -> SearchWindowScreen(onBack = ::pop)
             Screen.Permissions -> PermissionsScreen(onBack = ::pop)
             Screen.Answers -> AnswersScreen(onBack = ::pop, onOpen = ::push)

@@ -5,6 +5,9 @@
     <string name="widget_bar_label">Gumshoos search bar</string>
     <string name="widget_description">Instant search bar for your home screen</string>
 
+    <string name="widget_finder_label">Gumshoos finder</string>
+    <string name="widget_finder_description">Compact search pill for your home screen</string>
+    <string name="widget_finder_hint">Finder</string>
     <string name="widget_small_label">Gumshoos icon</string>
     <string name="widget_small_description">Single-cell button that opens instant search</string>
 

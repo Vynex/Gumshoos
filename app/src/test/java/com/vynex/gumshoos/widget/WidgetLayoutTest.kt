@@ -30,7 +30,7 @@ class WidgetLayoutTest {
         "Switch", "TextClock", "TextView", "ViewFlipper", "ViewStub",
     )
 
-    private val layouts = listOf("widget_search_bar.xml", "widget_search_icon.xml")
+    private val layouts = listOf("widget_search_bar.xml", "widget_search_icon.xml", "widget_finder_pill.xml")
 
     private fun layoutDir(): File {
         // The working directory is the Gradle module, but don't rely on exactly which one — walk up

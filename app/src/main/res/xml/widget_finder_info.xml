@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2x1 and 3x1 only. A cell is roughly 70n-30 dp wide, so 110dp is two and anything under 250dp
+  stays short of four; the launcher snaps to whole cells inside that range. Height is fixed.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_finder_description"
+    android:initialLayout="@layout/widget_finder_pill"
+    android:maxResizeWidth="200dp"
+    android:minHeight="56dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="110dp"
+    android:previewLayout="@layout/widget_finder_pill"
+    android:resizeMode="horizontal"
+    android:targetCellHeight="1"
+    android:targetCellWidth="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

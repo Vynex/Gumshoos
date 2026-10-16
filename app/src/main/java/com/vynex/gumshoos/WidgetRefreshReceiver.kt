@@ -48,7 +48,7 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
 }
 
 /**
- * Rebuilds both widgets from the current code and config.
+ * Rebuilds every widget from the current code and config.
  *
  * Shared with the manual button in Advanced, so recovering a stale widget never depends on
  * reinstalling — the failure it exists for leaves the widget unable to open anything.
@@ -58,4 +58,6 @@ fun refreshAllWidgets(context: Context) {
         .onFailure { EventLog.record("bar widget refresh FAILED ${it.javaClass.simpleName}") }
     runCatching { SearchWidgetSmallProvider.refreshAll(context) }
         .onFailure { EventLog.record("app icon widget refresh FAILED ${it.javaClass.simpleName}") }
+    runCatching { SearchWidgetFinderProvider.refreshAll(context) }
+        .onFailure { EventLog.record("finder widget refresh FAILED ${it.javaClass.simpleName}") }
 }

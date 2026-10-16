@@ -669,6 +669,8 @@ class OverlayService :
         super.onConfigurationChanged(newConfig)
         runCatching { SearchWidgetProvider.refreshAll(this) }
             .onFailure { EventLog.record("widget refresh on config change FAILED ${it.javaClass.simpleName}") }
+        runCatching { SearchWidgetFinderProvider.refreshAll(this) }
+            .onFailure { EventLog.record("finder refresh on config change FAILED ${it.javaClass.simpleName}") }
     }
 
     override fun onDestroy() {
